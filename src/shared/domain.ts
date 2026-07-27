@@ -195,6 +195,23 @@ export interface PromptTemplate {
   updatedAt: string;
 }
 
+export interface AiPublicSettings {
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
+}
+
+export interface AiSettingsSaveInput {
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+}
+
+export interface AiConnectionResult {
+  ok: true;
+  message: '连接成功，可以使用。';
+}
+
 export interface DashboardSummary {
   totalPositions: number;
   stageDistribution: Array<{ stage: CanonicalStage; count: number }>;

@@ -28,10 +28,13 @@ import {
   type ProposalsRepository,
 } from '../repositories/proposals';
 import { registerAssetHandlers } from './assets';
+import { registerAiHandlers } from './ai';
 import { registerPositionHandlers, registerPreparationHandlers } from './positions';
 import { registerReviewHandlers } from './reviews';
 import { registerSystemHandlers } from './system';
 import type { IpcMainRegistrar } from './common';
+import type { AiClient } from '../services/ai-client';
+import type { AiSettingsStore } from '../services/ai-settings';
 
 export type { IpcMainRegistrar } from './common';
 
@@ -43,6 +46,11 @@ export interface RepositoryBundle {
   prompts: PromptsRepository;
   proposals: ProposalsRepository;
   dashboard: DashboardRepository;
+}
+
+export interface AiRuntime {
+  settings: AiSettingsStore;
+  client: Pick<AiClient, 'testConnection'>;
 }
 
 export function createRepositoryBundle(db: DatabaseSync): RepositoryBundle {
@@ -60,6 +68,7 @@ export function createRepositoryBundle(db: DatabaseSync): RepositoryBundle {
 export function registerIpcHandlers(
   ipcMain: IpcMainRegistrar,
   repositories: RepositoryBundle,
+  ai?: AiRuntime,
 ): void {
   const {
     positions,
@@ -76,4 +85,5 @@ export function registerIpcHandlers(
   registerAssetHandlers(ipcMain, assets, prompts);
   registerReviewHandlers(ipcMain, interviews, proposals);
   registerSystemHandlers(ipcMain, dashboard);
+  if (ai) registerAiHandlers(ipcMain, ai.settings, ai.client);
 }

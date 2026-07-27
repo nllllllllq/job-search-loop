@@ -7,6 +7,7 @@ import { PositionDetailPage } from './features/positions/PositionDetailPage';
 import { PositionsPage } from './features/positions/PositionsPage';
 import { ProjectsPage } from './features/projects/ProjectsPage';
 import { QuestionsPage } from './features/questions/QuestionsPage';
+import { SettingsPage } from './features/settings/SettingsPage';
 import { ToastProvider } from './hooks/useToast';
 
 interface PlaceholderConfig {
@@ -22,12 +23,6 @@ const placeholders: Record<string, PlaceholderConfig> = {
     body: '面试结束后，这里将承接逐轮记录、个人判断与后续沉淀，保留当时最鲜活的细节。',
     icon: '复',
     note: '记录事实，再提炼方法',
-  },
-  settings: {
-    title: '本地工作台设置',
-    body: '后续可在这里管理本机偏好与数据维护选项。当前版本不会上传或同步你的求职记录。',
-    icon: '设',
-    note: '本机优先 · 清楚可控',
   },
 };
 
@@ -140,7 +135,7 @@ export function App() {
             />
             <Route
               path="/settings"
-              element={<PlaceholderPage config={placeholders.settings} />}
+              element={<SettingsPage />}
             />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

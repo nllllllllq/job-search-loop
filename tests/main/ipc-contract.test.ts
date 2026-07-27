@@ -12,12 +12,14 @@ import { RepositoryError } from '../../src/main/repositories/common';
 describe('typed IPC contract', () => {
   it('publishes explicit nested methods without a generic invoke or send escape hatch', () => {
     expectTypeOf<JobSearchApi>().toHaveProperty('positions');
+    expectTypeOf<JobSearchApi>().toHaveProperty('ai');
     expectTypeOf<JobSearchApi>().toHaveProperty('preparations');
     expectTypeOf<JobSearchApi>().toHaveProperty('assets');
     expectTypeOf<JobSearchApi>().toHaveProperty('reviews');
     expectTypeOf<JobSearchApi>().toHaveProperty('system');
 
     expect(Object.keys(CHANNELS).sort()).toEqual([
+      'ai',
       'assets',
       'positions',
       'preparations',

@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { PromptKind, PromptTemplate } from '../../shared/domain';
 import { promptKindSchema, promptSaveSchema } from '../../shared/schemas';
 import { notFound, row, text } from './common';
+import { DEFAULT_PROMPT_TEMPLATES } from '../../shared/defaults';
 
 function decodePrompt(value: unknown): PromptTemplate {
   const data = row(value, 'prompt');
@@ -22,6 +23,23 @@ export interface PromptsRepository {
 }
 
 export function createPromptsRepository(db: DatabaseSync): PromptsRepository {
+  const now = new Date().toISOString();
+  const ensureDefault = db.prepare(`
+    INSERT OR IGNORE INTO prompt_templates
+      (id, kind, name, content, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  for (const template of DEFAULT_PROMPT_TEMPLATES) {
+    ensureDefault.run(
+      template.id,
+      template.kind,
+      template.name,
+      template.content,
+      now,
+      now,
+    );
+  }
+
   const get = (kind: PromptKind): PromptTemplate => {
     const parsedKind = promptKindSchema.parse(kind);
     const value = db.prepare('SELECT * FROM prompt_templates WHERE kind = ?').get(parsedKind);

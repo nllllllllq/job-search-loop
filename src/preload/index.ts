@@ -1,11 +1,33 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { CHANNELS, type AppError, type JobSearchApi } from '../shared/ipc';
+import {
+  aiConnectionResultSchema,
+  aiPublicSettingsSchema,
+  aiSettingsSaveSchema,
+  promptKindSchema,
+  promptSaveSchema,
+  promptTemplateListSchema,
+  promptTemplateSchema,
+} from '../shared/schemas';
 
 function parseAppError(value: unknown): AppError | null {
   if (value === null || typeof value !== 'object') return null;
   const candidate = value as Record<string, unknown>;
   if (
-    !['VALIDATION_ERROR', 'NOT_FOUND', 'CONFLICT', 'INTERNAL_ERROR'].includes(
+    ![
+      'VALIDATION_ERROR',
+      'NOT_FOUND',
+      'CONFLICT',
+      'INTERNAL_ERROR',
+      'AI_NOT_CONFIGURED',
+      'AI_AUTH_FAILED',
+      'AI_RATE_LIMITED',
+      'AI_TIMEOUT',
+      'AI_PROVIDER_ERROR',
+      'AI_INVALID_OUTPUT',
+      'AI_SETTINGS_CORRUPT',
+      'AI_SETTINGS_UNAVAILABLE',
+    ].includes(
       String(candidate.code),
     )
     || typeof candidate.message !== 'string'
@@ -44,6 +66,22 @@ function frozen<T>(value: T): Readonly<T> {
 
 const api = frozen<JobSearchApi>({
   version: '0.1.0',
+  ai: frozen<JobSearchApi['ai']>({
+    settings: frozen<JobSearchApi['ai']['settings']>({
+      get: async () => aiPublicSettingsSchema.parse(
+        await invoke(CHANNELS.ai.settings.get),
+      ),
+      save: async (input) => aiPublicSettingsSchema.parse(
+        await invoke(
+          CHANNELS.ai.settings.save,
+          aiSettingsSaveSchema.parse(input),
+        ),
+      ),
+    }),
+    testConnection: async () => aiConnectionResultSchema.parse(
+      await invoke(CHANNELS.ai.testConnection),
+    ),
+  }),
   positions: frozen<JobSearchApi['positions']>({
     list: (filter) => invoke(CHANNELS.positions.list, filter),
     get: (id) => invoke(CHANNELS.positions.get, id),
@@ -84,9 +122,21 @@ const api = frozen<JobSearchApi>({
     }),
     versions: (type, id) => invoke(CHANNELS.assets.versions, { type, id }),
     prompts: frozen<JobSearchApi['assets']['prompts']>({
-      list: () => invoke(CHANNELS.assets.prompts.list),
-      get: (kind) => invoke(CHANNELS.assets.prompts.get, kind),
-      save: (kind, content) => invoke(CHANNELS.assets.prompts.save, { kind, content }),
+      list: async () => promptTemplateListSchema.parse(
+        await invoke(CHANNELS.assets.prompts.list),
+      ),
+      get: async (kind) => promptTemplateSchema.parse(
+        await invoke(
+          CHANNELS.assets.prompts.get,
+          promptKindSchema.parse(kind),
+        ),
+      ),
+      save: async (kind, content) => promptTemplateSchema.parse(
+        await invoke(
+          CHANNELS.assets.prompts.save,
+          promptSaveSchema.parse({ kind, content }),
+        ),
+      ),
     }),
   }),
   reviews: frozen<JobSearchApi['reviews']>({

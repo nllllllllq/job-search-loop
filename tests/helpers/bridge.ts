@@ -20,6 +20,13 @@ type ApiMock<T extends (...args: never[]) => unknown> = Mock<T>;
 
 export interface JobSearchApiFake {
   readonly version: '0.1.0';
+  readonly ai: {
+    readonly settings: {
+      get: ApiMock<JobSearchApi['ai']['settings']['get']>;
+      save: ApiMock<JobSearchApi['ai']['settings']['save']>;
+    };
+    testConnection: ApiMock<JobSearchApi['ai']['testConnection']>;
+  };
   readonly positions: {
     list: ApiMock<JobSearchApi['positions']['list']>;
     get: ApiMock<JobSearchApi['positions']['get']>;
@@ -112,6 +119,21 @@ const dashboardSummary: DashboardSummary = {
 export function createJobSearchFake(): JobSearchApiFake {
   return {
     version: '0.1.0',
+    ai: {
+      settings: {
+        get: vi.fn<JobSearchApi['ai']['settings']['get']>().mockResolvedValue({
+          baseUrl: '',
+          model: '',
+          hasApiKey: false,
+        }),
+        save: vi.fn<JobSearchApi['ai']['settings']['save']>().mockRejectedValue(
+          new Error('未设置 AI 配置'),
+        ),
+      },
+      testConnection: vi.fn<JobSearchApi['ai']['testConnection']>().mockRejectedValue(
+        new Error('未设置 AI 配置'),
+      ),
+    },
     positions: {
       list: vi.fn<JobSearchApi['positions']['list']>().mockResolvedValue([] as PositionListItem[]),
       get: vi.fn<JobSearchApi['positions']['get']>().mockResolvedValue(emptyDetail),

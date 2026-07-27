@@ -1,4 +1,7 @@
 import type {
+  AiConnectionResult,
+  AiPublicSettings,
+  AiSettingsSaveInput,
   AssetVersion,
   CanonicalStage,
   Capability,
@@ -32,6 +35,13 @@ export type InterviewEditInput = Omit<
 >;
 
 export const CHANNELS = {
+  ai: {
+    settings: {
+      get: 'ai:settings:get',
+      save: 'ai:settings:save',
+    },
+    testConnection: 'ai:test-connection',
+  },
   positions: {
     list: 'positions:list',
     get: 'positions:get',
@@ -73,12 +83,31 @@ export const CHANNELS = {
 } as const;
 
 export interface AppError {
-  code: 'VALIDATION_ERROR' | 'NOT_FOUND' | 'CONFLICT' | 'INTERNAL_ERROR';
+  code:
+    | 'VALIDATION_ERROR'
+    | 'NOT_FOUND'
+    | 'CONFLICT'
+    | 'INTERNAL_ERROR'
+    | 'AI_NOT_CONFIGURED'
+    | 'AI_AUTH_FAILED'
+    | 'AI_RATE_LIMITED'
+    | 'AI_TIMEOUT'
+    | 'AI_PROVIDER_ERROR'
+    | 'AI_INVALID_OUTPUT'
+    | 'AI_SETTINGS_CORRUPT'
+    | 'AI_SETTINGS_UNAVAILABLE';
   message: string;
 }
 
 export interface JobSearchApi {
   readonly version: '0.1.0';
+  readonly ai: {
+    readonly settings: {
+      get(): Promise<AiPublicSettings>;
+      save(input: AiSettingsSaveInput): Promise<AiPublicSettings>;
+    };
+    testConnection(): Promise<AiConnectionResult>;
+  };
   readonly positions: {
     list(filter?: { query?: string; stage?: CanonicalStage }): Promise<PositionListItem[]>;
     get(id: string): Promise<PositionDetail>;

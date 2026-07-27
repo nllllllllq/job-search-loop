@@ -239,5 +239,60 @@ export const proposalAcceptSchema = z.object({
 
 export const promptSaveSchema = z.object({
   kind: promptKindSchema,
-  content: z.string().trim().min(1).max(200_000),
+  content: z.string()
+    .max(200_000)
+    .refine((value) => value.trim().length > 0, 'Prompt 模板不能为空'),
 });
+
+function normalizeBaseUrl(value: string): string {
+  const url = new URL(value.trim());
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('API 地址必须使用 HTTP 或 HTTPS');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error('API 地址不能包含凭据、查询参数或片段');
+  }
+  return url.toString().replace(/\/+$/, '');
+}
+
+export const aiBaseUrlSchema = z.string().trim().min(1).max(2_000).transform(
+  (value, context) => {
+    try {
+      return normalizeBaseUrl(value);
+    } catch {
+      context.addIssue({
+        code: 'custom',
+        message: '请输入有效的 HTTP 或 HTTPS API 地址',
+      });
+      return z.NEVER;
+    }
+  },
+);
+
+export const aiSettingsSaveSchema = z.object({
+  baseUrl: aiBaseUrlSchema,
+  model: z.string().trim().min(1).max(500),
+  apiKey: z.string().max(10_000).optional().default(''),
+});
+
+export const aiPublicSettingsSchema = z.object({
+  baseUrl: z.string(),
+  model: z.string(),
+  hasApiKey: z.boolean(),
+});
+
+export const aiConnectionResultSchema = z.object({
+  ok: z.literal(true),
+  message: z.literal('连接成功，可以使用。'),
+});
+
+export const promptTemplateSchema = z.object({
+  id: idSchema,
+  kind: promptKindSchema,
+  name: z.string(),
+  content: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const promptTemplateListSchema = z.array(promptTemplateSchema);

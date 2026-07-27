@@ -1,6 +1,7 @@
 import { ZodError } from 'zod';
 import type { AppError } from '../../shared/ipc';
 import { RepositoryError } from '../repositories/common';
+import { AiServiceError } from '../services/ai-settings';
 
 export interface IpcMainRegistrar {
   handle(
@@ -25,6 +26,9 @@ function safeError(error: unknown): SafeIpcError {
     return new SafeIpcError('VALIDATION_ERROR', 'Invalid request');
   }
   if (error instanceof RepositoryError) {
+    return new SafeIpcError(error.code, error.message);
+  }
+  if (error instanceof AiServiceError) {
     return new SafeIpcError(error.code, error.message);
   }
   return new SafeIpcError('INTERNAL_ERROR', 'The request could not be completed');

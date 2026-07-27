@@ -444,6 +444,26 @@ describe('interview review service', () => {
     }
   });
 
+  it('rejects a JSON-expanded review input before issuing a token or calling AI', async () => {
+    const fixture = createFixture();
+    try {
+      fixture.interviews.update(fixture.interview.id, {
+        positionId: fixture.position.id,
+        roundName: fixture.interview.roundName,
+        interviewDate: fixture.interview.interviewDate,
+        transcript: `x${'\n'.repeat(800_000)}`,
+        personalNotes: '',
+        feedbackResult: null,
+      });
+
+      await expect(fixture.service.preview(reviewInput(fixture.interview.id)))
+        .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+      expect(fixture.completeJson).not.toHaveBeenCalled();
+    } finally {
+      fixture.db.close();
+    }
+  });
+
   it('re-reads private settings, uses the current apiKey, and rejects stale provider metadata', async () => {
     const settings = {
       baseUrl: 'https://api.example.com/v1',

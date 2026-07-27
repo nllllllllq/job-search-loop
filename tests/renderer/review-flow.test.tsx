@@ -116,6 +116,14 @@ const projectAsset: Project = {
   updatedAt: '2026-07-27T08:00:00.000Z',
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe('interview and review UI', () => {
   beforeEach(() => {
     window.location.hash = `#/positions/${positionId}`;
@@ -270,6 +278,53 @@ describe('interview and review UI', () => {
     ))).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(fake.reviews.review.cancelPreview)
+      .toHaveBeenCalledWith(preview.token));
+  });
+
+  it.each([
+    ['取消按钮', async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole('button', { name: '取消' }));
+    }],
+    ['关闭按钮', async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole('button', { name: '关闭对话框' }));
+    }],
+  ])('discards and cancels a late preview after %s', async (_label, close) => {
+    const fake = resetJobSearchFake();
+    const pending = deferred<InterviewReviewPreview>();
+    fake.positions.get.mockResolvedValue(position);
+    fake.reviews.interviews.list.mockResolvedValue([interview]);
+    fake.reviews.review.preview.mockReturnValue(pending.promise);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('tab', { name: '面试记录' }));
+    await user.click(screen.getByRole('button', { name: '开始 AI 复盘' }));
+    await user.click(await screen.findByRole('button', { name: '预览发送内容' }));
+    await close(user);
+    pending.resolve(preview);
+
+    await waitFor(() => expect(fake.reviews.review.cancelPreview)
+      .toHaveBeenCalledWith(preview.token));
+    expect(screen.queryByRole('heading', { name: '确认发送复盘数据' }))
+      .not.toBeInTheDocument();
+  });
+
+  it('cancels a late preview token after the panel unmounts', async () => {
+    const fake = resetJobSearchFake();
+    const pending = deferred<InterviewReviewPreview>();
+    fake.positions.get.mockResolvedValue(position);
+    fake.reviews.interviews.list.mockResolvedValue([interview]);
+    fake.reviews.review.preview.mockReturnValue(pending.promise);
+    const user = userEvent.setup();
+    const view = render(<App />);
+
+    await user.click(await screen.findByRole('tab', { name: '面试记录' }));
+    await user.click(screen.getByRole('button', { name: '开始 AI 复盘' }));
+    await user.click(await screen.findByRole('button', { name: '预览发送内容' }));
+    view.unmount();
+    pending.resolve(preview);
+
     await waitFor(() => expect(fake.reviews.review.cancelPreview)
       .toHaveBeenCalledWith(preview.token));
   });

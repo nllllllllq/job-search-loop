@@ -11,6 +11,7 @@ import type {
   ProposalTarget,
 } from '../../shared/domain';
 import {
+  INTERVIEW_REVIEW_INPUT_SNAPSHOT_MAX_LENGTH,
   interviewReviewOutputSchema,
 } from '../../shared/schemas';
 import type { AssetsRepository } from '../repositories/assets';
@@ -289,6 +290,12 @@ export function createInterviewReviewService({
         selectedAssets: selectedAssetSnapshots,
       };
       const inputJson = JSON.stringify(input, null, 2);
+      if (inputJson.length > INTERVIEW_REVIEW_INPUT_SNAPSHOT_MAX_LENGTH) {
+        throw new RepositoryError(
+          'VALIDATION_ERROR',
+          '复盘输入在序列化后过大，请缩短面试记录或减少参考资产。',
+        );
+      }
       const providerOrigin = originOf(settings.baseUrl);
       const inputHash = createHash('sha256').update(JSON.stringify({
         prompt: prompt.content,

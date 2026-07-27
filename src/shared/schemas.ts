@@ -543,10 +543,12 @@ export const interviewReviewOutputSchema = z.object({
   proposals: z.array(interviewReviewProposalSchema).max(50),
 }).strict();
 
+export const INTERVIEW_REVIEW_INPUT_SNAPSHOT_MAX_LENGTH = 1_500_000;
+
 export const interviewReviewSnapshotSchema = z.object({
   promptSnapshot: nonBlankSnapshotText(200_000),
   modelSnapshot: nonBlankSnapshotText(500),
-  inputSnapshot: nonBlankSnapshotText(1_500_000),
+  inputSnapshot: nonBlankSnapshotText(INTERVIEW_REVIEW_INPUT_SNAPSHOT_MAX_LENGTH),
   output: interviewReviewOutputSchema,
   reviewedAt: z.string().datetime(),
 }).strict();

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Capability,
   Insight,
@@ -62,6 +62,8 @@ export function InterviewPanel({ positionId }: InterviewPanelProps) {
   const [assetOptions, setAssetOptions] = useState<AssetOptions>(EMPTY_OPTIONS);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const previewRequestGeneration = useRef(0);
+  const mounted = useRef(true);
   const interviews = useMemo(
     () => [...(resource.data ?? [])].sort(
       (left, right) => sortTime(right) - sortTime(left)
@@ -69,6 +71,14 @@ export function InterviewPanel({ positionId }: InterviewPanelProps) {
     ),
     [resource.data],
   );
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      previewRequestGeneration.current += 1;
+    };
+  }, []);
 
   const save = async (input: InterviewEditInput) => {
     const saved = editing
@@ -104,31 +114,52 @@ export function InterviewPanel({ positionId }: InterviewPanelProps) {
 
   const openPreview = async () => {
     if (!selectionInterviewId || previewingId) return;
+    const requestGeneration = previewRequestGeneration.current + 1;
+    previewRequestGeneration.current = requestGeneration;
     setPreviewingId(selectionInterviewId);
     try {
       const next = await window.jobSearch.reviews.review.preview({
         interviewId: selectionInterviewId,
         selectedAssets,
       });
+      if (
+        !mounted.current
+        || requestGeneration !== previewRequestGeneration.current
+      ) {
+        try {
+          await window.jobSearch.reviews.review.cancelPreview(next.token);
+        } catch {
+          if (mounted.current) {
+            toast.error('预览取消请求失败；页面已关闭，但该令牌可能仍会在过期前有效。');
+          }
+        }
+        return;
+      }
       setSelectionInterviewId(null);
       setPreview(next);
     } catch {
-      toast.error('暂时无法准备 AI 复盘，请检查设置后重试。');
+      if (mounted.current && requestGeneration === previewRequestGeneration.current) {
+        toast.error('暂时无法准备 AI 复盘，请检查设置后重试。');
+      }
     } finally {
-      setPreviewingId(null);
+      if (mounted.current && requestGeneration === previewRequestGeneration.current) {
+        setPreviewingId(null);
+      }
     }
   };
 
   const closeReviewModal = async () => {
+    previewRequestGeneration.current += 1;
     const token = preview?.token;
     setPreview(null);
     setSelectionInterviewId(null);
     setSelectedAssets(EMPTY_SELECTION);
+    setPreviewingId(null);
     if (token) {
       try {
         await window.jobSearch.reviews.review.cancelPreview(token);
       } catch {
-        toast.error('复盘预览已在本地失效，请重新开始。');
+        toast.error('预览取消请求失败；页面已关闭，但该令牌可能仍会在过期前有效。');
       }
     }
   };

@@ -43,6 +43,10 @@ a {
   outline-offset: 3px;
 }
 
+.sidebar :focus-visible {
+  outline-color: var(--focus-on-dark);
+}
+
 .skip-link {
   position: fixed;
   z-index: 100;

@@ -37,4 +37,19 @@ describe('desktop navigation', () => {
     expect(screen.getByRole('heading', { name: '没有找到这个页面' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '返回总览' })).toHaveAttribute('href', '#/');
   });
+
+  it.each(['#/positions/', '#/POSITIONS'])(
+    'keeps the shell title aligned with the matched route at %s',
+    (hash) => {
+      window.location.hash = hash;
+      render(<App />);
+
+      expect(
+        screen.getByRole('heading', { level: 1, name: '岗位' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { level: 2, name: '还没有岗位记录' }),
+      ).toBeInTheDocument();
+    },
+  );
 });

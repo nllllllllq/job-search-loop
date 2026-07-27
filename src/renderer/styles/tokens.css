@@ -16,7 +16,7 @@
   --accent-soft: #f3ded8;
   --success: #287355;
   --success-soft: #deeee6;
-  --warning: #9a6514;
+  --warning: #704600;
   --warning-soft: #f4e8cb;
   --danger: #a73931;
   --danger-soft: #f5ddda;
@@ -25,6 +25,7 @@
   --radius-large: 7px;
   --shadow: 0 18px 45px rgba(13, 23, 43, 0.1);
   --focus-ring: 0 0 0 3px rgba(36, 87, 165, 0.32);
+  --focus-on-dark: #f6d27f;
 
   --font-display: "Songti SC", "STSong", "Noto Serif CJK SC", SimSun, serif;
   --font-body: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC",

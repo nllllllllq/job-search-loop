@@ -17,7 +17,9 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const { pathname } = useLocation();
-  const currentPage = navigation.find(({ to }) => to === pathname);
+  const normalizedPathname =
+    pathname.toLowerCase().replace(/\/+$/, '') || '/';
+  const currentPage = navigation.find(({ to }) => to === normalizedPathname);
   const title = currentPage?.label ?? '未找到页面';
 
   const skipToContent = (event: React.MouseEvent<HTMLAnchorElement>) => {

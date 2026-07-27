@@ -34,7 +34,7 @@ export const DEFAULT_PROMPT_TEMPLATES: readonly DefaultPromptTemplate[] = [
       '然后完成以下四层框架：',
       '1. Map Competencies：提炼岗位标准能力 Top 5。综合关键词出现频率、所在位置与强调程度排序，rank 必须依次为 1、2、3、4、5；每项说明 JD 证据与排序理由。',
       '2. Company Map：从 STARS 框架中严格选择一个阶段：Startup、Turnaround、Realignment、Sustaining Success、Crisis；分析当前阶段、优先事项与文化信号。',
-      '3. Dream Candidate Avatar：构建理想候选人画像，包括 Typical Day 时间线、Superpower、Success Story、Quote 与 Pain Profile。',
+      '3. Dream Candidate Avatar：构建理想候选人画像。Typical Day 是按时间组织的任务时间线；Superpower 要用简单语言说明候选人如何解决 JD 最大痛点；Success Story 是候选人使用该 Superpower 的成功故事；Quote 要体现候选人的信念体系；Pain Profile 要解释岗位为何存在，以及候选人如何解决这一根本问题。',
       '4. Action Guide：给出一句自我介绍 tagline、一句文化匹配表达，以及恰好 3 个针对该岗位定制的收尾问题。',
       '',
       '分析内容使用中文，但保留 Map Competencies、Top 5、STARS、各 STARS 阶段、Dream Candidate Avatar、Typical Day、Superpower、Success Story、Quote、Pain Profile、Action Guide 等 English terms。',

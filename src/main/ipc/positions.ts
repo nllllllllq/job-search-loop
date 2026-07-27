@@ -8,6 +8,7 @@ import {
   processStageSaveSchema,
   reorderStagesSchema,
   preparationMaterialListSchema,
+  preparationOutboundPreviewSchema,
   preparationReadableMaterialSchema,
 } from '../../shared/schemas';
 import type { PositionsRepository } from '../repositories/positions';
@@ -58,6 +59,11 @@ export function registerPreparationHandlers(
     preparationReadableMaterialSchema.parse(preparations.get(idSchema.parse(payload)))
   )));
   if (service) {
+    ipcMain.handle(CHANNELS.preparations.preview, safeIpcHandler((_event, payload) => (
+      preparationOutboundPreviewSchema.parse(
+        service.preview(preparationGenerateSchema.parse(payload)),
+      )
+    )));
     ipcMain.handle(CHANNELS.preparations.generate, safeIpcHandler(async (_event, payload) => (
       preparationReadableMaterialSchema.parse(
         await service.generate(preparationGenerateSchema.parse(payload)),

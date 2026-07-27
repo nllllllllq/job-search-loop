@@ -143,13 +143,19 @@ flowchart LR
    - 从 STARS 五阶段中严格选择一个：`Startup`、`Turnaround`、`Realignment`、`Sustaining Success`、`Crisis`。
    - 同时说明阶段判断、当前优先事项和文化信号。
 3. **Dream Candidate Avatar**
-   - 包含 `Typical Day` 时间线、`Superpower`、`Success Story`、`Quote` 和 `Pain Profile`。
+   - `Typical Day` 是按时间组织的任务时间线。
+   - `Superpower` 用简单语言说明候选人如何解决 JD 最大痛点。
+   - `Success Story` 是候选人使用该 `Superpower` 的成功故事。
+   - `Quote` 体现候选人的信念体系。
+   - `Pain Profile` 解释岗位为何存在，以及候选人如何解决这一根本问题。
 4. **Action Guide**
    - 包含一句自我介绍 tagline、一句文化匹配表达和恰好 3 个针对当前岗位定制的收尾问题。
 
 分析正文使用中文，但保留上述 English terms。默认 Prompt 的更新只用于新安装或默认初始化；用户已经自定义的岗位准备 Prompt 不会被覆盖。
 
 兼容策略为“新生成严格、旧历史宽容”：新的 AI 生成结果必须同时包含原基础六字段和四组新结构；旧版仅含基础六字段的历史快照继续可读，并在界面标注为“旧版结构”。单条损坏快照只影响自身展示，不影响岗位详情与其他历史版本。
+
+发送前确认由主进程提供只读外发预览，不调用 AI、不写入历史。预览包含完整公司与岗位、原始 JD、当前岗位准备 Prompt、每个所选项目与问题档案，以及与实际 user message 使用相同序列化结果的岗位数据 JSON；长内容默认折叠、可逐项展开，并按纯文本安全呈现。Renderer 只提交岗位和资产 ID，不能提交或覆盖 Prompt。最终生成时主进程仍重新读取最新数据；界面必须明确说明预览后发生的变更可能导致最终外发不同，并引导用户重新预览。
 
 ### 4.4 面试记录与复盘
 

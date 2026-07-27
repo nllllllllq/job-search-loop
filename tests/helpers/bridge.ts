@@ -39,6 +39,7 @@ export interface JobSearchApiFake {
   readonly preparations: {
     list: ApiMock<JobSearchApi['preparations']['list']>;
     get: ApiMock<JobSearchApi['preparations']['get']>;
+    preview: ApiMock<JobSearchApi['preparations']['preview']>;
     generate: ApiMock<JobSearchApi['preparations']['generate']>;
   };
   readonly assets: {
@@ -157,6 +158,7 @@ export function createJobSearchFake(): JobSearchApiFake {
     preparations: {
       list: vi.fn<JobSearchApi['preparations']['list']>().mockResolvedValue([] as PreparationMaterial[]),
       get: vi.fn<JobSearchApi['preparations']['get']>().mockRejectedValue(new Error('未设置准备材料')),
+      preview: vi.fn<JobSearchApi['preparations']['preview']>().mockRejectedValue(new Error('未设置准备预览')),
       generate: vi.fn<JobSearchApi['preparations']['generate']>().mockRejectedValue(new Error('未设置准备材料')),
     },
     assets: {

@@ -15,6 +15,7 @@ import type {
   PositionDetail,
   PositionInput,
   PreparationGenerateInput,
+  PreparationOutboundPreview,
   PositionListItem,
   PreparationMaterial,
   ProcessStage,
@@ -54,6 +55,7 @@ export const CHANNELS = {
   preparations: {
     list: 'preparations:list',
     get: 'preparations:get',
+    preview: 'preparations:preview',
     generate: 'preparations:generate',
   },
   assets: {
@@ -120,6 +122,7 @@ export interface JobSearchApi {
   readonly preparations: {
     list(positionId: string): Promise<PreparationMaterial[]>;
     get(id: string): Promise<PreparationMaterial>;
+    preview(input: PreparationGenerateInput): Promise<PreparationOutboundPreview>;
     generate(input: PreparationGenerateInput): Promise<PreparationMaterial>;
   };
   readonly assets: {

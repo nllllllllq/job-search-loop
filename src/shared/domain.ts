@@ -78,6 +78,17 @@ export interface PreparationGenerateInput {
   questionIds: string[];
 }
 
+export interface PreparationOutboundPreview {
+  prompt: string;
+  position: {
+    company: string;
+    title: string;
+    rawJd: string;
+  };
+  selectedAssets: PreparationAssetsSnapshot;
+  jobDataJson: string;
+}
+
 export interface LegacyPreparationOutput {
   roleSummary: string;
   capabilityFocus: Array<{ name: string; reason: string }>;

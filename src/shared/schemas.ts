@@ -296,6 +296,32 @@ export const preparationAssetsSnapshotSchema = z.object({
   questions: z.array(questionSnapshotSchema).max(200),
 }).strict();
 
+export const preparationOutboundPreviewSchema = z.object({
+  prompt: z.string().max(200_000).refine(
+    (value) => value.trim().length > 0,
+    'Prompt 不能为空',
+  ),
+  position: z.object({
+    company: z.string().max(300),
+    title: z.string().max(300),
+    rawJd: z.string().max(100_000),
+  }).strict(),
+  selectedAssets: preparationAssetsSnapshotSchema,
+  jobDataJson: z.string().max(1_000_000),
+}).strict().superRefine((value, context) => {
+  const expected = JSON.stringify({
+    position: value.position,
+    selectedAssets: value.selectedAssets,
+  }, null, 2);
+  if (value.jobDataJson !== expected) {
+    context.addIssue({
+      code: 'custom',
+      path: ['jobDataJson'],
+      message: '外发 JSON 与预览快照不一致',
+    });
+  }
+});
+
 export const preparationInputSchema = preparationStoredFieldsSchema.superRefine(
   (value, context) => {
     try {

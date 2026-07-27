@@ -17,9 +17,6 @@ import { GeneratePreparationModal } from './GeneratePreparationModal';
 
 interface PreparationPanelProps {
   positionId: string;
-  company: string;
-  title: string;
-  rawJd: string;
 }
 
 function parseSnapshot<T>(
@@ -287,9 +284,6 @@ function PreparationVersion({ item }: { item: PreparationMaterial }) {
 
 export function PreparationPanel({
   positionId,
-  company,
-  title,
-  rawJd,
 }: PreparationPanelProps) {
   const toast = useToast();
   const [generateOpen, setGenerateOpen] = useState(false);
@@ -372,13 +366,10 @@ export function PreparationPanel({
 
       {generateOpen ? (
         <GeneratePreparationModal
-          company={company}
           onClose={() => setGenerateOpen(false)}
           onGenerated={generated}
           open
           positionId={positionId}
-          rawJdLength={rawJd.length}
-          title={title}
         />
       ) : null}
     </div>

@@ -59,6 +59,11 @@ describe('prompt templates repository', () => {
     expect(content).toContain('Crisis');
     expect(content).toContain('Dream Candidate Avatar');
     expect(content).toContain('Typical Day');
+    expect(content).toMatch(/任务时间线/);
+    expect(content).toMatch(/Superpower.*简单语言.*JD.*最大痛点/s);
+    expect(content).toMatch(/Success Story.*使用.*Superpower.*成功故事/s);
+    expect(content).toMatch(/Quote.*信念体系/s);
+    expect(content).toMatch(/Pain Profile.*岗位为何存在.*如何解决/s);
     expect(content).toContain('Action Guide');
     expect(content).toMatch(/恰好\s*3\s*个/);
     expect(content).toMatch(/中文/);

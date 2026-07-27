@@ -2181,6 +2181,77 @@ a {
   color: var(--primary);
 }
 
+.outbound-preview {
+  margin: 0 0 var(--space-4);
+}
+
+.outbound-preview > h4 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+}
+
+.outbound-preview > p {
+  margin: 0.35rem 0 var(--space-3);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.outbound-preview details {
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  background: rgba(255, 253, 247, 0.72);
+}
+
+.outbound-preview details:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+.outbound-preview summary {
+  padding: 0.75rem 0.9rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.outbound-preview details[open] summary {
+  border-bottom: 1px solid var(--line);
+  color: var(--primary);
+}
+
+.outbound-preview pre {
+  max-height: 19rem;
+  padding: 0.9rem;
+  margin: 0;
+  overflow: auto;
+  color: var(--ink-strong);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.outbound-preview dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.outbound-preview dl > div {
+  padding: 0.8rem 0.9rem;
+}
+
+.outbound-preview dt {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+}
+
+.outbound-preview dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+
 .payload-summary__contents {
   padding: 0;
   margin: 0 0 var(--space-4);
@@ -2415,6 +2486,7 @@ a {
   .version-narrative,
   .preparation-pairs,
   .preparation-framework-columns,
+  .outbound-preview dl,
   .payload-summary dl {
     grid-template-columns: 1fr;
   }

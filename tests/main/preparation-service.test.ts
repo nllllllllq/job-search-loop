@@ -144,6 +144,11 @@ describe('preparation service', () => {
       );
       const beforeProjects = fixture.assets.listProjects();
       const beforeQuestions = fixture.assets.listQuestions();
+      const outbound = fixture.service.preview({
+        positionId: fixture.position.id,
+        projectIds: [fixture.project.id],
+        questionIds: [fixture.question.id],
+      });
 
       const saved = await fixture.service.generate({
         positionId: fixture.position.id,
@@ -188,12 +193,62 @@ describe('preparation service', () => {
       expect(request.messages[1].content).toContain('Sustaining Success');
       expect(request.messages[1].content).toContain('必须恰好包含 5 项');
       expect(request.messages[1].content).toContain('必须恰好包含 3 个');
+      expect(request.messages[1].content).toContain('Typical Day 是任务时间线');
+      expect(request.messages[1].content).toContain('用简单语言说明如何解决 JD 最大痛点');
+      expect(request.messages[1].content).toContain('使用该 Superpower 的成功故事');
+      expect(request.messages[1].content).toContain('体现候选人的信念体系');
+      expect(request.messages[1].content).toContain('岗位为何存在，以及候选人如何解决');
+      expect(request.messages[1].content).toContain(outbound.jobDataJson);
       expect(schema.safeParse(fixture.output).success).toBe(true);
       expect(settings).toEqual({
         baseUrl: 'https://api.example.com/v1',
         model: 'model-a',
         apiKey: 'secret',
       });
+    } finally {
+      fixture.db.close();
+    }
+  });
+
+  it('previews the exact outbound snapshot without calling AI or writing history', () => {
+    const fixture = createFixture();
+    try {
+      const prompt = fixture.prompts.save(
+        'preparation',
+        '精确预览 Prompt\n第二行必须保留。',
+      );
+
+      const preview = fixture.service.preview({
+        positionId: fixture.position.id,
+        projectIds: [fixture.project.id],
+        questionIds: [fixture.question.id],
+      });
+
+      expect(preview).toMatchObject({
+        prompt: prompt.content,
+        position: {
+          company: fixture.position.company,
+          title: fixture.position.title,
+          rawJd: fixture.position.rawJd,
+        },
+        selectedAssets: {
+          projects: [fixture.project],
+          questions: [fixture.question],
+        },
+      });
+      expect(preview.jobDataJson).toBe(JSON.stringify({
+        position: {
+          company: fixture.position.company,
+          title: fixture.position.title,
+          rawJd: fixture.position.rawJd,
+        },
+        selectedAssets: {
+          projects: [fixture.project],
+          questions: [fixture.question],
+        },
+      }, null, 2));
+      expect(fixture.completeJson).not.toHaveBeenCalled();
+      expect(fixture.preparations.listByPosition(fixture.position.id)).toEqual([]);
     } finally {
       fixture.db.close();
     }
@@ -383,7 +438,8 @@ describe('preparation service', () => {
       listByPosition: vi.fn(() => []),
     };
     const generate = vi.fn();
-    registerPreparationHandlers(ipcMain, preparations, { generate });
+    const preview = vi.fn();
+    registerPreparationHandlers(ipcMain, preparations, { generate, preview });
 
     await expect(handlers.get(CHANNELS.preparations.generate)!({}, {
       positionId: POSITION_ID,
@@ -392,6 +448,20 @@ describe('preparation service', () => {
       prompt: 'renderer controlled prompt',
     })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
     expect(generate).not.toHaveBeenCalled();
+    await expect(handlers.get(CHANNELS.preparations.preview)!({}, {
+      positionId: POSITION_ID,
+      projectIds: ['not-a-uuid'],
+      questionIds: [],
+      prompt: 'renderer controlled prompt',
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(preview).not.toHaveBeenCalled();
+
+    preview.mockReturnValueOnce({ unexpected: true });
+    await expect(handlers.get(CHANNELS.preparations.preview)!({}, {
+      positionId: POSITION_ID,
+      projectIds: [],
+      questionIds: [],
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });
 
   it('rejects invalid list and get IDs at the main IPC boundary', async () => {

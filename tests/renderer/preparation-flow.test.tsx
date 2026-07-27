@@ -103,6 +103,30 @@ const preparation: PreparationMaterial = {
   createdAt: '2026-07-27T09:30:00.000Z',
 };
 
+const outboundPreview = {
+  prompt: '岗位准备 prompt',
+  position: {
+    company: detail.company,
+    title: detail.title,
+    rawJd: detail.rawJd,
+  },
+  selectedAssets: {
+    projects: [project],
+    questions: [question],
+  },
+  jobDataJson: JSON.stringify({
+    position: {
+      company: detail.company,
+      title: detail.title,
+      rawJd: detail.rawJd,
+    },
+    selectedAssets: {
+      projects: [project],
+      questions: [question],
+    },
+  }, null, 2),
+};
+
 function renderPreparation(
   configure?: (fake: JobSearchApiFake) => void,
 ) {
@@ -110,6 +134,7 @@ function renderPreparation(
   const fake = installJobSearchFake();
   fake.positions.get.mockResolvedValue(detail);
   fake.preparations.list.mockResolvedValue([]);
+  fake.preparations.preview.mockResolvedValue(outboundPreview);
   fake.assets.projects.list.mockResolvedValue([project]);
   fake.assets.questions.list.mockResolvedValue([question]);
   fake.ai.settings.get.mockResolvedValue({
@@ -163,6 +188,12 @@ describe('preparation flow', () => {
     await user.click(within(dialog).getByRole('checkbox', { name: /问题：如何设计用户研究/ }));
     await user.click(within(dialog).getByRole('button', { name: '查看发送摘要' }));
 
+    await waitFor(() => expect(fake.preparations.preview).toHaveBeenCalledWith({
+      positionId,
+      projectIds: [projectId],
+      questionIds: [questionId],
+    }));
+    expect(fake.assets.prompts.get).not.toHaveBeenCalled();
     expect(fake.preparations.generate).not.toHaveBeenCalled();
     expect(within(dialog).getByText(/公司与岗位名称的完整内容/)).toBeInTheDocument();
     expect(within(dialog).getByText(
@@ -179,7 +210,37 @@ describe('preparation flow', () => {
     expect(within(dialog).getByText(/model-a/)).toBeInTheDocument();
     expect(within(dialog).getByText(/生成时主进程会再次读取最新外部 AI 配置/))
       .toBeInTheDocument();
+    expect(within(dialog).getByText(/预览后数据发生变化/)).toBeInTheDocument();
     expect(within(dialog).queryByText(/secret|API Key/i)).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('region', {
+      name: '实际外发内容预览',
+    }).querySelectorAll('details[open]')).toHaveLength(0);
+
+    await user.click(within(dialog).getByText('完整公司与岗位'));
+    expect(within(dialog).getByText(detail.company)).toBeInTheDocument();
+    expect(within(dialog).getByText(detail.title)).toBeInTheDocument();
+    await user.click(within(dialog).getByText('完整原始 JD'));
+    expect(within(dialog).getByText((_content, element) => (
+      element?.tagName === 'PRE' && element.textContent === detail.rawJd
+    ))).toBeInTheDocument();
+    await user.click(within(dialog).getByText('当前岗位准备 Prompt 原文'));
+    expect(within(dialog).getByText('岗位准备 prompt')).toBeInTheDocument();
+    const projectSummary = within(dialog).getByText('项目档案 1：增长实验');
+    await user.click(projectSummary);
+    expect(within(projectSummary.closest('details')!).getByText(
+      /"background": "新用户不知道第一步做什么。"/,
+    ))
+      .toBeInTheDocument();
+    const questionSummary = within(dialog).getByText('问题档案 1：如何设计用户研究？');
+    await user.click(questionSummary);
+    expect(within(questionSummary.closest('details')!).getByText(
+      /"answerDraft": "先明确决策问题。"/,
+    ))
+      .toBeInTheDocument();
+    await user.click(within(dialog).getByText('实际请求中的岗位数据 JSON'));
+    expect(within(dialog).getByText((_content, element) => (
+      element?.tagName === 'PRE' && element.textContent === outboundPreview.jobDataJson
+    ))).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: '确认生成' }));
     await waitFor(() => expect(fake.preparations.generate).toHaveBeenCalledOnce());

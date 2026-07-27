@@ -2,6 +2,7 @@ import type {
   PreparationAssetsSnapshot,
   PreparationGenerateInput,
   PreparationMaterial,
+  PreparationOutboundPreview,
   PreparationOutput,
   Project,
   Question,
@@ -24,6 +25,7 @@ import {
 } from './ai-settings';
 
 export interface PreparationService {
+  preview(input: PreparationGenerateInput): PreparationOutboundPreview;
   generate(input: PreparationGenerateInput): Promise<PreparationMaterial>;
 }
 
@@ -86,9 +88,7 @@ function loadQuestions(
 }
 
 function buildRequest(
-  prompt: string,
-  position: { company: string; title: string; rawJd: string },
-  assets: PreparationAssetsSnapshot,
+  outbound: PreparationOutboundPreview,
 ): AiCompletionRequest {
   const outputContract = {
     roleSummary: 'string',
@@ -133,19 +133,11 @@ function buildRequest(
       questions: ['string', 'string', 'string'],
     },
   };
-  const boundedData = {
-    position: {
-      company: position.company,
-      title: position.title,
-      rawJd: position.rawJd,
-    },
-    selectedAssets: assets,
-  };
   return {
     messages: [
       {
         role: 'system',
-        content: prompt,
+        content: outbound.prompt,
       },
       {
         role: 'user',
@@ -157,15 +149,52 @@ function buildRequest(
           'projectTalkingPoints.projectId 只能使用本次所选项目的 id；没有合适项目时返回空数组。',
           'competencyMap 必须恰好包含 5 项，按关键词频率、位置与强调程度综合排序，rank 必须唯一且依次为 1 到 5。',
           'companyMap.stage 必须严格选择 Startup、Turnaround、Realignment、Sustaining Success 或 Crisis。',
+          'Dream Candidate Avatar 中：Typical Day 是任务时间线；Superpower 要用简单语言说明如何解决 JD 最大痛点；Success Story 是使用该 Superpower 的成功故事；Quote 要体现候选人的信念体系；Pain Profile 要解释岗位为何存在，以及候选人如何解决。',
           'actionGuide.questions 必须恰好包含 3 个针对当前岗位定制的收尾问题。',
           '分析内容使用中文，但保留框架中的 English terms。',
           '<job_data_json>',
-          JSON.stringify(boundedData, null, 2),
+          outbound.jobDataJson,
           '</job_data_json>',
         ].join('\n'),
       },
     ],
   };
+}
+
+function assembleOutbound(
+  input: PreparationGenerateInput,
+  positions: Pick<PositionsRepository, 'get'>,
+  assets: Pick<AssetsRepository, 'getProject' | 'getQuestion'>,
+  prompts: Pick<PromptsRepository, 'get'>,
+): PreparationOutboundPreview {
+  const parsed = preparationGenerateSchema.parse(input);
+  const position = positions.get(parsed.positionId);
+  const prompt = prompts.get('preparation');
+  const positionSnapshot = {
+    company: position.company,
+    title: position.title,
+    rawJd: position.rawJd,
+  };
+  const selectedAssets: PreparationAssetsSnapshot = {
+    projects: loadProjects(assets, unique(parsed.projectIds)),
+    questions: loadQuestions(assets, unique(parsed.questionIds)),
+  };
+  const outbound = {
+    prompt: prompt.content,
+    position: positionSnapshot,
+    selectedAssets,
+    jobDataJson: JSON.stringify({
+      position: positionSnapshot,
+      selectedAssets,
+    }, null, 2),
+  };
+  if (outbound.jobDataJson.length > 1_000_000) {
+    throw new RepositoryError(
+      'VALIDATION_ERROR',
+      '所选资产内容过多，请减少选择后重试。',
+    );
+  }
+  return outbound;
 }
 
 function validateProjectReferences(
@@ -195,26 +224,16 @@ export function createPreparationService({
   now = () => new Date().toISOString(),
 }: PreparationServiceDependencies): PreparationService {
   return {
+    preview(input) {
+      return assembleOutbound(input, positions, assets, prompts);
+    },
     async generate(input) {
-      const parsed = preparationGenerateSchema.parse(input);
-
       // Everything below is loaded before the network request. The exact same
       // in-memory values feed both the AI request and the persisted snapshot.
-      const position = positions.get(parsed.positionId);
-      const prompt = prompts.get('preparation');
-      const snapshot: PreparationAssetsSnapshot = {
-        projects: loadProjects(assets, unique(parsed.projectIds)),
-        questions: loadQuestions(assets, unique(parsed.questionIds)),
-      };
-      const assetsSnapshot = JSON.stringify(snapshot);
-      if (assetsSnapshot.length > 1_000_000) {
-        throw new RepositoryError(
-          'VALIDATION_ERROR',
-          '所选资产内容过多，请减少选择后重试。',
-        );
-      }
+      const outbound = assembleOutbound(input, positions, assets, prompts);
+      const assetsSnapshot = JSON.stringify(outbound.selectedAssets);
       const settings = await getSettings();
-      const request = buildRequest(prompt.content, position, snapshot);
+      const request = buildRequest(outbound);
 
       const candidate = await ai.completeJson(
         request,
@@ -228,7 +247,7 @@ export function createPreparationService({
           'AI 返回的准备材料未通过本地校验。',
         );
       }
-      validateProjectReferences(validated.data, snapshot.projects);
+      validateProjectReferences(validated.data, outbound.selectedAssets.projects);
       const outputSnapshot = JSON.stringify(validated.data);
       if (outputSnapshot.length > 1_000_000) {
         throw new AiServiceError(
@@ -240,9 +259,9 @@ export function createPreparationService({
 
       // This is deliberately the first and only write in the request.
       return preparations.create({
-        positionId: position.id,
-        rawJdSnapshot: position.rawJd,
-        promptSnapshot: prompt.content,
+        positionId: preparationGenerateSchema.parse(input).positionId,
+        rawJdSnapshot: outbound.position.rawJd,
+        promptSnapshot: outbound.prompt,
         assetsSnapshot,
         modelSnapshot: settings.model,
         outputSnapshot,

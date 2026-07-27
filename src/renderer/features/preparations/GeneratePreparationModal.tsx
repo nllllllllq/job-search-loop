@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type {
   PreparationGenerateInput,
   PreparationMaterial,
+  PreparationOutboundPreview,
 } from '../../../shared/domain';
 import type { AppError } from '../../../shared/ipc';
 import { Modal } from '../../components/Modal';
@@ -12,9 +13,6 @@ import { useToast } from '../../hooks/useToast';
 interface GeneratePreparationModalProps {
   open: boolean;
   positionId: string;
-  company: string;
-  title: string;
-  rawJdLength: number;
   onClose: () => void;
   onGenerated: (preparation: PreparationMaterial) => Promise<void>;
 }
@@ -35,21 +33,17 @@ function errorMessage(error: unknown): string {
 export function GeneratePreparationModal({
   open,
   positionId,
-  company,
-  title,
-  rawJdLength,
   onClose,
   onGenerated,
 }: GeneratePreparationModalProps) {
   const toast = useToast();
   const resources = useAsyncResource(async () => {
-    const [projects, questions, settings, prompt] = await Promise.all([
+    const [projects, questions, settings] = await Promise.all([
       window.jobSearch.assets.projects.list(),
       window.jobSearch.assets.questions.list(),
       window.jobSearch.ai.settings.get(),
-      window.jobSearch.assets.prompts.get('preparation'),
     ]);
-    return { projects, questions, settings, prompt };
+    return { projects, questions, settings };
   });
   const [projectIds, setProjectIds] = useState<string[]>([]);
   const [questionIds, setQuestionIds] = useState<string[]>([]);
@@ -57,10 +51,12 @@ export function GeneratePreparationModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PreparationOutboundPreview | null>(null);
   const projects = resources.data?.projects ?? [];
   const questions = resources.data?.questions ?? [];
   const settings = resources.data?.settings ?? null;
-  const prompt = resources.data?.prompt ?? null;
   const providerOrigin = (() => {
     if (!settings?.baseUrl) return null;
     try {
@@ -112,6 +108,21 @@ export function GeneratePreparationModal({
     }
   };
 
+  const showPreview = async () => {
+    if (previewing || !configured) return;
+    setPreviewing(true);
+    setPreviewError(null);
+    try {
+      const next = await window.jobSearch.preparations.preview(payload);
+      setPreview(next);
+      setStep('confirm');
+    } catch {
+      setPreviewError('无法读取实际外发内容，请检查所选档案后重试。当前未调用外部 AI。');
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const footer = resources.loading || resources.error ? (
     <button className="button button--quiet" onClick={close} type="button">取消</button>
   ) : step === 'select' ? (
@@ -119,14 +130,11 @@ export function GeneratePreparationModal({
       <button className="button button--quiet" onClick={close} type="button">取消</button>
       <button
         className="button button--primary"
-        disabled={!configured}
-        onClick={() => {
-          setError(null);
-          setStep('confirm');
-        }}
+        disabled={!configured || previewing}
+        onClick={() => void showPreview()}
         type="button"
       >
-        查看发送摘要
+        {previewing ? '正在生成预览…' : '查看发送摘要'}
       </button>
     </>
   ) : (
@@ -142,7 +150,10 @@ export function GeneratePreparationModal({
       <button
         className="button button--quiet"
         disabled={submitting}
-        onClick={() => setStep('select')}
+        onClick={() => {
+          setPreview(null);
+          setStep('select');
+        }}
         type="button"
       >
         返回选择
@@ -175,7 +186,7 @@ export function GeneratePreparationModal({
       {resources.error ? (
         <div className="preparation-modal__error" role="alert">
           <h3>生成信息载入失败</h3>
-          <p>暂时无法读取外部 AI 公开配置、Prompt 或可选资产。当前不会调用外部 AI。</p>
+          <p>暂时无法读取外部 AI 公开配置或可选资产。当前不会调用外部 AI。</p>
           <button
             className="button button--quiet"
             onClick={() => void resources.reload()}
@@ -200,6 +211,9 @@ export function GeneratePreparationModal({
           <p className="preparation-picker__notice">
             默认不选择任何资产。你可以用 0 项资产生成，只基于当前岗位的原始 JD。
           </p>
+          {previewError ? (
+            <p className="form-error" role="alert">{previewError}</p>
+          ) : null}
           <div className="link-picker-grid">
             <fieldset className="link-picker">
               <legend>选择项目档案</legend>
@@ -230,7 +244,7 @@ export function GeneratePreparationModal({
           </div>
         </div>
       ) : null}
-      {!resources.loading && !resources.error && step === 'confirm' ? (
+      {!resources.loading && !resources.error && step === 'confirm' && preview ? (
         <div className="payload-summary">
           <p className="section-label">OUTBOUND DATA / 发送前确认</p>
           <h3>预计载荷摘要</h3>
@@ -238,19 +252,55 @@ export function GeneratePreparationModal({
             目标服务：{providerOrigin} · 模型 {settings?.model}
           </p>
           <ul className="payload-summary__contents">
-            <li>公司与岗位名称的完整内容：{company} · {title}</li>
-            <li>原始 JD：完整原文（{rawJdLength} 个字符）</li>
+            <li>公司与岗位名称的完整内容</li>
+            <li>原始 JD：完整原文（{preview.position.rawJd.length} 个字符）</li>
             <li>
               当前「岗位准备」Prompt 模板完整内容
-              （{prompt?.content.length ?? 0} 个字符）
+              （{preview.prompt.length} 个字符）
             </li>
-            <li>{projectIds.length} 个所选项目档案的完整字段内容</li>
-            <li>{questionIds.length} 个所选问题条目的完整字段内容</li>
+            <li>{preview.selectedAssets.projects.length} 个所选项目档案的完整字段内容</li>
+            <li>{preview.selectedAssets.questions.length} 个所选问题条目的完整字段内容</li>
           </ul>
+          <section className="outbound-preview" aria-label="实际外发内容预览">
+            <h4>实际外发内容预览</h4>
+            <p>以下内容由主进程按实际请求的数据契约读取，默认折叠。</p>
+            <details>
+              <summary>完整公司与岗位</summary>
+              <dl>
+                <div><dt>公司</dt><dd className="user-text">{preview.position.company}</dd></div>
+                <div><dt>岗位</dt><dd className="user-text">{preview.position.title}</dd></div>
+              </dl>
+            </details>
+            <details>
+              <summary>完整原始 JD</summary>
+              <pre className="user-text">{preview.position.rawJd}</pre>
+            </details>
+            <details>
+              <summary>当前岗位准备 Prompt 原文</summary>
+              <pre className="user-text">{preview.prompt}</pre>
+            </details>
+            {preview.selectedAssets.projects.map((project, index) => (
+              <details key={project.id}>
+                <summary>项目档案 {index + 1}：{project.name}</summary>
+                <pre className="user-text">{JSON.stringify(project, null, 2)}</pre>
+              </details>
+            ))}
+            {preview.selectedAssets.questions.map((question, index) => (
+              <details key={question.id}>
+                <summary>问题档案 {index + 1}：{question.text}</summary>
+                <pre className="user-text">{JSON.stringify(question, null, 2)}</pre>
+              </details>
+            ))}
+            <details>
+              <summary>实际请求中的岗位数据 JSON</summary>
+              <pre className="user-text">{preview.jobDataJson}</pre>
+            </details>
+          </section>
           <p className="payload-summary__warning">
             确认后，列表中逐类说明的完整内容将发送到该外部 AI。
             生成时主进程会再次读取最新外部 AI 配置与「岗位准备」Prompt；
-            如果它们在弹窗打开后发生变化，以确认生成时读取的内容为准。
+            如果预览后数据发生变化，最终外发内容可能与本预览不同，
+            请返回选择并重新查看预览后再确认。
             应用只保存通过本地校验的生成结果与本次输入快照。
           </p>
           {error ? <p className="form-error" role="alert">{error}</p> : null}

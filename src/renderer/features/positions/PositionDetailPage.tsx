@@ -187,10 +187,7 @@ export function PositionDetailPage() {
         ) : null}
         {tab === 'preparation' ? (
           <PreparationPanel
-            company={position.company}
             positionId={position.id}
-            rawJd={position.rawJd}
-            title={position.title}
           />
         ) : null}
         {tab === 'interviews' ? (

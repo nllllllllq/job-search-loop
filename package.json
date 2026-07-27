@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:build-output": "npm run build && vitest run tests/build-output.test.ts",
+    "test:build-output": "npm run build && vitest run --config vitest.build-output.config.ts",
     "test:e2e": "npm run build && playwright test",
     "package:win": "npm run build && electron-builder --win nsis"
   },

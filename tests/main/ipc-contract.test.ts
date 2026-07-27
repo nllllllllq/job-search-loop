@@ -4,6 +4,7 @@ import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type { JobSearchApi } from '../../src/shared/ipc';
 import { CHANNELS } from '../../src/shared/ipc';
 import { registerPositionHandlers } from '../../src/main/ipc/positions';
+import { registerIpcHandlers } from '../../src/main/ipc/register';
 import { registerSystemHandlers } from '../../src/main/ipc/system';
 
 describe('typed IPC contract', () => {
@@ -70,5 +71,90 @@ describe('typed IPC contract', () => {
       handlers.get(CHANNELS.system.getDashboardSummary)!({}, { unexpected: true }),
     ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
     expect(dashboard.getSummary).not.toHaveBeenCalled();
+  });
+
+  it('registers handlers from injected repositories without a database or Electron singleton', async () => {
+    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+    const ipcMain = {
+      handle: (channel: string, handler: (event: unknown, payload: unknown) => unknown) => {
+        handlers.set(channel, handler);
+      },
+    };
+    const created = {
+      id: '4c10d827-2684-4bf0-9131-dd18b7ce8075',
+      company: '远山科技',
+      title: '产品经理',
+      interest: 5 as const,
+      rawJd: '负责产品规划',
+      currentStage: 'interested' as const,
+      finalResult: null,
+      createdAt: '2026-07-27T00:00:00.000Z',
+      updatedAt: '2026-07-27T00:00:00.000Z',
+    };
+    const positions = {
+      create: vi.fn(() => created),
+      update: vi.fn(),
+      get: vi.fn(),
+      getDetail: vi.fn(),
+      list: vi.fn(),
+      remove: vi.fn(),
+      listStages: vi.fn(),
+      upsertStage: vi.fn(),
+      reorderStages: vi.fn(),
+    };
+    const repositories = {
+      positions,
+      preparations: { create: vi.fn(), get: vi.fn(), listByPosition: vi.fn() },
+      interviews: {
+        create: vi.fn(),
+        update: vi.fn(),
+        get: vi.fn(),
+        listByPosition: vi.fn(),
+        saveSummary: vi.fn(),
+      },
+      assets: {
+        listProjects: vi.fn(),
+        getProject: vi.fn(),
+        saveProject: vi.fn(),
+        listQuestions: vi.fn(),
+        getQuestion: vi.fn(),
+        saveQuestion: vi.fn(),
+        listCapabilities: vi.fn(),
+        getCapability: vi.fn(),
+        saveCapability: vi.fn(),
+        listInsights: vi.fn(),
+        getInsight: vi.fn(),
+        saveInsight: vi.fn(),
+        listVersions: vi.fn(),
+      },
+      prompts: { list: vi.fn(), get: vi.fn(), save: vi.fn() },
+      proposals: {
+        list: vi.fn(),
+        get: vi.fn(),
+        create: vi.fn(),
+        accept: vi.fn(),
+        ignore: vi.fn(),
+      },
+      dashboard: { getSummary: vi.fn() },
+    };
+
+    registerIpcHandlers(ipcMain, repositories);
+    const createHandler = handlers.get(CHANNELS.positions.create);
+    expect(createHandler).toBeDefined();
+    await expect(createHandler!({}, {
+      company: '远山科技',
+      title: '产品经理',
+      interest: 5,
+      rawJd: '负责产品规划',
+    })).resolves.toEqual(created);
+    expect(positions.create).toHaveBeenCalledOnce();
+
+    await expect(createHandler!({}, {
+      company: '',
+      title: '产品经理',
+      interest: 5,
+      rawJd: '',
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(positions.create).toHaveBeenCalledOnce();
   });
 });

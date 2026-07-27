@@ -1,25 +1,75 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { createAssetsRepository } from '../repositories/assets';
-import { createDashboardRepository } from '../repositories/dashboard';
-import { createInterviewsRepository } from '../repositories/interviews';
-import { createPositionsRepository } from '../repositories/positions';
-import { createPreparationsRepository } from '../repositories/preparations';
-import { createPromptsRepository } from '../repositories/prompts';
-import { createProposalsRepository } from '../repositories/proposals';
+import {
+  createAssetsRepository,
+  type AssetsRepository,
+} from '../repositories/assets';
+import {
+  createDashboardRepository,
+  type DashboardRepository,
+} from '../repositories/dashboard';
+import {
+  createInterviewsRepository,
+  type InterviewsRepository,
+} from '../repositories/interviews';
+import {
+  createPositionsRepository,
+  type PositionsRepository,
+} from '../repositories/positions';
+import {
+  createPreparationsRepository,
+  type PreparationsRepository,
+} from '../repositories/preparations';
+import {
+  createPromptsRepository,
+  type PromptsRepository,
+} from '../repositories/prompts';
+import {
+  createProposalsRepository,
+  type ProposalsRepository,
+} from '../repositories/proposals';
 import { registerAssetHandlers } from './assets';
 import { registerPositionHandlers, registerPreparationHandlers } from './positions';
 import { registerReviewHandlers } from './reviews';
 import { registerSystemHandlers } from './system';
 import type { IpcMainRegistrar } from './common';
 
-export function registerIpcHandlers(ipcMain: IpcMainRegistrar, db: DatabaseSync): void {
-  const positions = createPositionsRepository(db);
-  const preparations = createPreparationsRepository(db);
-  const assets = createAssetsRepository(db);
-  const prompts = createPromptsRepository(db);
-  const interviews = createInterviewsRepository(db);
-  const proposals = createProposalsRepository(db);
-  const dashboard = createDashboardRepository(db);
+export type { IpcMainRegistrar } from './common';
+
+export interface RepositoryBundle {
+  positions: PositionsRepository;
+  preparations: PreparationsRepository;
+  interviews: InterviewsRepository;
+  assets: AssetsRepository;
+  prompts: PromptsRepository;
+  proposals: ProposalsRepository;
+  dashboard: DashboardRepository;
+}
+
+export function createRepositoryBundle(db: DatabaseSync): RepositoryBundle {
+  return {
+    positions: createPositionsRepository(db),
+    preparations: createPreparationsRepository(db),
+    interviews: createInterviewsRepository(db),
+    assets: createAssetsRepository(db),
+    prompts: createPromptsRepository(db),
+    proposals: createProposalsRepository(db),
+    dashboard: createDashboardRepository(db),
+  };
+}
+
+export function registerIpcHandlers(
+  ipcMain: IpcMainRegistrar,
+  repositories: RepositoryBundle,
+): void {
+  const {
+    positions,
+    preparations,
+    assets,
+    prompts,
+    interviews,
+    proposals,
+    dashboard,
+  } = repositories;
 
   registerPositionHandlers(ipcMain, positions);
   registerPreparationHandlers(ipcMain, preparations);

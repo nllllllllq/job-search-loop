@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database';
-import { registerIpcHandlers } from './ipc/register';
+import { createRepositoryBundle, registerIpcHandlers } from './ipc/register';
 
 function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -44,7 +44,8 @@ function closeDatabaseOnce(): void {
 
 app.whenReady().then(() => {
   database = openDatabase(join(app.getPath('userData'), 'job-search-loop.sqlite'));
-  registerIpcHandlers(ipcMain, database);
+  const repositories = createRepositoryBundle(database);
+  registerIpcHandlers(ipcMain, repositories);
   createMainWindow();
 
   app.on('activate', () => {

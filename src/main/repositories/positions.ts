@@ -13,11 +13,13 @@ import type {
 } from '../../shared/domain';
 import {
   canonicalStageSchema,
+  interviewReviewSnapshotSchema,
   positionInputSchema,
   processStageInputSchema,
 } from '../../shared/schemas';
 import {
   integer,
+  json,
   notFound,
   nullableText,
   RepositoryError,
@@ -81,6 +83,12 @@ function decodeInterview(value: unknown): Interview {
     transcript: text(data.transcript, 'transcript'),
     personalNotes: text(data.personal_notes, 'personal_notes'),
     summary: nullableText(data.summary, 'summary'),
+    reviewSnapshot: data.review_snapshot_json === null
+      ? null
+      : interviewReviewSnapshotSchema.parse(json(
+        data.review_snapshot_json,
+        'review_snapshot_json',
+      )),
     feedbackResult: nullableText(data.feedback_result, 'feedback_result'),
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),

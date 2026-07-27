@@ -2544,3 +2544,228 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Interview review loop — clipped field notes, optimized for long text. */
+.interview-panel,
+.review-center {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.interview-panel__header,
+.review-center__header {
+  align-items: end;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 2rem;
+  justify-content: space-between;
+  padding-bottom: 1.25rem;
+}
+
+.interview-panel__header h3,
+.review-center__header h2 {
+  margin: 0.25rem 0 0.4rem;
+}
+
+.interview-panel__header p:last-child,
+.review-center__header p:last-child {
+  color: var(--muted);
+  margin: 0;
+  max-width: 48rem;
+}
+
+.interview-list,
+.proposal-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.interview-card,
+.proposal-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: 0 0.45rem 1.4rem rgb(37 33 27 / 7%);
+  min-width: 0;
+  padding: clamp(1rem, 2.4vw, 1.6rem);
+  position: relative;
+}
+
+.interview-card::before,
+.proposal-card::before {
+  background: var(--accent);
+  content: "";
+  height: 2.5rem;
+  left: -1px;
+  position: absolute;
+  top: 1rem;
+  width: 3px;
+}
+
+.interview-card > header,
+.proposal-card__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.interview-card h4,
+.proposal-card h3 {
+  margin: 0.2rem 0 0;
+}
+
+.interview-card header p {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  margin: 0;
+}
+
+.interview-card section {
+  border-top: 1px dashed var(--line);
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.interview-card h5,
+.proposal-payload h4 {
+  color: var(--muted);
+  font-size: 0.76rem;
+  letter-spacing: 0.12em;
+  margin: 0 0 0.55rem;
+  text-transform: uppercase;
+}
+
+.interview-transcript,
+.interview-summary .user-text {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.interview-card__actions,
+.proposal-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.review-preview__provider {
+  background: var(--ink);
+  color: var(--surface);
+  display: inline-block;
+  font-family: var(--font-mono);
+  padding: 0.35rem 0.55rem;
+}
+
+.review-preview ul {
+  border-left: 2px solid var(--accent);
+  display: grid;
+  gap: 0.35rem;
+  padding-left: 1.5rem;
+}
+
+.segmented-control {
+  border: 1px solid var(--line-strong);
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.segmented-control button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0.65rem 0.85rem;
+}
+
+.segmented-control button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.review-section {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.review-section > h3 {
+  font-size: 0.85rem;
+  letter-spacing: 0.14em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.proposal-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 1rem 0;
+}
+
+.proposal-context > div {
+  border: 1px solid var(--line);
+  min-width: 0;
+  padding: 0.7rem;
+}
+
+.proposal-context dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.proposal-context dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.proposal-payload pre {
+  background: rgb(37 33 27 / 4%);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.proposal-resolved {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.form-error {
+  background: rgb(143 40 35 / 10%);
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  padding: 0.65rem 0.8rem;
+}
+
+.form-note {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 760px) {
+  .interview-panel__header,
+  .review-center__header,
+  .interview-card > header,
+  .proposal-card__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .proposal-context {
+    grid-template-columns: 1fr;
+  }
+
+  .interview-card__actions .button,
+  .proposal-card__actions .button {
+    flex: 1 1 auto;
+  }
+}

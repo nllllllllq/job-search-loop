@@ -77,6 +77,10 @@ export interface JobSearchApiFake {
       get: ApiMock<JobSearchApi['reviews']['interviews']['get']>;
       list: ApiMock<JobSearchApi['reviews']['interviews']['list']>;
     };
+    readonly review: {
+      preview: ApiMock<JobSearchApi['reviews']['review']['preview']>;
+      confirm: ApiMock<JobSearchApi['reviews']['review']['confirm']>;
+    };
     readonly proposals: {
       list: ApiMock<JobSearchApi['reviews']['proposals']['list']>;
       accept: ApiMock<JobSearchApi['reviews']['proposals']['accept']>;
@@ -195,6 +199,10 @@ export function createJobSearchFake(): JobSearchApiFake {
         update: vi.fn<JobSearchApi['reviews']['interviews']['update']>().mockRejectedValue(new Error('未设置面试')),
         get: vi.fn<JobSearchApi['reviews']['interviews']['get']>().mockRejectedValue(new Error('未设置面试')),
         list: vi.fn<JobSearchApi['reviews']['interviews']['list']>().mockResolvedValue([] as Interview[]),
+      },
+      review: {
+        preview: vi.fn<JobSearchApi['reviews']['review']['preview']>().mockRejectedValue(new Error('未设置复盘预览')),
+        confirm: vi.fn<JobSearchApi['reviews']['review']['confirm']>().mockRejectedValue(new Error('未设置复盘确认')),
       },
       proposals: {
         list: vi.fn<JobSearchApi['reviews']['proposals']['list']>().mockResolvedValue([] as ChangeProposal[]),

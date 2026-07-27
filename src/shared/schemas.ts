@@ -94,8 +94,8 @@ export const questionPayloadSchema = z.object({
   type: questionTypeSchema,
   text: z.string().trim().min(1).max(20_000),
   answerDraft: z.string().max(40_000).default(''),
-  projectIds: z.array(z.string().uuid()).default([]),
-  capabilityIds: z.array(z.string().uuid()).default([]),
+  projectIds: z.array(z.string().uuid()).max(100).default([]),
+  capabilityIds: z.array(z.string().uuid()).max(100).default([]),
   occurrenceCount: z.number().int().nonnegative().default(0),
   status: z.string().trim().min(1).max(80).default('active'),
 });
@@ -402,7 +402,8 @@ const interviewBaseSchema = z.object({
   positionId: idSchema,
   roundName: z.string().trim().min(1).max(120),
   interviewDate: isoDateSchema.nullable(),
-  transcript: z.string().max(1_000_000),
+  transcript: z.string().max(1_000_000)
+    .refine((value) => value.trim().length > 0, '面试文字记录不能为空'),
   personalNotes: z.string().max(100_000),
   feedbackResult: z.string().max(20_000).nullable(),
 });
@@ -446,8 +447,129 @@ export const proposalListSchema = z.object({
 
 export const proposalAcceptSchema = z.object({
   id: idSchema,
-  editedPayload: z.unknown(),
+  editedPayload: z.unknown().optional(),
 });
+
+const interviewReviewProposalSchema = z.object({
+  targetType: proposalTargetSchema,
+  targetId: idSchema.nullable(),
+  operation: proposalOperationSchema,
+  rationale: nonBlankSnapshotText(20_000),
+}).and(proposalPayloadSchema).superRefine((proposal, context) => {
+  if (proposal.operation === 'create' && proposal.targetId !== null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['targetId'],
+      message: '创建建议不能指定已有资产',
+    });
+  }
+  if (proposal.operation !== 'create' && proposal.targetId === null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['targetId'],
+      message: '更新或合并建议必须指定目标资产',
+    });
+  }
+});
+
+export const interviewReviewOutputSchema = z.object({
+  summary: nonBlankSnapshotText(80_000),
+  strengths: z.array(nonBlankSnapshotText(2_000)).max(20),
+  gaps: z.array(nonBlankSnapshotText(2_000)).max(20),
+  proposals: z.array(interviewReviewProposalSchema).max(50),
+}).strict();
+
+export const interviewReviewSnapshotSchema = z.object({
+  promptSnapshot: nonBlankSnapshotText(200_000),
+  modelSnapshot: nonBlankSnapshotText(500),
+  inputSnapshot: nonBlankSnapshotText(1_500_000),
+  output: interviewReviewOutputSchema,
+  reviewedAt: z.string().datetime(),
+}).strict();
+
+export const interviewSchema = z.object({
+  id: idSchema,
+  positionId: idSchema,
+  roundName: z.string().trim().min(1).max(120),
+  interviewDate: isoDateSchema.nullable(),
+  transcript: z.string().max(1_000_000),
+  personalNotes: z.string().max(100_000),
+  summary: z.string().max(200_000).nullable(),
+  reviewSnapshot: interviewReviewSnapshotSchema.nullable(),
+  feedbackResult: z.string().max(20_000).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+
+export const interviewListSchema = z.array(interviewSchema);
+
+function payloadForTarget(targetType: typeof proposalTargets[number], payload: unknown) {
+  switch (targetType) {
+    case 'project':
+      return projectPayloadSchema.safeParse(payload);
+    case 'question':
+      return questionPayloadSchema.safeParse(payload);
+    case 'capability':
+      return capabilityPayloadSchema.safeParse(payload);
+    case 'insight':
+      return insightPayloadSchema.safeParse(payload);
+  }
+}
+
+export const changeProposalSchema = z.object({
+  id: idSchema,
+  targetType: proposalTargetSchema,
+  targetId: idSchema.nullable(),
+  operation: proposalOperationSchema,
+  payload: z.unknown(),
+  rationale: nonBlankSnapshotText(20_000),
+  positionId: idSchema.nullable(),
+  interviewId: idSchema.nullable(),
+  status: proposalStatusSchema,
+  acceptedPayload: z.unknown().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  resolvedAt: z.string().datetime().nullable(),
+}).strict().superRefine((proposal, context) => {
+  if (!payloadForTarget(proposal.targetType, proposal.payload).success) {
+    context.addIssue({
+      code: 'custom',
+      path: ['payload'],
+      message: '建议内容与目标类型不匹配',
+    });
+  }
+  if (
+    proposal.acceptedPayload !== null
+    && !payloadForTarget(proposal.targetType, proposal.acceptedPayload).success
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['acceptedPayload'],
+      message: '已接受内容与目标类型不匹配',
+    });
+  }
+});
+
+export const changeProposalListSchema = z.array(changeProposalSchema);
+
+export const interviewReviewPreviewSchema = z.object({
+  token: idSchema,
+  provider: z.string().trim().min(1).max(500),
+  model: z.string().trim().min(1).max(500),
+  positionLabel: z.string().trim().min(1).max(500),
+  roundName: z.string().trim().min(1).max(120),
+  dataTypes: z.tuple([
+    z.literal('面试文字记录'),
+    z.literal('个人感受与补充'),
+    z.literal('岗位信息与原始 JD'),
+    z.literal('面试复盘 Prompt'),
+  ]),
+}).strict();
+
+export const interviewReviewResultSchema = z.object({
+  interview: interviewSchema,
+  proposals: changeProposalListSchema,
+}).strict();
 
 export const promptSaveSchema = z.object({
   kind: promptKindSchema,

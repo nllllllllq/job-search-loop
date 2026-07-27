@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
@@ -257,6 +257,14 @@ export function migrate(db: DatabaseSync): void {
       `);
     }
     if (version < 3) migrateLegacyProjectJson(db);
+    if (version < 4) {
+      const interviewsTable = db.prepare(`
+        SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'interviews'
+      `).get();
+      if (interviewsTable !== undefined) {
+        db.exec('ALTER TABLE interviews ADD COLUMN review_snapshot_json TEXT;');
+      }
+    }
     db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (error) {

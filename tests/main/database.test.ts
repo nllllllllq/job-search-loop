@@ -46,6 +46,9 @@ describe('database migrations', () => {
         'prompt_templates',
         'questions',
       ]);
+      expect(db.prepare('PRAGMA table_info(interviews)').all().map(
+        (column) => String(column.name),
+      )).toContain('review_snapshot_json');
       const templates = db.prepare(
         'SELECT id, kind, name, content FROM prompt_templates ORDER BY kind',
       ).all();

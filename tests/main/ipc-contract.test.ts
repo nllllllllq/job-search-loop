@@ -136,6 +136,7 @@ describe('typed IPC contract', () => {
         list: vi.fn(),
         get: vi.fn(),
         create: vi.fn(),
+        commitReview: vi.fn(),
         accept: vi.fn(),
         ignore: vi.fn(),
       },
@@ -194,6 +195,7 @@ describe('typed IPC contract', () => {
       list: vi.fn(),
       get: vi.fn(),
       create: vi.fn(),
+      commitReview: vi.fn(),
       accept: vi.fn(() => {
         throw new RepositoryError('CONFLICT', '建议已处理');
       }),

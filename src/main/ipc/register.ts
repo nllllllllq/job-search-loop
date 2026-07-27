@@ -36,6 +36,7 @@ import type { IpcMainRegistrar } from './common';
 import type { AiClient } from '../services/ai-client';
 import type { AiSettingsStore } from '../services/ai-settings';
 import { createPreparationService } from '../services/preparation';
+import { createInterviewReviewService } from '../services/interview-review';
 
 export type { IpcMainRegistrar } from './common';
 
@@ -94,7 +95,18 @@ export function registerIpcHandlers(
     : undefined;
   registerPreparationHandlers(ipcMain, preparations, preparationService);
   registerAssetHandlers(ipcMain, assets, prompts);
-  registerReviewHandlers(ipcMain, interviews, proposals);
+  const reviewService = ai
+    ? createInterviewReviewService({
+      positions,
+      interviews,
+      assets,
+      prompts,
+      proposals,
+      ai: ai.client,
+      getSettings: () => ai.settings.getPrivate(),
+    })
+    : undefined;
+  registerReviewHandlers(ipcMain, interviews, proposals, reviewService);
   registerSystemHandlers(ipcMain, dashboard);
   if (ai) registerAiHandlers(ipcMain, ai.settings, ai.client);
 }

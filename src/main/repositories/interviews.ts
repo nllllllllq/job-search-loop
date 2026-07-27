@@ -3,12 +3,16 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { Interview } from '../../shared/domain';
 import {
   interviewInputSchema,
+  interviewReviewSnapshotSchema,
   interviewSummarySchema,
   interviewUpdateSchema,
 } from '../../shared/schemas';
-import { notFound, nullableText, row, text } from './common';
+import { json, notFound, nullableText, row, text } from './common';
 
-export type InterviewInput = Omit<Interview, 'id' | 'summary' | 'createdAt' | 'updatedAt'>;
+export type InterviewInput = Omit<
+  Interview,
+  'id' | 'summary' | 'reviewSnapshot' | 'createdAt' | 'updatedAt'
+>;
 
 function decodeInterview(value: unknown): Interview {
   const data = row(value, 'interview');
@@ -20,6 +24,12 @@ function decodeInterview(value: unknown): Interview {
     transcript: text(data.transcript, 'transcript'),
     personalNotes: text(data.personal_notes, 'personal_notes'),
     summary: nullableText(data.summary, 'summary'),
+    reviewSnapshot: data.review_snapshot_json === null
+      ? null
+      : interviewReviewSnapshotSchema.parse(json(
+        data.review_snapshot_json,
+        'review_snapshot_json',
+      )),
     feedbackResult: nullableText(data.feedback_result, 'feedback_result'),
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),
@@ -47,8 +57,8 @@ export function createInterviewsRepository(db: DatabaseSync): InterviewsReposito
       db.prepare(`
         INSERT INTO interviews (
           id, position_id, round_name, interview_date, transcript, personal_notes,
-          summary, feedback_result, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          summary, review_snapshot_json, feedback_result, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         parsed.positionId,
@@ -56,6 +66,7 @@ export function createInterviewsRepository(db: DatabaseSync): InterviewsReposito
         parsed.interviewDate,
         parsed.transcript,
         parsed.personalNotes,
+        null,
         null,
         parsed.feedbackResult,
         now,

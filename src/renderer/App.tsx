@@ -8,23 +8,8 @@ import { PositionsPage } from './features/positions/PositionsPage';
 import { ProjectsPage } from './features/projects/ProjectsPage';
 import { QuestionsPage } from './features/questions/QuestionsPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { ReviewCenterPage } from './features/reviews/ReviewCenterPage';
 import { ToastProvider } from './hooks/useToast';
-
-interface PlaceholderConfig {
-  title: string;
-  body: string;
-  icon: string;
-  note: string;
-}
-
-const placeholders: Record<string, PlaceholderConfig> = {
-  reviews: {
-    title: '复盘从一次真实对话开始',
-    body: '面试结束后，这里将承接逐轮记录、个人判断与后续沉淀，保留当时最鲜活的细节。',
-    icon: '复',
-    note: '记录事实，再提炼方法',
-  },
-};
 
 function OverviewPage() {
   return (
@@ -68,24 +53,6 @@ function OverviewPage() {
   );
 }
 
-function PlaceholderPage({ config }: { config: PlaceholderConfig }) {
-  return (
-    <div className="placeholder-page">
-      <p className="section-label">模块导览 / FIELD NOTE</p>
-      <EmptyState
-        body={
-          <>
-            <p>{config.body}</p>
-            <p className="empty-state__note">{config.note}</p>
-          </>
-        }
-        icon={config.icon}
-        title={config.title}
-      />
-    </div>
-  );
-}
-
 function NotFoundPage() {
   return (
     <div className="placeholder-page">
@@ -116,10 +83,7 @@ export function App() {
               element={<PositionsPage />}
             />
             <Route path="/positions/:id" element={<PositionDetailPage />} />
-            <Route
-              path="/reviews"
-              element={<PlaceholderPage config={placeholders.reviews} />}
-            />
+            <Route path="/reviews" element={<ReviewCenterPage />} />
             <Route
               path="/projects"
               element={<ProjectsPage />}

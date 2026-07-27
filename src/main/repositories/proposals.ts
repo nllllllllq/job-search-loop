@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type {
   ChangeProposal,
   ChangeProposalInput,
+  InterviewReviewSnapshot,
   ProposalStatus,
   ProposalTarget,
 } from '../../shared/domain';
@@ -10,6 +11,8 @@ import {
   capabilityPayloadSchema,
   changeProposalInputSchema,
   insightPayloadSchema,
+  interviewReviewSnapshotSchema,
+  interviewSummarySchema,
   projectPayloadSchema,
   proposalOperationSchema,
   proposalStatusSchema,
@@ -190,7 +193,13 @@ export interface ProposalsRepository {
   list(status?: ProposalStatus): ChangeProposal[];
   get(id: string): ChangeProposal;
   create(input: ChangeProposalInput): ChangeProposal;
-  accept(id: string, editedPayload: unknown): ChangeProposal;
+  commitReview(
+    interviewId: string,
+    summary: string,
+    snapshot: InterviewReviewSnapshot,
+    inputs: ChangeProposalInput[],
+  ): ChangeProposal[];
+  accept(id: string, editedPayload?: unknown): ChangeProposal;
   ignore(id: string): ChangeProposal;
 }
 
@@ -199,6 +208,29 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
     const value = db.prepare('SELECT * FROM change_proposals WHERE id = ?').get(id);
     if (value === undefined) notFound('Proposal', id);
     return decodeProposal(value);
+  };
+  const insert = (input: ChangeProposalInput): ChangeProposal => {
+    const parsed = changeProposalInputSchema.parse(input);
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO change_proposals (
+        id, target_type, target_id, operation, payload_json, accepted_payload_json,
+        rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
+      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, 'pending', ?, ?, NULL)
+    `).run(
+      id,
+      parsed.targetType,
+      parsed.targetId,
+      parsed.operation,
+      JSON.stringify(parsed.payload),
+      parsed.rationale,
+      parsed.positionId,
+      parsed.interviewId,
+      now,
+      now,
+    );
+    return get(id);
   };
   return {
     list(status) {
@@ -212,27 +244,37 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
     },
     get,
     create(input) {
-      const parsed = changeProposalInputSchema.parse(input);
-      const id = randomUUID();
-      const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO change_proposals (
-          id, target_type, target_id, operation, payload_json, accepted_payload_json,
-          rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
-        ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, 'pending', ?, ?, NULL)
-      `).run(
-        id,
-        parsed.targetType,
-        parsed.targetId,
-        parsed.operation,
-        JSON.stringify(parsed.payload),
-        parsed.rationale,
-        parsed.positionId,
-        parsed.interviewId,
-        now,
-        now,
-      );
-      return get(id);
+      return insert(input);
+    },
+    commitReview(interviewId, summary, snapshot, inputs) {
+      return transaction(db, () => {
+        const parsedSummary = interviewSummarySchema.parse(summary);
+        const parsedSnapshot = interviewReviewSnapshotSchema.parse(snapshot);
+        const pending = row(db.prepare(`
+          SELECT COUNT(*) AS count
+          FROM change_proposals
+          WHERE interview_id = ? AND status = 'pending'
+        `).get(interviewId), 'pending interview proposals');
+        if (Number(pending.count) > 0) {
+          throw new RepositoryError(
+            'CONFLICT',
+            '这次面试仍有待确认变更，请先处理后再重新复盘。',
+          );
+        }
+        const now = new Date().toISOString();
+        const updated = db.prepare(`
+          UPDATE interviews
+          SET summary = ?, review_snapshot_json = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+          parsedSummary,
+          JSON.stringify(parsedSnapshot),
+          now,
+          interviewId,
+        );
+        if (updated.changes !== 1) notFound('Interview', interviewId);
+        return inputs.map(insert);
+      });
     },
     accept(id, editedPayload) {
       return transaction(db, () => {
@@ -240,13 +282,20 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
         if (proposal.status !== 'pending') {
           throw new RepositoryError('CONFLICT', '该变更建议已处理，不能重复操作');
         }
-        const payload = parsePayload(proposal.targetType, editedPayload);
+        const payload = parsePayload(
+          proposal.targetType,
+          editedPayload === undefined ? proposal.payload : editedPayload,
+        );
         const now = new Date().toISOString();
         let targetId = proposal.targetId;
         if (proposal.operation === 'create') {
           targetId = randomUUID();
           writeTarget(db, proposal.targetType, targetId, payload, true, now);
         } else {
+          // update and merge both carry a complete, locally validated final
+          // asset payload. "merge" is therefore not an implicit field merge:
+          // the user explicitly accepts the final representation shown in UI,
+          // while this transaction snapshots the retained prior asset.
           if (targetId === null) throw new Error('Proposal target ID is required');
           const previous = readTarget(db, proposal.targetType, targetId);
           const previousPayload = parsePayload(proposal.targetType, previous);
@@ -271,16 +320,22 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
       });
     },
     ignore(id) {
-      const proposal = get(id);
-      if (proposal.status !== 'pending') {
-        throw new RepositoryError('CONFLICT', '该变更建议已处理，不能重复操作');
-      }
-      const now = new Date().toISOString();
-      db.prepare(`
-        UPDATE change_proposals
-        SET status = 'ignored', updated_at = ?, resolved_at = ? WHERE id = ?
-      `).run(now, now, id);
-      return get(id);
+      return transaction(db, () => {
+        const proposal = get(id);
+        if (proposal.status !== 'pending') {
+          throw new RepositoryError('CONFLICT', '该变更建议已处理，不能重复操作');
+        }
+        const now = new Date().toISOString();
+        const result = db.prepare(`
+          UPDATE change_proposals
+          SET status = 'ignored', updated_at = ?, resolved_at = ?
+          WHERE id = ? AND status = 'pending'
+        `).run(now, now, id);
+        if (result.changes !== 1) {
+          throw new RepositoryError('CONFLICT', '该变更建议已处理，不能重复操作');
+        }
+        return get(id);
+      });
     },
   };
 }

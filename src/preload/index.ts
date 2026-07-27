@@ -4,7 +4,15 @@ import {
   aiConnectionResultSchema,
   aiPublicSettingsSchema,
   aiSettingsSaveSchema,
+  changeProposalListSchema,
+  changeProposalSchema,
   idSchema,
+  interviewInputSchema,
+  interviewListSchema,
+  interviewReviewPreviewSchema,
+  interviewReviewResultSchema,
+  interviewSchema,
+  interviewUpdateSchema,
   preparationGenerateSchema,
   preparationMaterialListSchema,
   preparationOutboundPreviewSchema,
@@ -161,21 +169,48 @@ const api = frozen<JobSearchApi>({
   }),
   reviews: frozen<JobSearchApi['reviews']>({
     interviews: frozen<JobSearchApi['reviews']['interviews']>({
-      create: (input) => invoke(CHANNELS.reviews.interviews.create, input),
-      update: (id, input) => invoke(CHANNELS.reviews.interviews.update, { id, input }),
-      get: (id) => invoke(CHANNELS.reviews.interviews.get, id),
-      list: (positionId) => invoke(CHANNELS.reviews.interviews.list, positionId),
+      create: async (input) => interviewSchema.parse(await invoke(
+        CHANNELS.reviews.interviews.create,
+        interviewInputSchema.parse(input),
+      )),
+      update: async (id, input) => interviewSchema.parse(await invoke(
+        CHANNELS.reviews.interviews.update,
+        { id: idSchema.parse(id), input: interviewUpdateSchema.parse(input) },
+      )),
+      get: async (id) => interviewSchema.parse(await invoke(
+        CHANNELS.reviews.interviews.get,
+        idSchema.parse(id),
+      )),
+      list: async (positionId) => interviewListSchema.parse(await invoke(
+        CHANNELS.reviews.interviews.list,
+        idSchema.parse(positionId),
+      )),
+    }),
+    review: frozen<JobSearchApi['reviews']['review']>({
+      preview: async (interviewId) => interviewReviewPreviewSchema.parse(await invoke(
+        CHANNELS.reviews.review.preview,
+        idSchema.parse(interviewId),
+      )),
+      confirm: async (token) => interviewReviewResultSchema.parse(await invoke(
+        CHANNELS.reviews.review.confirm,
+        idSchema.parse(token),
+      )),
     }),
     proposals: frozen<JobSearchApi['reviews']['proposals']>({
-      list: (status) => invoke(
+      list: async (status) => changeProposalListSchema.parse(await invoke(
         CHANNELS.reviews.proposals.list,
         status ? { status } : undefined,
-      ),
-      accept: (id, editedPayload) => invoke(
+      )),
+      accept: async (id, editedPayload) => changeProposalSchema.parse(await invoke(
         CHANNELS.reviews.proposals.accept,
-        { id, editedPayload },
-      ),
-      ignore: (id) => invoke(CHANNELS.reviews.proposals.ignore, id),
+        editedPayload === undefined
+          ? { id: idSchema.parse(id) }
+          : { id: idSchema.parse(id), editedPayload },
+      )),
+      ignore: async (id) => changeProposalSchema.parse(await invoke(
+        CHANNELS.reviews.proposals.ignore,
+        idSchema.parse(id),
+      )),
     }),
   }),
   system: frozen<JobSearchApi['system']>({

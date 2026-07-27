@@ -152,9 +152,50 @@ export interface Interview {
   transcript: string;
   personalNotes: string;
   summary: string | null;
+  reviewSnapshot: InterviewReviewSnapshot | null;
   feedbackResult: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface InterviewReviewOutput {
+  summary: string;
+  strengths: string[];
+  gaps: string[];
+  proposals: Array<{
+    targetType: ProposalTarget;
+    targetId: string | null;
+    operation: ProposalOperation;
+    rationale: string;
+    payload: unknown;
+  }>;
+}
+
+export interface InterviewReviewSnapshot {
+  promptSnapshot: string;
+  modelSnapshot: string;
+  inputSnapshot: string;
+  output: InterviewReviewOutput;
+  reviewedAt: string;
+}
+
+export interface InterviewReviewPreview {
+  token: string;
+  provider: string;
+  model: string;
+  positionLabel: string;
+  roundName: string;
+  dataTypes: [
+    '面试文字记录',
+    '个人感受与补充',
+    '岗位信息与原始 JD',
+    '面试复盘 Prompt',
+  ];
+}
+
+export interface InterviewReviewResult {
+  interview: Interview;
+  proposals: ChangeProposal[];
 }
 
 export interface ProjectInput {

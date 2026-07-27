@@ -11,6 +11,8 @@ import type {
   Insight,
   InsightInput,
   Interview,
+  InterviewReviewPreview,
+  InterviewReviewResult,
   Position,
   PositionDetail,
   PositionInput,
@@ -32,7 +34,7 @@ import type {
 } from './domain';
 export type InterviewEditInput = Omit<
   Interview,
-  'id' | 'summary' | 'createdAt' | 'updatedAt'
+  'id' | 'summary' | 'reviewSnapshot' | 'createdAt' | 'updatedAt'
 >;
 
 export const CHANNELS = {
@@ -72,6 +74,10 @@ export const CHANNELS = {
       update: 'reviews:interviews:update',
       get: 'reviews:interviews:get',
       list: 'reviews:interviews:list',
+    },
+    review: {
+      preview: 'reviews:review:preview',
+      confirm: 'reviews:review:confirm',
     },
     proposals: {
       list: 'reviews:proposals:list',
@@ -160,9 +166,13 @@ export interface JobSearchApi {
       get(id: string): Promise<Interview>;
       list(positionId: string): Promise<Interview[]>;
     };
+    readonly review: {
+      preview(interviewId: string): Promise<InterviewReviewPreview>;
+      confirm(token: string): Promise<InterviewReviewResult>;
+    };
     readonly proposals: {
       list(status?: ProposalStatus): Promise<ChangeProposal[]>;
-      accept(id: string, editedPayload: unknown): Promise<ChangeProposal>;
+      accept(id: string, editedPayload?: unknown): Promise<ChangeProposal>;
       ignore(id: string): Promise<ChangeProposal>;
     };
   };

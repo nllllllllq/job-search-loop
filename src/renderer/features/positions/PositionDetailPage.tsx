@@ -10,6 +10,7 @@ import { useToast } from '../../hooks/useToast';
 import { PositionEditor } from './PositionEditor';
 import { StageTimeline } from './StageTimeline';
 import { PreparationPanel } from '../preparations/PreparationPanel';
+import { InterviewPanel } from '../interviews/InterviewPanel';
 
 type DetailTab = 'overview' | 'raw-jd' | 'process' | 'preparation' | 'interviews';
 
@@ -191,7 +192,7 @@ export function PositionDetailPage() {
           />
         ) : null}
         {tab === 'interviews' ? (
-          <EmptyState body="逐轮面试记录会在后续功能中出现在这里。" icon="面" title="还没有面试记录" />
+          <InterviewPanel positionId={position.id} />
         ) : null}
       </section>
 

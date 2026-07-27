@@ -14,6 +14,27 @@ interface ModalProps {
   footer?: ReactNode;
 }
 
+let bodyScrollLockCount = 0;
+let originalBodyOverflow = '';
+
+function lockBodyScroll() {
+  if (bodyScrollLockCount === 0) {
+    originalBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+  }
+  bodyScrollLockCount += 1;
+}
+
+function unlockBodyScroll() {
+  if (bodyScrollLockCount === 0) return;
+
+  bodyScrollLockCount -= 1;
+  if (bodyScrollLockCount === 0) {
+    document.body.style.overflow = originalBodyOverflow;
+    originalBodyOverflow = '';
+  }
+}
+
 export function Modal({
   open,
   onClose,
@@ -46,11 +67,8 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    lockBodyScroll();
+    return unlockBodyScroll;
   }, [open]);
 
   const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
@@ -65,6 +83,9 @@ export function Modal({
       onCancel={(event) => {
         event.preventDefault();
         onClose();
+      }}
+      onClose={() => {
+        if (open) onClose();
       }}
       onClick={handleBackdropClick}
       ref={dialogRef}

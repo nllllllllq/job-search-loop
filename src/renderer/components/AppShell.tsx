@@ -1,14 +1,14 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 export const navigation = [
-  { code: 'OV', label: '总览', to: '/' },
-  { code: 'PO', label: '岗位', to: '/positions' },
-  { code: 'RV', label: '复盘中心', to: '/reviews' },
-  { code: 'PR', label: '项目档案', to: '/projects' },
-  { code: 'QU', label: '问题库', to: '/questions' },
-  { code: 'IN', label: '随想与心得', to: '/insights' },
-  { code: 'ST', label: '设置', to: '/settings' },
+  { code: 'OV', label: '总览', shortLabel: '总览', to: '/' },
+  { code: 'PO', label: '岗位', shortLabel: '岗位', to: '/positions' },
+  { code: 'RV', label: '复盘中心', shortLabel: '复盘', to: '/reviews' },
+  { code: 'PR', label: '项目档案', shortLabel: '项目', to: '/projects' },
+  { code: 'QU', label: '问题库', shortLabel: '题库', to: '/questions' },
+  { code: 'IN', label: '随想与心得', shortLabel: '随想', to: '/insights' },
+  { code: 'ST', label: '设置', shortLabel: '设置', to: '/settings' },
 ] as const;
 
 interface AppShellProps {
@@ -21,6 +21,16 @@ export function AppShell({ children }: AppShellProps) {
     pathname.toLowerCase().replace(/\/+$/, '') || '/';
   const currentPage = navigation.find(({ to }) => to === normalizedPathname);
   const title = currentPage?.label ?? '未找到页面';
+  const documentTitle =
+    title === '总览' ? '求职闭环' : `${title} · 求职闭环`;
+
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = documentTitle;
+    return () => {
+      document.title = previousTitle;
+    };
+  }, [documentTitle]);
 
   const skipToContent = (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
@@ -50,7 +60,7 @@ export function AppShell({ children }: AppShellProps) {
         </div>
         <nav aria-label="工作区">
           <ul className="navigation-list">
-            {navigation.map(({ code, label, to }, index) => (
+            {navigation.map(({ code, label, shortLabel, to }, index) => (
               <li key={to}>
                 <NavLink
                   aria-label={label}
@@ -64,6 +74,12 @@ export function AppShell({ children }: AppShellProps) {
                     {String(index + 1).padStart(2, '0')}
                   </span>
                   <span className="navigation-label">{label}</span>
+                  <span
+                    className="navigation-short-label"
+                    aria-hidden="true"
+                  >
+                    {shortLabel}
+                  </span>
                   <span className="navigation-code" aria-hidden="true">
                     {code}
                   </span>

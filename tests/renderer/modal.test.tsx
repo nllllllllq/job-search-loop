@@ -43,4 +43,109 @@ describe('Modal', () => {
 
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it('notifies the controller when the native dialog closes', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open onClose={onClose} title="编辑岗位">
+        <form method="dialog">
+          <button type="submit">完成</button>
+        </form>
+      </Modal>,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: '编辑岗位' });
+    dialog.removeAttribute('open');
+    fireEvent(dialog, new Event('close'));
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('does not notify again when a controlled close synchronizes the dialog', () => {
+    const onClose = vi.fn();
+    const view = render(
+      <Modal open onClose={onClose} title="编辑岗位">
+        表单内容
+      </Modal>,
+    );
+    const dialog = screen.getByRole('dialog', { name: '编辑岗位' });
+
+    view.rerender(
+      <Modal open={false} onClose={onClose} title="编辑岗位">
+        表单内容
+      </Modal>,
+    );
+    fireEvent(dialog, new Event('close'));
+
+    expect(dialog).not.toHaveAttribute('open');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('requests close once when the backdrop is clicked', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open onClose={onClose} title="编辑岗位">
+        表单内容
+      </Modal>,
+    );
+
+    fireEvent.click(screen.getByRole('dialog', { name: '编辑岗位' }));
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('restores body overflow only after the final stacked modal closes', () => {
+    document.body.style.overflow = 'auto';
+    const view = render(
+      <>
+        <Modal open onClose={() => undefined} title="第一层">
+          第一层内容
+        </Modal>
+        <Modal open onClose={() => undefined} title="第二层">
+          第二层内容
+        </Modal>
+      </>,
+    );
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    view.rerender(
+      <>
+        <Modal open={false} onClose={() => undefined} title="第一层">
+          第一层内容
+        </Modal>
+        <Modal open onClose={() => undefined} title="第二层">
+          第二层内容
+        </Modal>
+      </>,
+    );
+    expect(document.body.style.overflow).toBe('hidden');
+
+    view.rerender(
+      <>
+        <Modal open={false} onClose={() => undefined} title="第一层">
+          第一层内容
+        </Modal>
+        <Modal open={false} onClose={() => undefined} title="第二层">
+          第二层内容
+        </Modal>
+      </>,
+    );
+    expect(document.body.style.overflow).toBe('auto');
+    document.body.style.overflow = '';
+  });
+
+  it('restores body overflow when an open modal unmounts', () => {
+    document.body.style.overflow = 'scroll';
+    const view = render(
+      <Modal open onClose={() => undefined} title="编辑岗位">
+        表单内容
+      </Modal>,
+    );
+
+    expect(document.body.style.overflow).toBe('hidden');
+    view.unmount();
+    expect(document.body.style.overflow).toBe('scroll');
+    document.body.style.overflow = '';
+  });
 });

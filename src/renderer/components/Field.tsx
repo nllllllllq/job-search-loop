@@ -1,5 +1,6 @@
 import {
   cloneElement,
+  type ComponentPropsWithoutRef,
   type ReactElement,
   type ReactNode,
   useId,
@@ -12,9 +13,18 @@ interface FieldControlProps {
   required?: boolean;
 }
 
-interface FieldProps {
+/**
+ * Field deliberately accepts intrinsic controls only so generated ids and
+ * accessibility attributes always reach the focusable DOM element.
+ */
+export type NativeFieldControl =
+  | ReactElement<ComponentPropsWithoutRef<'input'>, 'input'>
+  | ReactElement<ComponentPropsWithoutRef<'textarea'>, 'textarea'>
+  | ReactElement<ComponentPropsWithoutRef<'select'>, 'select'>;
+
+export interface FieldProps {
   label: ReactNode;
-  children: ReactElement<FieldControlProps>;
+  children: NativeFieldControl;
   hint?: ReactNode;
   error?: ReactNode;
   required?: boolean;
@@ -27,23 +37,33 @@ export function Field({
   error,
   required = false,
 }: FieldProps) {
+  if (
+    typeof children.type !== 'string' ||
+    !['input', 'textarea', 'select'].includes(children.type)
+  ) {
+    throw new Error(
+      'Field only accepts a native input, textarea, or select element.',
+    );
+  }
+
+  const nativeControl = children as ReactElement<FieldControlProps>;
   const generatedId = useId();
-  const controlId = children.props.id ?? `field-${generatedId}`;
+  const controlId = nativeControl.props.id ?? `field-${generatedId}`;
   const hintId = hint ? `${controlId}-hint` : undefined;
   const errorId = error ? `${controlId}-error` : undefined;
   const describedBy = [
-    children.props['aria-describedby'],
+    nativeControl.props['aria-describedby'],
     hintId,
     errorId,
   ]
     .filter(Boolean)
     .join(' ') || undefined;
 
-  const control = cloneElement(children, {
+  const control = cloneElement(nativeControl, {
     id: controlId,
-    required: required || children.props.required,
+    required: required || nativeControl.props.required,
     'aria-describedby': describedBy,
-    'aria-invalid': error ? true : children.props['aria-invalid'],
+    'aria-invalid': error ? true : nativeControl.props['aria-invalid'],
   });
 
   return (

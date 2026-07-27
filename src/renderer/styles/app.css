@@ -217,6 +217,10 @@ a {
   font-weight: 600;
 }
 
+.navigation-short-label {
+  display: none;
+}
+
 .sidebar__footer {
   display: flex;
   gap: 0.65rem;
@@ -769,8 +773,21 @@ a {
   .navigation-link {
     display: grid;
     grid-template-columns: 1fr;
+    gap: 0.1rem;
     place-items: center;
     padding-inline: 0.35rem;
+  }
+
+  .navigation-short-label {
+    display: block;
+    color: rgba(244, 240, 230, 0.78);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+
+  .navigation-link--active .navigation-short-label {
+    color: #fffdf7;
   }
 
   .navigation-link::before {

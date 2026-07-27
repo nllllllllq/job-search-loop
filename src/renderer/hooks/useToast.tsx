@@ -107,7 +107,7 @@ export function ToastProvider({
               {toast.message}
             </span>
             <button
-              aria-label="关闭通知"
+              aria-label={`关闭通知：${toast.message}`}
               className="toast__close"
               onClick={() => dismiss(toast.id)}
               type="button"

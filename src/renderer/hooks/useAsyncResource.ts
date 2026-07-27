@@ -20,7 +20,7 @@ export function useAsyncResource<T>(
   loader: () => Promise<T>,
   dependencies: DependencyList = [],
 ): AsyncResource<T> {
-  const [data, setData] = useState<T | null>(null);
+  const [data, setDataState] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const loaderRef = useRef(loader);
@@ -36,7 +36,7 @@ export function useAsyncResource<T>(
     try {
       const result = await loaderRef.current();
       if (mountedRef.current && requestId === requestIdRef.current) {
-        setData(result);
+        setDataState(result);
         setLoading(false);
       }
       return result;
@@ -49,6 +49,13 @@ export function useAsyncResource<T>(
       }
       return undefined;
     }
+  }, []);
+
+  const setData = useCallback<Dispatch<SetStateAction<T | null>>>((value) => {
+    requestIdRef.current += 1;
+    setDataState(value);
+    setError(null);
+    setLoading(false);
   }, []);
 
   useEffect(() => {

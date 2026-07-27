@@ -73,4 +73,77 @@ describe('useAsyncResource', () => {
 
     expect(result.current.data).toBe('最新结果');
   });
+
+  it('keeps manual data authoritative over a pending request', async () => {
+    const request = deferred<string>();
+    const { result } = renderHook(() => useAsyncResource(() => request.promise, []));
+
+    act(() => {
+      result.current.setData('手动结果');
+    });
+
+    expect(result.current.data).toBe('手动结果');
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+
+    await act(async () => {
+      request.resolve('迟到结果');
+      await request.promise;
+    });
+
+    expect(result.current.data).toBe('手动结果');
+  });
+
+  it('clears a previous error when data is set manually', async () => {
+    const { result } = renderHook(() =>
+      useAsyncResource<string>(
+        () => Promise.reject(new Error('加载失败')),
+        [],
+      ),
+    );
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+
+    act(() => {
+      result.current.setData('本地结果');
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.data).toBe('本地结果');
+  });
+
+  it('reloads when dependencies change and uses the latest loader', async () => {
+    const loader = vi.fn((key: number) => Promise.resolve(`结果 ${key}`));
+    const { result, rerender } = renderHook(
+      ({ resourceKey }) =>
+        useAsyncResource(() => loader(resourceKey), [resourceKey]),
+      { initialProps: { resourceKey: 1 } },
+    );
+    await waitFor(() => expect(result.current.data).toBe('结果 1'));
+
+    rerender({ resourceKey: 2 });
+    await waitFor(() => expect(result.current.data).toBe('结果 2'));
+
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    expect(loader).toHaveBeenCalledTimes(3);
+    expect(loader).toHaveBeenLastCalledWith(2);
+  });
+
+  it('ignores a pending request after unmount', async () => {
+    const request = deferred<string>();
+    const { result, unmount } = renderHook(() =>
+      useAsyncResource(() => request.promise, []),
+    );
+
+    unmount();
+    await act(async () => {
+      request.resolve('卸载后的结果');
+      await request.promise;
+    });
+
+    expect(result.current.data).toBeNull();
+  });
 });

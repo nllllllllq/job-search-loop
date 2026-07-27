@@ -42,7 +42,7 @@ describe('desktop navigation', () => {
 
   it.each(['#/positions/', '#/POSITIONS'])(
     'keeps the shell title aligned with the matched route at %s',
-    (hash) => {
+    async (hash) => {
       window.location.hash = hash;
       render(<App />);
 
@@ -50,7 +50,7 @@ describe('desktop navigation', () => {
         screen.getByRole('heading', { level: 1, name: '岗位' }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('heading', { level: 2, name: '还没有岗位记录' }),
+        await screen.findByRole('heading', { level: 2, name: '还没有岗位记录' }),
       ).toBeInTheDocument();
     },
   );

@@ -20,6 +20,28 @@ describe('shared schemas', () => {
     expect(isoDateSchema.safeParse('2026-02-30').success).toBe(false);
   });
 
+  it('trims position labels but preserves meaningful raw JD whitespace', () => {
+    const parsed = positionInputSchema.parse({
+      company: ' 远山科技 ',
+      title: ' 产品经理 ',
+      interest: 5,
+      rawJd: '  第一行\n第二行  ',
+    });
+
+    expect(parsed).toEqual({
+      company: '远山科技',
+      title: '产品经理',
+      interest: 5,
+      rawJd: '  第一行\n第二行  ',
+    });
+    expect(positionInputSchema.safeParse({
+      company: '远山科技',
+      title: '产品经理',
+      interest: 5,
+      rawJd: ' \n\t ',
+    }).success).toBe(false);
+  });
+
   it('requires target IDs for update and merge proposals only', () => {
     const targetId = '7c82c1d8-9f2c-4d69-891c-ea3fcb873210';
     const base = {

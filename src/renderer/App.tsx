@@ -1,6 +1,8 @@
 import { HashRouter, Link, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { EmptyState } from './components/EmptyState';
+import { PositionDetailPage } from './features/positions/PositionDetailPage';
+import { PositionsPage } from './features/positions/PositionsPage';
 import { ToastProvider } from './hooks/useToast';
 
 interface PlaceholderConfig {
@@ -11,12 +13,6 @@ interface PlaceholderConfig {
 }
 
 const placeholders: Record<string, PlaceholderConfig> = {
-  positions: {
-    title: '还没有岗位记录',
-    body: '未来可在这里整理目标公司、职位描述与流程阶段，让每一次推进都有清晰的上下文。',
-    icon: '岗',
-    note: '目标 → 投递 → 测评 → 面试 → 结果',
-  },
   reviews: {
     title: '复盘从一次真实对话开始',
     body: '面试结束后，这里将承接逐轮记录、个人判断与后续沉淀，保留当时最鲜活的细节。',
@@ -136,8 +132,9 @@ export function App() {
             <Route path="/" element={<OverviewPage />} />
             <Route
               path="/positions"
-              element={<PlaceholderPage config={placeholders.positions} />}
+              element={<PositionsPage />}
             />
+            <Route path="/positions/:id" element={<PositionDetailPage />} />
             <Route
               path="/reviews"
               element={<PlaceholderPage config={placeholders.reviews} />}

@@ -19,7 +19,10 @@ export function AppShell({ children }: AppShellProps) {
   const { pathname } = useLocation();
   const normalizedPathname =
     pathname.toLowerCase().replace(/\/+$/, '') || '/';
-  const currentPage = navigation.find(({ to }) => to === normalizedPathname);
+  const currentPage = navigation.find(({ to }) => (
+    to === normalizedPathname
+    || (to !== '/' && normalizedPathname.startsWith(`${to}/`))
+  ));
   const title = currentPage?.label ?? '未找到页面';
   const documentTitle =
     title === '总览' ? '求职闭环' : `${title} · 求职闭环`;

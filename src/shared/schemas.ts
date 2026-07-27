@@ -34,7 +34,10 @@ export const positionInputSchema = z.object({
   company: z.string().trim().min(1).max(120),
   title: z.string().trim().min(1).max(120),
   interest: interestSchema,
-  rawJd: z.string().min(1).max(100_000),
+  rawJd: z.string()
+    .min(1)
+    .max(100_000)
+    .refine((value) => value.trim().length > 0, '原始 JD 不能为空'),
 });
 
 export const processStageInputSchema = z.object({

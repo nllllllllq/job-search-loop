@@ -12,7 +12,12 @@ import type {
   ProcessStage,
   ProcessStageInput,
 } from '../../shared/domain';
-import { canonicalStageSchema, positionInputSchema, processStageInputSchema } from '../../shared/schemas';
+import {
+  canonicalStageSchema,
+  positionInputSchema,
+  preparationMaterialSchema,
+  processStageInputSchema,
+} from '../../shared/schemas';
 import {
   integer,
   notFound,
@@ -70,7 +75,7 @@ function decodeStage(value: unknown): ProcessStage {
 
 function decodePreparation(value: unknown): PreparationMaterial {
   const data = row(value, 'preparation');
-  return {
+  return preparationMaterialSchema.parse({
     id: text(data.id, 'id'),
     positionId: text(data.position_id, 'position_id'),
     rawJdSnapshot: text(data.raw_jd_snapshot, 'raw_jd_snapshot'),
@@ -80,7 +85,7 @@ function decodePreparation(value: unknown): PreparationMaterial {
     outputSnapshot: text(data.output_snapshot, 'output_snapshot'),
     generatedAt: text(data.generated_at, 'generated_at'),
     createdAt: text(data.created_at, 'created_at'),
-  };
+  });
 }
 
 function decodeInterview(value: unknown): Interview {

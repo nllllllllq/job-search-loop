@@ -27,6 +27,7 @@ export interface AiClient {
   completeJson<T>(
     request: AiCompletionRequest,
     outputSchema: ZodType<T>,
+    settingsOverride?: PrivateAiSettings,
   ): Promise<T>;
   testConnection(): Promise<AiConnectionResult>;
 }
@@ -59,8 +60,9 @@ export function createAiClient({
   const completeJson = async <T>(
     request: AiCompletionRequest,
     outputSchema: ZodType<T>,
+    settingsOverride?: PrivateAiSettings,
   ): Promise<T> => {
-    const settings = await getSettings();
+    const settings = settingsOverride ?? await getSettings();
     const controller = new AbortController();
     let timedOut = false;
     const timer = scheduleTimeout(() => {

@@ -176,15 +176,116 @@ export const reorderStagesSchema = z.object({
   orderedIds: z.array(idSchema),
 });
 
-export const preparationInputSchema = z.object({
+const preparationStoredFieldsSchema = z.object({
   positionId: idSchema,
   rawJdSnapshot: z.string().max(100_000),
-  promptSnapshot: z.string().max(100_000),
+  promptSnapshot: z.string().max(200_000),
   assetsSnapshot: z.string().max(1_000_000),
   modelSnapshot: z.string().trim().min(1).max(500),
   outputSnapshot: z.string().max(1_000_000),
   generatedAt: z.string().datetime(),
+}).strict();
+
+const nonBlankSnapshotText = (maximum: number) => z.string()
+  .max(maximum)
+  .refine((value) => value.trim().length > 0, '内容不能为空');
+
+export const preparationGenerateSchema = z.object({
+  positionId: idSchema,
+  projectIds: z.array(idSchema).max(100),
+  questionIds: z.array(idSchema).max(200),
+}).strict();
+
+export const preparationOutputSchema = z.object({
+  roleSummary: nonBlankSnapshotText(20_000),
+  capabilityFocus: z.array(z.object({
+    name: nonBlankSnapshotText(200),
+    reason: nonBlankSnapshotText(10_000),
+  }).strict()).max(50),
+  projectTalkingPoints: z.array(z.object({
+    projectId: idSchema,
+    points: z.array(nonBlankSnapshotText(10_000)).min(1).max(30),
+  }).strict()).max(100),
+  likelyQuestions: z.array(z.object({
+    question: nonBlankSnapshotText(20_000),
+    answerOutline: nonBlankSnapshotText(40_000),
+  }).strict()).max(100),
+  candidateQuestions: z.array(nonBlankSnapshotText(20_000)).max(100),
+  riskNotes: z.array(nonBlankSnapshotText(20_000)).max(100),
+}).strict();
+
+const projectSnapshotSchema = projectPayloadObjectSchema.extend({
+  id: idSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+
+const questionSnapshotSchema = questionPayloadSchema.extend({
+  id: idSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+
+export const preparationAssetsSnapshotSchema = z.object({
+  projects: z.array(projectSnapshotSchema).max(100),
+  questions: z.array(questionSnapshotSchema).max(200),
+}).strict();
+
+export const preparationInputSchema = preparationStoredFieldsSchema.superRefine(
+  (value, context) => {
+    try {
+      preparationAssetsSnapshotSchema.parse(JSON.parse(value.assetsSnapshot));
+    } catch {
+      context.addIssue({
+        code: 'custom',
+        path: ['assetsSnapshot'],
+        message: 'Invalid preparation asset snapshot',
+      });
+    }
+    try {
+      preparationOutputSchema.parse(JSON.parse(value.outputSnapshot));
+    } catch {
+      context.addIssue({
+        code: 'custom',
+        path: ['outputSnapshot'],
+        message: 'Invalid preparation output snapshot',
+      });
+    }
+  },
+);
+
+export const preparationMaterialSchema = z.object({
+  id: idSchema,
+  positionId: idSchema,
+  rawJdSnapshot: z.string().max(100_000),
+  promptSnapshot: z.string().max(200_000),
+  assetsSnapshot: z.string().max(1_000_000),
+  modelSnapshot: z.string().trim().min(1).max(500),
+  outputSnapshot: z.string().max(1_000_000),
+  generatedAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+}).strict().superRefine((value, context) => {
+  try {
+    preparationAssetsSnapshotSchema.parse(JSON.parse(value.assetsSnapshot));
+  } catch {
+    context.addIssue({
+      code: 'custom',
+      path: ['assetsSnapshot'],
+      message: '准备材料资产快照无效',
+    });
+  }
+  try {
+    preparationOutputSchema.parse(JSON.parse(value.outputSnapshot));
+  } catch {
+    context.addIssue({
+      code: 'custom',
+      path: ['outputSnapshot'],
+      message: '准备材料输出快照无效',
+    });
+  }
 });
+
+export const preparationMaterialListSchema = z.array(preparationMaterialSchema);
 
 const interviewBaseSchema = z.object({
   positionId: idSchema,

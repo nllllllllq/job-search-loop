@@ -12,6 +12,7 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  closeDisabled?: boolean;
 }
 
 let bodyScrollLockCount = 0;
@@ -41,6 +42,7 @@ export function Modal({
   title,
   children,
   footer,
+  closeDisabled = false,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -72,7 +74,7 @@ export function Modal({
   }, [open]);
 
   const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
-    if (event.target === event.currentTarget) onClose();
+    if (!closeDisabled && event.target === event.currentTarget) onClose();
   };
 
   return (
@@ -82,7 +84,7 @@ export function Modal({
       className="modal"
       onCancel={(event) => {
         event.preventDefault();
-        onClose();
+        if (!closeDisabled) onClose();
       }}
       onClose={() => {
         if (open) onClose();
@@ -99,7 +101,10 @@ export function Modal({
           <button
             aria-label="关闭对话框"
             className="modal__close"
-            onClick={onClose}
+            disabled={closeDisabled}
+            onClick={() => {
+              if (!closeDisabled) onClose();
+            }}
             type="button"
           >
             <span aria-hidden="true">×</span>

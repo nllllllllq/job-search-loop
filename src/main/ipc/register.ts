@@ -35,6 +35,7 @@ import { registerSystemHandlers } from './system';
 import type { IpcMainRegistrar } from './common';
 import type { AiClient } from '../services/ai-client';
 import type { AiSettingsStore } from '../services/ai-settings';
+import { createPreparationService } from '../services/preparation';
 
 export type { IpcMainRegistrar } from './common';
 
@@ -50,7 +51,7 @@ export interface RepositoryBundle {
 
 export interface AiRuntime {
   settings: AiSettingsStore;
-  client: Pick<AiClient, 'testConnection'>;
+  client: Pick<AiClient, 'testConnection' | 'completeJson'>;
 }
 
 export function createRepositoryBundle(db: DatabaseSync): RepositoryBundle {
@@ -81,7 +82,17 @@ export function registerIpcHandlers(
   } = repositories;
 
   registerPositionHandlers(ipcMain, positions);
-  registerPreparationHandlers(ipcMain, preparations);
+  const preparationService = ai
+    ? createPreparationService({
+      positions,
+      assets,
+      preparations,
+      prompts,
+      ai: ai.client,
+      getSettings: () => ai.settings.getPrivate(),
+    })
+    : undefined;
+  registerPreparationHandlers(ipcMain, preparations, preparationService);
   registerAssetHandlers(ipcMain, assets, prompts);
   registerReviewHandlers(ipcMain, interviews, proposals);
   registerSystemHandlers(ipcMain, dashboard);

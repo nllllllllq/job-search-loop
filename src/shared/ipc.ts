@@ -14,6 +14,7 @@ import type {
   Position,
   PositionDetail,
   PositionInput,
+  PreparationGenerateInput,
   PositionListItem,
   PreparationMaterial,
   ProcessStage,
@@ -28,7 +29,6 @@ import type {
   QuestionInput,
   QuestionType,
 } from './domain';
-export type PreparationCreateInput = Omit<PreparationMaterial, 'id' | 'createdAt'>;
 export type InterviewEditInput = Omit<
   Interview,
   'id' | 'summary' | 'createdAt' | 'updatedAt'
@@ -54,7 +54,7 @@ export const CHANNELS = {
   preparations: {
     list: 'preparations:list',
     get: 'preparations:get',
-    create: 'preparations:create',
+    generate: 'preparations:generate',
   },
   assets: {
     projects: { list: 'assets:projects:list', get: 'assets:projects:get', save: 'assets:projects:save' },
@@ -120,7 +120,7 @@ export interface JobSearchApi {
   readonly preparations: {
     list(positionId: string): Promise<PreparationMaterial[]>;
     get(id: string): Promise<PreparationMaterial>;
-    create(input: PreparationCreateInput): Promise<PreparationMaterial>;
+    generate(input: PreparationGenerateInput): Promise<PreparationMaterial>;
   };
   readonly assets: {
     readonly projects: {

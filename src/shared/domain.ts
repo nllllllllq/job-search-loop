@@ -73,6 +73,26 @@ export interface PreparationMaterial {
   createdAt: string;
 }
 
+export interface PreparationGenerateInput {
+  positionId: string;
+  projectIds: string[];
+  questionIds: string[];
+}
+
+export interface PreparationOutput {
+  roleSummary: string;
+  capabilityFocus: Array<{ name: string; reason: string }>;
+  projectTalkingPoints: Array<{ projectId: string; points: string[] }>;
+  likelyQuestions: Array<{ question: string; answerOutline: string }>;
+  candidateQuestions: string[];
+  riskNotes: string[];
+}
+
+export interface PreparationAssetsSnapshot {
+  projects: Project[];
+  questions: Question[];
+}
+
 export interface Interview {
   id: string;
   positionId: string;

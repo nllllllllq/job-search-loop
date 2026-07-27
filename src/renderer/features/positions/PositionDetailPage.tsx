@@ -9,6 +9,7 @@ import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useToast } from '../../hooks/useToast';
 import { PositionEditor } from './PositionEditor';
 import { StageTimeline } from './StageTimeline';
+import { PreparationPanel } from '../preparations/PreparationPanel';
 
 type DetailTab = 'overview' | 'raw-jd' | 'process' | 'preparation' | 'interviews';
 
@@ -185,7 +186,7 @@ export function PositionDetailPage() {
           <StageTimeline onRefresh={resource.reload} positionId={position.id} stages={position.stages} />
         ) : null}
         {tab === 'preparation' ? (
-          <EmptyState body="岗位准备材料会在后续功能中出现在这里。" icon="备" title="还没有准备材料" />
+          <PreparationPanel positionId={position.id} rawJd={position.rawJd} />
         ) : null}
         {tab === 'interviews' ? (
           <EmptyState body="逐轮面试记录会在后续功能中出现在这里。" icon="面" title="还没有面试记录" />

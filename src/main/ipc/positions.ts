@@ -1,16 +1,19 @@
 import { CHANNELS } from '../../shared/ipc';
 import {
   idSchema,
+  preparationGenerateSchema,
   positionInputSchema,
   positionListFilterSchema,
   positionUpdateSchema,
   processStageSaveSchema,
   reorderStagesSchema,
+  preparationMaterialListSchema,
+  preparationMaterialSchema,
 } from '../../shared/schemas';
 import type { PositionsRepository } from '../repositories/positions';
 import type { PreparationsRepository } from '../repositories/preparations';
 import { safeIpcHandler, type IpcMainRegistrar } from './common';
-import { preparationInputSchema } from '../../shared/schemas';
+import type { PreparationService } from '../services/preparation';
 
 export function registerPositionHandlers(
   ipcMain: IpcMainRegistrar,
@@ -44,14 +47,21 @@ export function registerPositionHandlers(
 export function registerPreparationHandlers(
   ipcMain: IpcMainRegistrar,
   preparations: PreparationsRepository,
+  service?: PreparationService,
 ): void {
   ipcMain.handle(CHANNELS.preparations.list, safeIpcHandler((_event, payload) => (
-    preparations.listByPosition(idSchema.parse(payload))
+    preparationMaterialListSchema.parse(
+      preparations.listByPosition(idSchema.parse(payload)),
+    )
   )));
   ipcMain.handle(CHANNELS.preparations.get, safeIpcHandler((_event, payload) => (
-    preparations.get(idSchema.parse(payload))
+    preparationMaterialSchema.parse(preparations.get(idSchema.parse(payload)))
   )));
-  ipcMain.handle(CHANNELS.preparations.create, safeIpcHandler((_event, payload) => (
-    preparations.create(preparationInputSchema.parse(payload))
-  )));
+  if (service) {
+    ipcMain.handle(CHANNELS.preparations.generate, safeIpcHandler(async (_event, payload) => (
+      preparationMaterialSchema.parse(
+        await service.generate(preparationGenerateSchema.parse(payload)),
+      )
+    )));
+  }
 }

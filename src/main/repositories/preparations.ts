@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { PreparationMaterial } from '../../shared/domain';
-import { preparationInputSchema } from '../../shared/schemas';
+import {
+  preparationInputSchema,
+  preparationMaterialSchema,
+} from '../../shared/schemas';
 import { notFound, row, text } from './common';
 
 export type PreparationInput = Omit<PreparationMaterial, 'id' | 'createdAt'>;
 
 function decodePreparation(value: unknown): PreparationMaterial {
   const data = row(value, 'preparation');
-  return {
+  return preparationMaterialSchema.parse({
     id: text(data.id, 'id'),
     positionId: text(data.position_id, 'position_id'),
     rawJdSnapshot: text(data.raw_jd_snapshot, 'raw_jd_snapshot'),
@@ -18,7 +21,7 @@ function decodePreparation(value: unknown): PreparationMaterial {
     outputSnapshot: text(data.output_snapshot, 'output_snapshot'),
     generatedAt: text(data.generated_at, 'generated_at'),
     createdAt: text(data.created_at, 'created_at'),
-  };
+  });
 }
 
 export interface PreparationsRepository {

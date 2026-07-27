@@ -4,6 +4,9 @@ import {
   aiConnectionResultSchema,
   aiPublicSettingsSchema,
   aiSettingsSaveSchema,
+  preparationGenerateSchema,
+  preparationMaterialListSchema,
+  preparationMaterialSchema,
   promptKindSchema,
   promptSaveSchema,
   promptTemplateListSchema,
@@ -95,9 +98,18 @@ const api = frozen<JobSearchApi>({
     ),
   }),
   preparations: frozen<JobSearchApi['preparations']>({
-    list: (positionId) => invoke(CHANNELS.preparations.list, positionId),
-    get: (id) => invoke(CHANNELS.preparations.get, id),
-    create: (input) => invoke(CHANNELS.preparations.create, input),
+    list: async (positionId) => preparationMaterialListSchema.parse(
+      await invoke(CHANNELS.preparations.list, positionId),
+    ),
+    get: async (id) => preparationMaterialSchema.parse(
+      await invoke(CHANNELS.preparations.get, id),
+    ),
+    generate: async (input) => preparationMaterialSchema.parse(
+      await invoke(
+        CHANNELS.preparations.generate,
+        preparationGenerateSchema.parse(input),
+      ),
+    ),
   }),
   assets: frozen<JobSearchApi['assets']>({
     projects: frozen<JobSearchApi['assets']['projects']>({

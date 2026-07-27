@@ -5,7 +5,9 @@ import type { JobSearchApi } from '../../src/shared/ipc';
 import { CHANNELS } from '../../src/shared/ipc';
 import { registerPositionHandlers } from '../../src/main/ipc/positions';
 import { registerIpcHandlers } from '../../src/main/ipc/register';
+import { registerReviewHandlers } from '../../src/main/ipc/reviews';
 import { registerSystemHandlers } from '../../src/main/ipc/system';
+import { RepositoryError } from '../../src/main/repositories/common';
 
 describe('typed IPC contract', () => {
   it('publishes explicit nested methods without a generic invoke or send escape hatch', () => {
@@ -156,5 +158,71 @@ describe('typed IPC contract', () => {
       rawJd: '',
     })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
     expect(positions.create).toHaveBeenCalledOnce();
+  });
+
+  it('maps repository validation and conflict errors to safe IPC errors', async () => {
+    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+    const ipcMain = {
+      handle: (channel: string, handler: (event: unknown, payload: unknown) => unknown) => {
+        handlers.set(channel, handler);
+      },
+    };
+    const positions = {
+      create: vi.fn(),
+      update: vi.fn(),
+      get: vi.fn(),
+      getDetail: vi.fn(),
+      list: vi.fn(),
+      remove: vi.fn(),
+      listStages: vi.fn(),
+      upsertStage: vi.fn(),
+      reorderStages: vi.fn(() => {
+        throw new RepositoryError('VALIDATION_ERROR', '流程阶段顺序无效');
+      }),
+    };
+    registerPositionHandlers(ipcMain, positions);
+    const interviews = {
+      create: vi.fn(),
+      update: vi.fn(),
+      get: vi.fn(),
+      listByPosition: vi.fn(),
+      saveSummary: vi.fn(),
+    };
+    const proposals = {
+      list: vi.fn(),
+      get: vi.fn(),
+      create: vi.fn(),
+      accept: vi.fn(() => {
+        throw new RepositoryError('CONFLICT', '建议已处理');
+      }),
+      ignore: vi.fn(),
+    };
+    registerReviewHandlers(ipcMain, interviews, proposals);
+    const positionId = '4c10d827-2684-4bf0-9131-dd18b7ce8075';
+    const stageId = '516b2bb0-2a31-4a1f-8dc7-b4f3e049f1d0';
+    const proposalId = '2da6154e-fab3-4908-86e7-f2266c904670';
+
+    await expect(handlers.get(CHANNELS.positions.reorderStages)!({}, {
+      positionId,
+      orderedIds: [stageId],
+    })).rejects.toSatisfy(
+      (error: unknown) => (
+        error instanceof Error
+        && 'code' in error
+        && error.code === 'VALIDATION_ERROR'
+        && error.message.includes('流程阶段顺序无效')
+      ),
+    );
+    await expect(handlers.get(CHANNELS.reviews.proposals.accept)!({}, {
+      id: proposalId,
+      editedPayload: {},
+    })).rejects.toSatisfy(
+      (error: unknown) => (
+        error instanceof Error
+        && 'code' in error
+        && error.code === 'CONFLICT'
+        && error.message.includes('建议已处理')
+      ),
+    );
   });
 });

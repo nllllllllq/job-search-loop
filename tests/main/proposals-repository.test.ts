@@ -112,4 +112,57 @@ describe('proposals repository', () => {
       db.close();
     }
   });
+
+  it('rejects repeated acceptance as a conflict without creating more assets', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const proposals = createProposalsRepository(db);
+      const proposal = proposals.create({
+        targetType: 'project',
+        targetId: null,
+        operation: 'create',
+        payload: originalProject,
+        rationale: '沉淀项目',
+        positionId: null,
+        interviewId: null,
+      });
+      const accepted = proposals.accept(proposal.id, originalProject);
+
+      expect(() => proposals.accept(proposal.id, {
+        ...originalProject,
+        name: '不应创建',
+      })).toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+      expect(proposals.get(proposal.id)).toEqual(accepted);
+      expect(assets.listProjects()).toHaveLength(1);
+      expect(assets.listProjects()[0].name).toBe(originalProject.name);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects repeated ignore as a conflict without changing resolution state', () => {
+    const db = createTestDatabase();
+
+    try {
+      const proposals = createProposalsRepository(db);
+      const proposal = proposals.create({
+        targetType: 'project',
+        targetId: null,
+        operation: 'create',
+        payload: originalProject,
+        rationale: '忽略建议',
+        positionId: null,
+        interviewId: null,
+      });
+      const ignored = proposals.ignore(proposal.id);
+
+      expect(() => proposals.ignore(proposal.id))
+        .toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+      expect(proposals.get(proposal.id)).toEqual(ignored);
+    } finally {
+      db.close();
+    }
+  });
 });

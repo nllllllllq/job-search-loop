@@ -17,6 +17,7 @@ import {
   integer,
   notFound,
   nullableText,
+  RepositoryError,
   row,
   text,
   transaction,
@@ -159,7 +160,10 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
       || orderedSet.size !== orderedIds.length
       || orderedIds.some((id) => !existingIds.has(id))
     ) {
-      throw new Error('orderedIds must contain every process stage exactly once');
+      throw new RepositoryError(
+        'VALIDATION_ERROR',
+        '流程阶段顺序必须完整且不能重复',
+      );
     }
     db.prepare('UPDATE process_stages SET order_index = order_index + 1000000 WHERE position_id = ?')
       .run(positionId);

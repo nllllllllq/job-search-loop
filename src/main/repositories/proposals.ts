@@ -21,6 +21,7 @@ import {
   json,
   notFound,
   nullableText,
+  RepositoryError,
   row,
   text,
   transaction,
@@ -232,7 +233,7 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
       return transaction(db, () => {
         const proposal = get(id);
         if (proposal.status !== 'pending') {
-          throw new Error(`Proposal is already ${proposal.status}`);
+          throw new RepositoryError('CONFLICT', '该变更建议已处理，不能重复操作');
         }
         const payload = parsePayload(proposal.targetType, editedPayload);
         const now = new Date().toISOString();
@@ -264,7 +265,7 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
     ignore(id) {
       const proposal = get(id);
       if (proposal.status !== 'pending') {
-        throw new Error(`Proposal is already ${proposal.status}`);
+        throw new RepositoryError('CONFLICT', '该变更建议已处理，不能重复操作');
       }
       const now = new Date().toISOString();
       db.prepare(`

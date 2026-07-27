@@ -1,9 +1,8 @@
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../src/renderer/App';
 
-describe('App', () => {
+describe('App shell', () => {
   beforeEach(() => {
     window.location.hash = '#/';
   });
@@ -12,13 +11,12 @@ describe('App', () => {
     window.location.hash = '';
   });
 
-  it('shows the core desktop navigation', () => {
+  it('presents the complete local-first desktop workspace', () => {
     render(<App />);
 
-    expect(screen.getByText('求职闭环')).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { name: '从每一次准备，到下一次更从容的表达。' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '求职闭环首页' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '总览' })).toBeInTheDocument();
+    expect(screen.getByText('数据仅保存在本机')).toBeInTheDocument();
 
     for (const label of [
       '总览',
@@ -33,13 +31,13 @@ describe('App', () => {
     }
   });
 
-  it('navigates from the overview to the positions placeholder', async () => {
-    const user = userEvent.setup();
-
+  it('provides a keyboard skip link to the page content', () => {
     render(<App />);
-    await user.click(screen.getByRole('link', { name: '岗位' }));
 
-    expect(screen.getByRole('heading', { name: '岗位' })).toBeInTheDocument();
-    expect(screen.getByText('这个模块会在后续版本中逐步完善。')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '跳到主要内容' })).toHaveAttribute(
+      'href',
+      '#main-content',
+    );
+    expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
   });
 });

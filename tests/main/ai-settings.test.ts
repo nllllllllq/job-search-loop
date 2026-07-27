@@ -1,19 +1,29 @@
 // @vitest-environment node
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CHANNELS } from '../../src/shared/ipc';
 import {
   createAiSettingsStore,
+  type AiSettingsDependencies,
   type AiSettingsStore,
 } from '../../src/main/services/ai-settings';
 import { registerAiHandlers } from '../../src/main/ipc/ai';
 
 const temporaryDirectories: string[] = [];
 
-function settingsFixture(): {
+function settingsFixture(
+  overrides: Partial<Pick<AiSettingsDependencies, 'decrypt' | 'encrypt'>> = {},
+): {
   directory: string;
   settingsPath: string;
   store: AiSettingsStore;
@@ -22,11 +32,12 @@ function settingsFixture(): {
   temporaryDirectories.push(directory);
   const settingsPath = join(directory, 'ai-settings.json');
   const store = createAiSettingsStore({
-    encrypt: async (value) => Buffer.from(`cipher:${Buffer.from(value).toString('base64')}`),
-    decrypt: async (value) => Buffer.from(
+    encrypt: overrides.encrypt
+      ?? (async (value) => Buffer.from(`cipher:${Buffer.from(value).toString('base64')}`)),
+    decrypt: overrides.decrypt ?? (async (value) => Buffer.from(
       value.toString().replace('cipher:', ''),
       'base64',
-    ).toString(),
+    ).toString()),
     settingsPath,
   });
   return { directory, settingsPath, store };
@@ -246,6 +257,59 @@ describe('encrypted AI settings', () => {
       model: 'model-new',
       apiKey: 'brand-new-key',
     });
+  });
+
+  it('never reuses stored key bytes that cannot be decrypted', async () => {
+    const decrypt = vi.fn(async () => {
+      throw new Error('keychain entry is unavailable');
+    });
+    const { settingsPath, store } = settingsFixture({ decrypt });
+    writeFileSync(settingsPath, JSON.stringify({
+      version: 1,
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-old',
+      encryptedApiKey: Buffer.from('unreadable-ciphertext').toString('base64'),
+    }));
+    const damaged = readFileSync(settingsPath, 'utf8');
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-new',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_SETTINGS_UNAVAILABLE' });
+    expect(decrypt).toHaveBeenCalledOnce();
+    expect(readFileSync(settingsPath, 'utf8')).toBe(damaged);
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-new',
+      apiKey: 'replacement-key',
+    })).resolves.toMatchObject({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-new',
+      hasApiKey: true,
+    });
+  });
+
+  it('does not treat filesystem read failures as recoverable content damage', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'job-loop-ai-settings-read-error-'));
+    temporaryDirectories.push(directory);
+    const settingsPath = join(directory, 'settings-directory');
+    mkdirSync(settingsPath);
+    const encrypt = vi.fn(async (value: string) => Buffer.from(value));
+    const store = createAiSettingsStore({
+      encrypt,
+      decrypt: async (value) => value.toString(),
+      settingsPath,
+    });
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      apiKey: 'replacement-key',
+    })).rejects.toMatchObject({ code: 'AI_SETTINGS_UNAVAILABLE' });
+    expect(encrypt).not.toHaveBeenCalled();
+    expect(statSync(settingsPath).isDirectory()).toBe(true);
   });
 
   it('validates AI IPC requests before calling services', async () => {

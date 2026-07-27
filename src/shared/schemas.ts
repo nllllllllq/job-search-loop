@@ -245,15 +245,38 @@ export const promptSaveSchema = z.object({
 });
 
 function normalizeBaseUrl(value: string): string {
-  const url = new URL(value.trim());
+  const normalizedValue = value.trim();
+  const schemeEnd = normalizedValue.indexOf('://');
+  const authorityAndPath = schemeEnd >= 0
+    ? normalizedValue.slice(schemeEnd + 3)
+    : '';
+  const authorityEnd = authorityAndPath.search(/[/?#]/);
+  const authority = authorityEnd === -1
+    ? authorityAndPath
+    : authorityAndPath.slice(0, authorityEnd);
+  const rawHostname = authority.startsWith('[')
+    ? authority.slice(0, authority.indexOf(']') + 1).toLowerCase()
+    : authority.split(':', 1)[0].toLowerCase();
+  const url = new URL(normalizedValue);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error('API 地址必须使用 HTTP 或 HTTPS');
   }
   const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
-  if (url.protocol === 'http:' && !loopbackHosts.has(url.hostname)) {
+  if (
+    url.protocol === 'http:'
+    && (!loopbackHosts.has(url.hostname) || !loopbackHosts.has(rawHostname))
+  ) {
     throw new Error('远程 API 地址必须使用 HTTPS');
   }
-  if (url.username || url.password || url.search || url.hash) {
+  if (
+    authority.includes('@')
+    || normalizedValue.includes('?')
+    || normalizedValue.includes('#')
+    || url.username
+    || url.password
+    || url.search
+    || url.hash
+  ) {
     throw new Error('API 地址不能包含凭据、查询参数或片段');
   }
   return url.toString().replace(/\/+$/, '');

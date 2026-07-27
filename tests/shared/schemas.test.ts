@@ -98,10 +98,17 @@ describe('shared schemas', () => {
     'http://0.0.0.0:11434/v1',
     'http://localhost.example.com/v1',
     'http://127.0.0.2/v1',
+    'http://127.1/v1',
+    'http://2130706433/v1',
+    'http://0x7f000001/v1',
     'http://[::]:11434/v1',
+    'http://[0:0:0:0:0:0:0:1]:11434/v1',
     'https://user:pass@provider.example.com/v1',
+    'https://@provider.example.com/v1',
     'https://provider.example.com/v1?token=secret',
+    'https://provider.example.com/v1?',
     'https://provider.example.com/v1#fragment',
+    'https://provider.example.com/v1#',
   ])('rejects unsafe AI base URL %s', (baseUrl) => {
     expect(aiBaseUrlSchema.safeParse(baseUrl).success).toBe(false);
   });

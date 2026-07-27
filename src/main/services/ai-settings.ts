@@ -90,7 +90,7 @@ export function createAiSettingsStore({
         return null;
       }
       throw serviceError(
-        'AI_SETTINGS_CORRUPT',
+        'AI_SETTINGS_UNAVAILABLE',
         'AI 配置文件无法安全读取。',
       );
     }
@@ -181,6 +181,22 @@ export function createAiSettingsStore({
           'AI_NOT_CONFIGURED',
           '服务地址来源发生变化，请填写新的 API Key。',
         );
+      }
+      if (replacementKey === null && previous !== null) {
+        try {
+          const currentKey = await decrypt(
+            Buffer.from(previous.encryptedApiKey, 'base64'),
+          );
+          if (currentKey.length === 0) {
+            throw serviceError('AI_NOT_CONFIGURED', '尚未配置 API Key。');
+          }
+        } catch (error) {
+          if (error instanceof AiServiceError) throw error;
+          throw serviceError(
+            'AI_SETTINGS_UNAVAILABLE',
+            '本机无法解密已保存的 API Key，请填写新的 API Key。',
+          );
+        }
       }
 
       let encryptedApiKey = previous?.encryptedApiKey ?? '';

@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
@@ -151,6 +151,72 @@ const CREATE_SCHEMA_V1 = `
   ) STRICT;
 `;
 
+function migrateProjectJson(raw: unknown, field: string): string {
+  if (typeof raw !== 'string') {
+    throw new Error(`Invalid legacy project JSON field: ${field}`);
+  }
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(raw);
+  } catch {
+    throw new Error(`Invalid legacy project JSON field: ${field}`);
+  }
+  if (decoded === null || Array.isArray(decoded) || typeof decoded !== 'object') {
+    throw new Error(`Invalid legacy project JSON field: ${field}`);
+  }
+
+  const payload = { ...(decoded as Record<string, unknown>) };
+  const legacyOutcome = payload.outcomesAndEvidence;
+  if (
+    typeof legacyOutcome === 'string'
+    && (typeof payload.outcome !== 'string' || payload.outcome === '')
+  ) {
+    payload.outcome = legacyOutcome;
+  } else if (typeof payload.outcome !== 'string') {
+    payload.outcome = '';
+  }
+  if (typeof payload.evidence !== 'string') payload.evidence = '';
+  return JSON.stringify(payload);
+}
+
+function migrateLegacyProjectJson(db: DatabaseSync): void {
+  const updateProposal = db.prepare(`
+    UPDATE change_proposals
+    SET payload_json = ?, accepted_payload_json = ?
+    WHERE id = ?
+  `);
+  const proposals = db.prepare(`
+    SELECT id, payload_json, accepted_payload_json
+    FROM change_proposals WHERE target_type = 'project'
+  `).all();
+  for (const proposal of proposals) {
+    const accepted = proposal.accepted_payload_json === null
+      ? null
+      : migrateProjectJson(
+        proposal.accepted_payload_json,
+        'change_proposals.accepted_payload_json',
+      );
+    updateProposal.run(
+      migrateProjectJson(proposal.payload_json, 'change_proposals.payload_json'),
+      accepted,
+      proposal.id,
+    );
+  }
+
+  const updateVersion = db.prepare(`
+    UPDATE asset_versions SET snapshot_json = ? WHERE id = ?
+  `);
+  const versions = db.prepare(`
+    SELECT id, snapshot_json FROM asset_versions WHERE asset_type = 'project'
+  `).all();
+  for (const version of versions) {
+    updateVersion.run(
+      migrateProjectJson(version.snapshot_json, 'asset_versions.snapshot_json'),
+      version.id,
+    );
+  }
+}
+
 export function migrate(db: DatabaseSync): void {
   const version = readSchemaVersion(db);
   if (version > CURRENT_SCHEMA_VERSION) {
@@ -184,6 +250,7 @@ export function migrate(db: DatabaseSync): void {
         WHERE outcome = '' AND outcomes_and_evidence <> '';
       `);
     }
+    if (version < 3) migrateLegacyProjectJson(db);
     db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (error) {

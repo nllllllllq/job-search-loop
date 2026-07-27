@@ -189,4 +189,46 @@ describe('proposals repository', () => {
       db.close();
     }
   });
+
+  it('rejects question proposals with missing linked assets and rolls back acceptance', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const proposals = createProposalsRepository(db);
+      const question = assets.saveQuestion({
+        type: 'interviewer',
+        text: '如何判断需求优先级？',
+        answerDraft: '先看目标与风险。',
+        projectIds: [],
+        capabilityIds: [],
+        occurrenceCount: 1,
+        status: 'active',
+      });
+      const proposal = proposals.create({
+        targetType: 'question',
+        targetId: question.id,
+        operation: 'update',
+        payload: {
+          ...question,
+          projectIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+          capabilityIds: ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],
+        },
+        rationale: '关联复盘证据',
+        positionId: null,
+        interviewId: null,
+      });
+
+      expect(() => proposals.accept(proposal.id, proposal.payload))
+        .toThrow(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+      expect(proposals.get(proposal.id).status).toBe('pending');
+      expect(assets.getQuestion(question.id)).toMatchObject({
+        projectIds: [],
+        capabilityIds: [],
+      });
+      expect(assets.listVersions('question', question.id)).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
 });

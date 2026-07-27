@@ -112,6 +112,11 @@ function writeTarget(
     }
     case 'question': {
       const value = questionPayloadSchema.parse(payload);
+      assetRepositoryInternals.validateQuestionReferences(
+        db,
+        value.projectIds,
+        value.capabilityIds,
+      );
       if (create) {
         db.prepare(`
           INSERT INTO questions (

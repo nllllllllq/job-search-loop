@@ -142,11 +142,32 @@ export function ProjectsPage() {
                   {!versionsLoading && versions.length === 0 ? <p>当前还没有历史版本。</p> : null}
                   {versions.map((version) => {
                     const snapshot = versionProject(version);
+                    const headingId = `project-version-${version.id}`;
                     return (
-                      <article key={version.id}>
-                        <h5>历史版本 {version.version}</h5>
-                        <time dateTime={version.createdAt}>{version.createdAt.slice(0, 10)}</time>
-                        {snapshot ? <p>{snapshot.background || '该版本未记录背景'}</p> : <p>该历史版本无法读取。</p>}
+                      <article aria-labelledby={headingId} key={version.id}>
+                        <div className="version-history__meta">
+                          <h5 id={headingId}>历史版本 {version.version}</h5>
+                          <time dateTime={version.createdAt}>{version.createdAt.slice(0, 10)}</time>
+                        </div>
+                        {snapshot ? (
+                          <dl className="version-narrative">
+                            {[
+                              ['项目名称', snapshot.name],
+                              ['背景', snapshot.background],
+                              ['目标', snapshot.goal],
+                              ['角色', snapshot.role],
+                              ['关键决策', snapshot.keyDecisions],
+                              ['结果', snapshot.outcome],
+                              ['证据', snapshot.evidence],
+                              ['反思', snapshot.reflections],
+                            ].map(([label, content]) => (
+                              <div key={label}>
+                                <dt>{label}</dt>
+                                <dd>{content || '—'}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        ) : <p>该历史版本无法读取。</p>}
                       </article>
                     );
                   })}

@@ -1430,19 +1430,19 @@ a {
 }
 
 .version-history article {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.35rem 1rem;
   padding: 0.85rem 0;
   border-bottom: 1px solid var(--line);
 }
 
-.version-history h5,
-.version-history article p {
-  margin: 0;
+.version-history__meta {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  justify-content: space-between;
 }
 
 .version-history h5 {
+  margin: 0;
   font-size: 0.78rem;
 }
 
@@ -1453,9 +1453,43 @@ a {
 }
 
 .version-history article p {
-  grid-column: 1 / -1;
+  margin: 0.7rem 0 0;
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.version-narrative {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 0.75rem 0 0;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.version-narrative div {
+  min-width: 0;
+  padding: 0.65rem;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 253, 247, 0.72);
+}
+
+.version-narrative dt {
+  margin-bottom: 0.3rem;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 0.59rem;
+  font-weight: 700;
+}
+
+.version-narrative dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink-strong);
+  font-size: 0.7rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .library-tabs {
@@ -1781,7 +1815,8 @@ a {
   .link-picker-grid,
   .question-list,
   .capability-grid,
-  .narrative-grid {
+  .narrative-grid,
+  .version-narrative {
     grid-template-columns: 1fr;
   }
 

@@ -6,6 +6,7 @@ import {
   isoDateSchema,
   positionInputSchema,
   processStageInputSchema,
+  projectPayloadSchema,
 } from '../../src/shared/schemas';
 
 describe('shared schemas', () => {
@@ -58,5 +59,18 @@ describe('shared schemas', () => {
     expect(changeProposalInputSchema.safeParse({ ...base, operation: 'update', targetId: null }).success).toBe(false);
     expect(changeProposalInputSchema.safeParse({ ...base, operation: 'merge', targetId }).success).toBe(true);
     expect(changeProposalInputSchema.safeParse({ ...base, operation: 'merge', targetId: null }).success).toBe(false);
+  });
+
+  it('reads legacy combined project results without discarding their exact text', () => {
+    expect(projectPayloadSchema.parse({
+      name: '旧项目',
+      background: '旧背景',
+      outcomesAndEvidence: '原样保留的结果与证据',
+    })).toMatchObject({
+      name: '旧项目',
+      background: '旧背景',
+      outcome: '原样保留的结果与证据',
+      evidence: '',
+    });
   });
 });

@@ -51,7 +51,7 @@ export const processStageInputSchema = z.object({
   orderIndex: z.number().int().nonnegative(),
 });
 
-export const projectPayloadSchema = z.object({
+const projectPayloadObjectSchema = z.object({
   name: z.string().trim().min(1).max(200),
   background: z.string().max(20_000).default(''),
   goal: z.string().max(20_000).default(''),
@@ -61,6 +61,23 @@ export const projectPayloadSchema = z.object({
   evidence: z.string().max(40_000).default(''),
   reflections: z.string().max(20_000).default(''),
 });
+
+function normalizeLegacyProjectPayload(value: unknown): unknown {
+  if (value === null || Array.isArray(value) || typeof value !== 'object') return value;
+  const payload = value as Record<string, unknown>;
+  if (
+    typeof payload.outcomesAndEvidence === 'string'
+    && (typeof payload.outcome !== 'string' || payload.outcome === '')
+  ) {
+    return { ...payload, outcome: payload.outcomesAndEvidence };
+  }
+  return value;
+}
+
+export const projectPayloadSchema = z.preprocess(
+  normalizeLegacyProjectPayload,
+  projectPayloadObjectSchema,
+);
 
 export const questionPayloadSchema = z.object({
   type: questionTypeSchema,
@@ -183,7 +200,10 @@ export const interviewUpdateRequestSchema = z.object({
   input: interviewUpdateSchema,
 });
 
-export const projectSaveSchema = projectPayloadSchema.extend({ id: idSchema.optional() });
+export const projectSaveSchema = z.preprocess(
+  normalizeLegacyProjectPayload,
+  projectPayloadObjectSchema.extend({ id: idSchema.optional() }),
+);
 export const questionSaveSchema = questionPayloadSchema.extend({ id: idSchema.optional() });
 export const capabilitySaveSchema = capabilityPayloadSchema.extend({ id: idSchema.optional() });
 export const insightSaveSchema = insightPayloadSchema.extend({ id: idSchema.optional() });

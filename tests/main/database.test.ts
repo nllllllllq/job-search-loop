@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openDatabase } from '../../src/main/database';
 import { CURRENT_SCHEMA_VERSION, migrate } from '../../src/main/migrations';
+import { createAssetsRepository } from '../../src/main/repositories/assets';
+import { createProposalsRepository } from '../../src/main/repositories/proposals';
 import { createTestDatabase } from '../helpers/database';
 
 function temporaryDatabasePath(label: string): string {
@@ -226,6 +228,30 @@ describe('database migrations', () => {
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         ) STRICT;
+        CREATE TABLE change_proposals (
+          id TEXT PRIMARY KEY,
+          target_type TEXT NOT NULL,
+          target_id TEXT,
+          operation TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          accepted_payload_json TEXT,
+          rationale TEXT NOT NULL,
+          position_id TEXT,
+          interview_id TEXT,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          resolved_at TEXT
+        ) STRICT;
+        CREATE TABLE asset_versions (
+          id TEXT PRIMARY KEY,
+          asset_type TEXT NOT NULL,
+          asset_id TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(asset_type, asset_id, version)
+        ) STRICT;
       `);
       db.prepare(`
         INSERT INTO projects (
@@ -245,6 +271,61 @@ describe('database migrations', () => {
         now,
         now,
       );
+      const legacyPendingPayload = {
+        name: '旧项目',
+        background: '提案旧背景',
+        goal: '提案旧目标',
+        role: '提案旧角色',
+        keyDecisions: '提案旧决策',
+        outcomesAndEvidence: '提案里的旧结果与证据',
+        reflections: '提案旧反思',
+        storytellingVersions: '提案旧讲述版本',
+      };
+      const legacyAcceptedPayload = {
+        ...legacyPendingPayload,
+        outcomesAndEvidence: '已接受提案的旧结果与证据',
+      };
+      db.prepare(`
+        INSERT INTO change_proposals (
+          id, target_type, target_id, operation, payload_json, accepted_payload_json,
+          rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
+        ) VALUES (?, 'project', 'legacy-project', 'update', ?, NULL, ?, NULL, NULL, 'pending', ?, ?, NULL)
+      `).run(
+        'legacy-pending-proposal',
+        JSON.stringify(legacyPendingPayload),
+        '迁移后仍应可接受',
+        now,
+        now,
+      );
+      db.prepare(`
+        INSERT INTO change_proposals (
+          id, target_type, target_id, operation, payload_json, accepted_payload_json,
+          rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
+        ) VALUES (?, 'project', 'legacy-project', 'update', ?, ?, ?, NULL, NULL, 'accepted', ?, ?, ?)
+      `).run(
+        'legacy-accepted-proposal',
+        JSON.stringify(legacyPendingPayload),
+        JSON.stringify(legacyAcceptedPayload),
+        '已接受的旧提案',
+        now,
+        now,
+        now,
+      );
+      db.prepare(`
+        INSERT INTO asset_versions (
+          id, asset_type, asset_id, version, snapshot_json, created_at
+        ) VALUES (?, 'project', 'legacy-project', 1, ?, ?)
+      `).run(
+        'legacy-project-version',
+        JSON.stringify({
+          id: 'legacy-project',
+          ...legacyPendingPayload,
+          outcomesAndEvidence: '历史版本的旧结果与证据',
+          createdAt: now,
+          updatedAt: now,
+        }),
+        now,
+      );
 
       migrate(db);
 
@@ -254,8 +335,116 @@ describe('database migrations', () => {
         outcome: '结果与证据原文',
         evidence: '',
       });
+      const pendingJson = JSON.parse(String(db.prepare(
+        'SELECT payload_json FROM change_proposals WHERE id = ?',
+      ).get('legacy-pending-proposal')?.payload_json));
+      expect(pendingJson).toMatchObject({
+        outcomesAndEvidence: '提案里的旧结果与证据',
+        outcome: '提案里的旧结果与证据',
+        evidence: '',
+      });
+      const acceptedJson = JSON.parse(String(db.prepare(
+        'SELECT accepted_payload_json FROM change_proposals WHERE id = ?',
+      ).get('legacy-accepted-proposal')?.accepted_payload_json));
+      expect(acceptedJson).toMatchObject({
+        outcomesAndEvidence: '已接受提案的旧结果与证据',
+        outcome: '已接受提案的旧结果与证据',
+        evidence: '',
+      });
+      const versionJson = JSON.parse(String(db.prepare(
+        'SELECT snapshot_json FROM asset_versions WHERE id = ?',
+      ).get('legacy-project-version')?.snapshot_json));
+      expect(versionJson).toMatchObject({
+        outcomesAndEvidence: '历史版本的旧结果与证据',
+        outcome: '历史版本的旧结果与证据',
+        evidence: '',
+      });
+
+      const proposals = createProposalsRepository(db);
+      const assets = createAssetsRepository(db);
+      const pending = proposals.get('legacy-pending-proposal');
+      expect(pending.payload).toMatchObject({
+        outcome: '提案里的旧结果与证据',
+        evidence: '',
+      });
+      proposals.accept('legacy-pending-proposal', pending.payload);
+      expect(assets.getProject('legacy-project')).toMatchObject({
+        outcome: '提案里的旧结果与证据',
+        evidence: '',
+      });
+      expect(proposals.get('legacy-accepted-proposal').acceptedPayload).toMatchObject({
+        outcome: '已接受提案的旧结果与证据',
+        evidence: '',
+      });
+      const migratedAcceptedJson = db.prepare(
+        'SELECT accepted_payload_json FROM change_proposals WHERE id = ?',
+      ).get('legacy-accepted-proposal')?.accepted_payload_json;
+      migrate(db);
+      expect(db.prepare(
+        'SELECT accepted_payload_json FROM change_proposals WHERE id = ?',
+      ).get('legacy-accepted-proposal')?.accepted_payload_json)
+        .toBe(migratedAcceptedJson);
       expect(db.prepare('PRAGMA user_version').get())
         .toMatchObject({ user_version: CURRENT_SCHEMA_VERSION });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rolls back every project JSON rewrite when one legacy payload is corrupt', () => {
+    const db = new DatabaseSync(':memory:');
+    const now = '2026-07-27T00:00:00.000Z';
+    const validPayload = JSON.stringify({
+      name: '旧项目',
+      outcomesAndEvidence: '完整旧文本',
+    });
+
+    try {
+      db.exec(`
+        PRAGMA user_version = 2;
+        CREATE TABLE change_proposals (
+          id TEXT PRIMARY KEY,
+          target_type TEXT NOT NULL,
+          target_id TEXT,
+          operation TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          accepted_payload_json TEXT,
+          rationale TEXT NOT NULL,
+          position_id TEXT,
+          interview_id TEXT,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          resolved_at TEXT
+        ) STRICT;
+        CREATE TABLE asset_versions (
+          id TEXT PRIMARY KEY,
+          asset_type TEXT NOT NULL,
+          asset_id TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(asset_type, asset_id, version)
+        ) STRICT;
+      `);
+      const insert = db.prepare(`
+        INSERT INTO change_proposals (
+          id, target_type, target_id, operation, payload_json, accepted_payload_json,
+          rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
+        ) VALUES (?, 'project', NULL, 'create', ?, NULL, '迁移测试', NULL, NULL, 'pending', ?, ?, NULL)
+      `);
+      insert.run('valid-first', validPayload, now, now);
+      insert.run('corrupt-second', '{not-json', now, now);
+
+      expect(() => migrate(db)).toThrow('Invalid legacy project JSON field');
+
+      expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 });
+      expect(db.prepare(
+        'SELECT payload_json FROM change_proposals WHERE id = ?',
+      ).get('valid-first')).toMatchObject({ payload_json: validPayload });
+      expect(db.prepare(
+        'SELECT payload_json FROM change_proposals WHERE id = ?',
+      ).get('corrupt-second')).toMatchObject({ payload_json: '{not-json' });
     } finally {
       db.close();
     }

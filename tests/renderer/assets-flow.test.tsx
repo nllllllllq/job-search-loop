@@ -97,7 +97,17 @@ const version: AssetVersion = {
   assetType: 'project',
   assetId: projectId,
   version: 1,
-  snapshot: JSON.stringify({ ...project, background: '旧背景' }),
+  snapshot: JSON.stringify({
+    ...project,
+    name: '增长实验·旧版',
+    background: '旧背景',
+    goal: '旧目标',
+    role: '旧角色',
+    keyDecisions: '旧关键决策',
+    outcome: '旧结果',
+    evidence: '旧证据',
+    reflections: '旧反思',
+  }),
   createdAt: '2026-07-01T00:00:00.000Z',
 };
 
@@ -141,8 +151,20 @@ describe('reusable assets flow', () => {
 
     expect(await screen.findByRole('heading', { name: '增长实验' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '查看 增长实验' }));
-    expect(screen.getByText('旧背景')).toBeInTheDocument();
-    expect(screen.getByText('历史版本 1')).toBeInTheDocument();
+    const historicalVersion = await screen.findByRole('article', { name: '历史版本 1' });
+    for (const [label, content] of [
+      ['项目名称', '增长实验·旧版'],
+      ['背景', '旧背景'],
+      ['目标', '旧目标'],
+      ['角色', '旧角色'],
+      ['关键决策', '旧关键决策'],
+      ['结果', '旧结果'],
+      ['证据', '旧证据'],
+      ['反思', '旧反思'],
+    ]) {
+      expect(within(historicalVersion).getByText(label)).toBeInTheDocument();
+      expect(within(historicalVersion).getByText(content)).toBeInTheDocument();
+    }
     expect(screen.getByText('只读历史')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '编辑项目' }));

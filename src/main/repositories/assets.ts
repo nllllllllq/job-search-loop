@@ -163,6 +163,15 @@ function requireExistingIds(
   }
 }
 
+function validateQuestionReferences(
+  db: DatabaseSync,
+  projectIds: string[],
+  capabilityIds: string[],
+): void {
+  requireExistingIds(db, 'projects', projectIds);
+  requireExistingIds(db, 'capabilities', capabilityIds);
+}
+
 export interface AssetsRepository {
   listProjects(): Project[];
   getProject(id: string): Project;
@@ -270,8 +279,7 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
     saveQuestion(input) {
       const parsed = questionSaveSchema.parse(input);
       return transaction(db, () => {
-        requireExistingIds(db, 'projects', parsed.projectIds);
-        requireExistingIds(db, 'capabilities', parsed.capabilityIds);
+        validateQuestionReferences(db, parsed.projectIds, parsed.capabilityIds);
         const now = new Date().toISOString();
         const id = parsed.id ?? randomUUID();
         if (parsed.id !== undefined) {
@@ -423,4 +431,5 @@ export const assetRepositoryInternals = {
   decodeCapability,
   decodeInsight,
   insertVersion,
+  validateQuestionReferences,
 };

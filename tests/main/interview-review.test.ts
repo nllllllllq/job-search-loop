@@ -47,7 +47,22 @@ const output = {
   }],
 };
 
-function createFixture() {
+function reviewInput(interviewId: string) {
+  return {
+    interviewId,
+    selectedAssets: {
+      projectIds: [],
+      questionIds: [],
+      capabilityIds: [],
+      insightIds: [],
+    },
+  };
+}
+
+function createFixture(options: {
+  nowMs?: () => number;
+  getSettings?: InterviewReviewServiceDependencies['getSettings'];
+} = {}) {
   const db = createTestDatabase();
   const positions = createPositionsRepository(db);
   const interviews = createInterviewsRepository(db);
@@ -71,11 +86,11 @@ function createFixture() {
   const completeJson = vi.fn<InterviewReviewServiceDependencies['ai']['completeJson']>(
     async () => output,
   );
-  const getSettings = vi.fn(async () => ({
+  const getSettings = vi.fn(options.getSettings ?? (async () => ({
     baseUrl: 'https://api.example.com/v1',
     model: 'model-review',
     apiKey: 'secret',
-  }));
+  })));
   const service = createInterviewReviewService({
     positions,
     interviews,
@@ -85,6 +100,7 @@ function createFixture() {
     ai: { completeJson },
     getSettings,
     now: () => '2026-07-27T12:00:00.000Z',
+    nowMs: options.nowMs,
   });
   return {
     db,
@@ -113,9 +129,9 @@ describe('interview review service', () => {
         insights: fixture.assets.listInsights(),
       };
 
-      const preview = await fixture.service.preview(fixture.interview.id);
+      const preview = await fixture.service.preview(reviewInput(fixture.interview.id));
       expect(preview).toMatchObject({
-        provider: 'api.example.com',
+        provider: 'https://api.example.com',
         model: 'model-review',
         positionLabel: '远山科技 · AI 产品经理',
         roundName: '业务一面',
@@ -159,7 +175,7 @@ describe('interview review service', () => {
   it('writes nothing for invalid output, provider failure, or a failed database transaction and allows retry', async () => {
     const fixture = createFixture();
     try {
-      const preview = await fixture.service.preview(fixture.interview.id);
+      const preview = await fixture.service.preview(reviewInput(fixture.interview.id));
       fixture.completeJson.mockResolvedValueOnce({
         ...output,
         proposals: [{
@@ -172,7 +188,7 @@ describe('interview review service', () => {
       expect(fixture.interviews.get(fixture.interview.id).summary).toBeNull();
       expect(fixture.proposals.list()).toEqual([]);
 
-      const retryPreview = await fixture.service.preview(fixture.interview.id);
+      const retryPreview = await fixture.service.preview(reviewInput(fixture.interview.id));
       fixture.completeJson.mockRejectedValueOnce(
         Object.assign(new Error('secret provider body'), { code: 'AI_TIMEOUT' }),
       );
@@ -181,7 +197,7 @@ describe('interview review service', () => {
       expect(fixture.interviews.get(fixture.interview.id).summary).toBeNull();
       expect(fixture.proposals.list()).toEqual([]);
 
-      const dbFailurePreview = await fixture.service.preview(fixture.interview.id);
+      const dbFailurePreview = await fixture.service.preview(reviewInput(fixture.interview.id));
       fixture.completeJson.mockResolvedValueOnce(output);
       fixture.db.exec(`
         CREATE TRIGGER reject_review_proposal
@@ -203,7 +219,7 @@ describe('interview review service', () => {
   it('binds confirm to one immutable preview and prevents duplicate pending batches', async () => {
     const fixture = createFixture();
     try {
-      const preview = await fixture.service.preview(fixture.interview.id);
+      const preview = await fixture.service.preview(reviewInput(fixture.interview.id));
       fixture.interviews.update(fixture.interview.id, {
         positionId: fixture.position.id,
         roundName: '业务一面',
@@ -219,20 +235,20 @@ describe('interview review service', () => {
       expect(request.messages[1].content).not.toContain('预览之后被编辑的文字');
       await expect(fixture.service.confirm(preview.token))
         .rejects.toMatchObject({ code: 'CONFLICT' });
-      await expect(fixture.service.preview(fixture.interview.id))
+      await expect(fixture.service.preview(reviewInput(fixture.interview.id)))
         .rejects.toMatchObject({ code: 'CONFLICT' });
       expect(fixture.proposals.list('pending')).toHaveLength(2);
       fixture.proposals.list('pending').forEach((proposal) => {
         fixture.proposals.ignore(proposal.id);
       });
-      await expect(fixture.service.preview(fixture.interview.id))
+      await expect(fixture.service.preview(reviewInput(fixture.interview.id)))
         .rejects.toMatchObject({ code: 'CONFLICT' });
     } finally {
       fixture.db.close();
     }
   });
 
-  it('lets only one of two preview tokens commit when the AI returns zero proposals', async () => {
+  it('replaces the previous token for the same interview and only calls AI once', async () => {
     const fixture = createFixture();
     try {
       fixture.completeJson.mockResolvedValue({
@@ -241,19 +257,19 @@ describe('interview review service', () => {
         gaps: [],
         proposals: [],
       });
-      const first = await fixture.service.preview(fixture.interview.id);
-      const second = await fixture.service.preview(fixture.interview.id);
+      const first = await fixture.service.preview(reviewInput(fixture.interview.id));
+      const second = await fixture.service.preview(reviewInput(fixture.interview.id));
 
-      await expect(fixture.service.confirm(first.token)).resolves.toMatchObject({
+      await expect(fixture.service.confirm(first.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+      await expect(fixture.service.confirm(second.token)).resolves.toMatchObject({
         proposals: [],
       });
-      await expect(fixture.service.confirm(second.token))
-        .rejects.toMatchObject({ code: 'CONFLICT' });
 
       expect(fixture.proposals.list()).toEqual([]);
       expect(fixture.interviews.get(fixture.interview.id).reviewSnapshot?.output.summary)
         .toBe('没有需要沉淀的资产变更。');
-      expect(fixture.completeJson).toHaveBeenCalledTimes(2);
+      expect(fixture.completeJson).toHaveBeenCalledTimes(1);
     } finally {
       fixture.db.close();
     }
@@ -366,7 +382,7 @@ describe('interview review service', () => {
   it('rejects missing update targets and invalid linked IDs before any write', async () => {
     const fixture = createFixture();
     try {
-      const preview = await fixture.service.preview(fixture.interview.id);
+      const preview = await fixture.service.preview(reviewInput(fixture.interview.id));
       fixture.completeJson.mockResolvedValueOnce({
         ...output,
         proposals: [{
@@ -381,6 +397,286 @@ describe('interview review service', () => {
         .rejects.toMatchObject({ code: 'AI_INVALID_OUTPUT' });
       expect(fixture.interviews.get(fixture.interview.id).summary).toBeNull();
       expect(fixture.proposals.list()).toEqual([]);
+    } finally {
+      fixture.db.close();
+    }
+  });
+
+  it('expires, cancels, consumes, and caps preview tokens without calling AI', async () => {
+    let clock = 1_000;
+    const fixture = createFixture({ nowMs: () => clock });
+    try {
+      const expiring = await fixture.service.preview(reviewInput(fixture.interview.id));
+      clock += 10 * 60 * 1000 + 1;
+      await expect(fixture.service.confirm(expiring.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+
+      const cancellable = await fixture.service.preview(reviewInput(fixture.interview.id));
+      await expect(fixture.service.cancelPreview(cancellable.token)).resolves.toBeUndefined();
+      await expect(fixture.service.confirm(cancellable.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(fixture.completeJson).not.toHaveBeenCalled();
+
+      const first = await fixture.service.preview(reviewInput(fixture.interview.id));
+      for (let index = 0; index < 50; index += 1) {
+        const extraPosition = fixture.positions.create({
+          company: `Company ${index}`,
+          title: 'AI PM',
+          interest: 3,
+          rawJd: 'JD',
+        });
+        const extraInterview = fixture.interviews.create({
+          positionId: extraPosition.id,
+          roundName: `Round ${index}`,
+          interviewDate: null,
+          transcript: 'Transcript',
+          personalNotes: '',
+          feedbackResult: null,
+        });
+        clock += 1;
+        await fixture.service.preview(reviewInput(extraInterview.id));
+      }
+      await expect(fixture.service.confirm(first.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(fixture.completeJson).not.toHaveBeenCalled();
+    } finally {
+      fixture.db.close();
+    }
+  });
+
+  it('re-reads private settings, uses the current apiKey, and rejects stale provider metadata', async () => {
+    const settings = {
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-review',
+      apiKey: 'preview-secret',
+    };
+    const fixture = createFixture({ getSettings: async () => ({ ...settings }) });
+    try {
+      const preview = await fixture.service.preview(reviewInput(fixture.interview.id));
+      expect(JSON.stringify(preview)).not.toContain('preview-secret');
+      settings.apiKey = 'confirm-secret';
+      await fixture.service.confirm(preview.token);
+      expect(fixture.completeJson).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ apiKey: 'confirm-secret' }),
+      );
+      expect(fixture.getSettings).toHaveBeenCalledTimes(2);
+    } finally {
+      fixture.db.close();
+    }
+
+    const staleSettings = {
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-review',
+      apiKey: 'secret',
+    };
+    const stale = createFixture({ getSettings: async () => ({ ...staleSettings }) });
+    try {
+      const preview = await stale.service.preview(reviewInput(stale.interview.id));
+      staleSettings.model = 'changed-model';
+      await expect(stale.service.confirm(preview.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+      await expect(stale.service.confirm(preview.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(stale.completeJson).not.toHaveBeenCalled();
+    } finally {
+      stale.db.close();
+    }
+  });
+
+  it('atomically consumes a token before concurrent confirmation and before AI failures', async () => {
+    let resolveAi!: (value: unknown) => void;
+    const fixture = createFixture();
+    fixture.completeJson.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveAi = resolve;
+    }));
+    try {
+      const preview = await fixture.service.preview(reviewInput(fixture.interview.id));
+      const first = fixture.service.confirm(preview.token);
+      await expect(fixture.service.confirm(preview.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+      resolveAi(output);
+      await expect(first).resolves.toBeDefined();
+      expect(fixture.completeJson).toHaveBeenCalledTimes(1);
+    } finally {
+      fixture.db.close();
+    }
+
+    const failed = createFixture();
+    try {
+      const preview = await failed.service.preview(reviewInput(failed.interview.id));
+      failed.completeJson.mockRejectedValueOnce(new Error('provider failed'));
+      await expect(failed.service.confirm(preview.token)).rejects.toBeDefined();
+      await expect(failed.service.confirm(preview.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(failed.completeJson).toHaveBeenCalledTimes(1);
+    } finally {
+      failed.db.close();
+    }
+  });
+
+  it('refuses a stale token before AI when another review snapshot already exists', async () => {
+    const fixture = createFixture();
+    try {
+      const preview = await fixture.service.preview(reviewInput(fixture.interview.id));
+      fixture.db.prepare(`
+        UPDATE interviews
+        SET summary = ?, review_snapshot_json = ?
+        WHERE id = ?
+      `).run(
+        'Already reviewed',
+        JSON.stringify({
+          promptSnapshot: 'Existing prompt',
+          modelSnapshot: 'existing-model',
+          inputSnapshot: '{}',
+          output,
+          reviewedAt: '2026-07-27T11:00:00.000Z',
+        }),
+        fixture.interview.id,
+      );
+
+      await expect(fixture.service.confirm(preview.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(fixture.completeJson).not.toHaveBeenCalled();
+    } finally {
+      fixture.db.close();
+    }
+  });
+
+  it('binds selected asset snapshots and permits update or merge for selected targets', async () => {
+    const fixture = createFixture();
+    try {
+      const project = fixture.assets.saveProject({
+        name: 'Search assistant',
+        background: 'Job search context',
+        goal: 'Close the loop',
+        role: 'Product manager',
+        keyDecisions: 'Local first',
+        outcome: 'MVP',
+        evidence: 'User research',
+        reflections: 'Keep scope narrow',
+        storytellingVersions: 'STAR',
+      });
+      const capability = fixture.assets.saveCapability({
+        name: 'Problem solving',
+        jdFrequency: 2,
+        evidence: 'Project evidence',
+        gaps: 'More metrics',
+        mergedIntoId: null,
+      });
+      fixture.completeJson.mockResolvedValueOnce({
+        ...output,
+        proposals: [{
+          targetType: 'project',
+          targetId: project.id,
+          operation: 'update',
+          rationale: 'Improve the narrative',
+          payload: {
+            name: project.name,
+            background: project.background,
+            goal: project.goal,
+            role: project.role,
+            keyDecisions: project.keyDecisions,
+            outcome: 'Validated MVP',
+            evidence: project.evidence,
+            reflections: project.reflections,
+            storytellingVersions: project.storytellingVersions,
+          },
+        }, {
+          targetType: 'capability',
+          targetId: capability.id,
+          operation: 'merge',
+          rationale: 'Consolidate evidence',
+          payload: {
+            name: capability.name,
+            jdFrequency: capability.jdFrequency,
+            evidence: 'Stronger evidence',
+            gaps: capability.gaps,
+            mergedIntoId: capability.mergedIntoId,
+          },
+        }],
+      });
+
+      const preview = await fixture.service.preview({
+        interviewId: fixture.interview.id,
+        selectedAssets: {
+          projectIds: [project.id],
+          questionIds: [],
+          capabilityIds: [capability.id],
+          insightIds: [],
+        },
+      });
+      expect(preview.outbound.selectedAssets.projects).toEqual([project]);
+      expect(preview.outbound.selectedAssets.capabilities).toEqual([capability]);
+      expect(preview.outbound.position.rawJd).toBe(fixture.position.rawJd);
+      expect(preview.outbound.interview.transcript).toBe(fixture.interview.transcript);
+      expect(preview.outbound.prompt).toBeTruthy();
+
+      await expect(fixture.service.confirm(preview.token)).resolves.toMatchObject({
+        proposals: [
+          { targetId: project.id, operation: 'update' },
+          { targetId: capability.id, operation: 'merge' },
+        ],
+      });
+      const [request] = fixture.completeJson.mock.calls[0];
+      expect(request.messages[1].content).toContain(project.id);
+      expect(request.messages[1].content).toContain(capability.id);
+    } finally {
+      fixture.db.close();
+    }
+  });
+
+  it('rejects unselected update targets transactionally when no assets were selected', async () => {
+    const fixture = createFixture();
+    try {
+      const project = fixture.assets.saveProject({
+        name: 'Unselected',
+        background: '',
+        goal: '',
+        role: '',
+        keyDecisions: '',
+        outcome: '',
+        evidence: '',
+        reflections: '',
+        storytellingVersions: '',
+      });
+      const preview = await fixture.service.preview({
+        interviewId: fixture.interview.id,
+        selectedAssets: {
+          projectIds: [],
+          questionIds: [],
+          capabilityIds: [],
+          insightIds: [],
+        },
+      });
+      fixture.completeJson.mockResolvedValueOnce({
+        ...output,
+        proposals: [
+          output.proposals[0],
+          {
+            targetType: 'project',
+            targetId: project.id,
+            operation: 'update',
+            rationale: 'Not selected',
+            payload: {
+              name: project.name,
+              background: project.background,
+              goal: project.goal,
+              role: project.role,
+              keyDecisions: project.keyDecisions,
+              outcome: project.outcome,
+              evidence: project.evidence,
+              reflections: project.reflections,
+              storytellingVersions: project.storytellingVersions,
+            },
+          },
+        ],
+      });
+      await expect(fixture.service.confirm(preview.token))
+        .rejects.toMatchObject({ code: 'AI_INVALID_OUTPUT' });
+      expect(fixture.proposals.list()).toEqual([]);
+      expect(fixture.interviews.get(fixture.interview.id).reviewSnapshot).toBeNull();
     } finally {
       fixture.db.close();
     }

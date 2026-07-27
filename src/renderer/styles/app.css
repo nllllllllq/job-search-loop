@@ -2666,6 +2666,36 @@ a {
   padding-left: 1.5rem;
 }
 
+.review-preview__assets {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+}
+
+.review-preview__assets label {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.55rem;
+}
+
+.review-preview details {
+  border-top: 1px solid var(--line);
+  padding: 0.75rem 0;
+}
+
+.review-preview summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.review-preview pre {
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .segmented-control {
   border: 1px solid var(--line-strong);
   display: flex;

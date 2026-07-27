@@ -1,9 +1,12 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type {
   ChangeProposalInput,
   InterviewReviewOutput,
   InterviewReviewPreview,
+  InterviewReviewPreviewInput,
   InterviewReviewResult,
+  InterviewReviewSelectedAssetIds,
+  InterviewReviewSelectedAssets,
   InterviewReviewSnapshot,
   ProposalTarget,
 } from '../../shared/domain';
@@ -35,19 +38,24 @@ interface ReviewInputSnapshot {
     personalNotes: string;
     feedbackResult: string | null;
   };
+  selectedAssets: InterviewReviewSelectedAssets;
 }
 
 interface BoundPreview {
   createdAt: number;
   prompt: string;
-  settings: PrivateAiSettings;
+  providerOrigin: string;
+  model: string;
+  inputHash: string;
+  selectedAssetIds: InterviewReviewSelectedAssetIds;
   input: ReviewInputSnapshot;
   inputJson: string;
 }
 
 export interface InterviewReviewService {
-  preview(interviewId: string): Promise<InterviewReviewPreview>;
+  preview(input: InterviewReviewPreviewInput): Promise<InterviewReviewPreview>;
   confirm(token: string): Promise<InterviewReviewResult>;
+  cancelPreview(token: string): Promise<void>;
 }
 
 export interface InterviewReviewServiceDependencies {
@@ -81,6 +89,7 @@ const REVIEW_DATA_TYPES = [
   '面试复盘 Prompt',
 ] as const;
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
+const MAX_PREVIEWS = 50;
 
 function buildRequest(bound: BoundPreview): AiCompletionRequest {
   return {
@@ -133,35 +142,36 @@ function asInvalidOutput(): AiServiceError {
   );
 }
 
-function validateTargetExists(
+function selectedIdsForTarget(
   targetType: ProposalTarget,
-  targetId: string,
-  assets: InterviewReviewServiceDependencies['assets'],
-): void {
+  selected: InterviewReviewSelectedAssetIds,
+): string[] {
   switch (targetType) {
     case 'project':
-      assets.getProject(targetId);
-      return;
+      return selected.projectIds;
     case 'question':
-      assets.getQuestion(targetId);
-      return;
+      return selected.questionIds;
     case 'capability':
-      assets.getCapability(targetId);
-      return;
+      return selected.capabilityIds;
     case 'insight':
-      assets.getInsight(targetId);
+      return selected.insightIds;
   }
 }
 
 function validateProposalReferences(
   proposal: InterviewReviewOutput['proposals'][number],
   input: ReviewInputSnapshot,
+  selectedAssetIds: InterviewReviewSelectedAssetIds,
   positions: InterviewReviewServiceDependencies['positions'],
   assets: InterviewReviewServiceDependencies['assets'],
 ): void {
   try {
-    if (proposal.targetId !== null) {
-      validateTargetExists(proposal.targetType, proposal.targetId, assets);
+    if (
+      proposal.targetId !== null
+      && !selectedIdsForTarget(proposal.targetType, selectedAssetIds)
+        .includes(proposal.targetId)
+    ) {
+      throw new Error('Proposal target was not selected');
     }
     if (proposal.targetType === 'question') {
       const payload = proposal.payload as {
@@ -207,9 +217,35 @@ export function createInterviewReviewService({
   nowMs = () => Date.now(),
 }: InterviewReviewServiceDependencies): InterviewReviewService {
   const previews = new Map<string, BoundPreview>();
+  const previewByInterview = new Map<string, string>();
+
+  const removePreview = (token: string): BoundPreview | undefined => {
+    const bound = previews.get(token);
+    previews.delete(token);
+    if (bound && previewByInterview.get(bound.input.interview.id) === token) {
+      previewByInterview.delete(bound.input.interview.id);
+    }
+    return bound;
+  };
+
+  const cleanupExpired = (): void => {
+    const cutoff = nowMs() - PREVIEW_TTL_MS;
+    for (const [token, bound] of previews) {
+      if (bound.createdAt < cutoff) removePreview(token);
+    }
+  };
+
+  const originOf = (baseUrl: string): string => {
+    try {
+      return new URL(baseUrl).origin;
+    } catch {
+      throw new AiServiceError('AI_SETTINGS_CORRUPT', 'AI 服务地址无效，请重新配置。');
+    }
+  };
 
   return {
-    async preview(interviewId) {
+    async preview({ interviewId, selectedAssets }) {
+      cleanupExpired();
       const hasPending = proposals.list('pending')
         .some((proposal) => proposal.interviewId === interviewId);
       if (hasPending) {
@@ -228,6 +264,12 @@ export function createInterviewReviewService({
       const position = positions.get(interview.positionId);
       const prompt = prompts.get('interview-review');
       const settings = await getSettings();
+      const selectedAssetSnapshots: InterviewReviewSelectedAssets = {
+        projects: selectedAssets.projectIds.map((id) => assets.getProject(id)),
+        questions: selectedAssets.questionIds.map((id) => assets.getQuestion(id)),
+        capabilities: selectedAssets.capabilityIds.map((id) => assets.getCapability(id)),
+        insights: selectedAssets.insightIds.map((id) => assets.getInsight(id)),
+      };
       const input: ReviewInputSnapshot = {
         position: {
           id: position.id,
@@ -244,45 +286,99 @@ export function createInterviewReviewService({
           personalNotes: interview.personalNotes,
           feedbackResult: interview.feedbackResult,
         },
+        selectedAssets: selectedAssetSnapshots,
       };
+      const inputJson = JSON.stringify(input, null, 2);
+      const providerOrigin = originOf(settings.baseUrl);
+      const inputHash = createHash('sha256').update(JSON.stringify({
+        prompt: prompt.content,
+        providerOrigin,
+        model: settings.model,
+        input,
+      })).digest('hex');
+      const immutableInput = JSON.parse(inputJson) as ReviewInputSnapshot;
       const token = randomUUID();
+      const previousToken = previewByInterview.get(interviewId);
+      if (previousToken) removePreview(previousToken);
+      while (previews.size >= MAX_PREVIEWS) {
+        const oldest = previews.keys().next().value as string | undefined;
+        if (!oldest) break;
+        removePreview(oldest);
+      }
       previews.set(token, {
         createdAt: nowMs(),
         prompt: prompt.content,
-        settings,
-        input,
-        inputJson: JSON.stringify(input, null, 2),
+        providerOrigin,
+        model: settings.model,
+        inputHash,
+        selectedAssetIds: {
+          projectIds: [...selectedAssets.projectIds],
+          questionIds: [...selectedAssets.questionIds],
+          capabilityIds: [...selectedAssets.capabilityIds],
+          insightIds: [...selectedAssets.insightIds],
+        },
+        input: immutableInput,
+        inputJson,
       });
-      let provider = '外部 AI';
-      try {
-        provider = new URL(settings.baseUrl).host;
-      } catch {
-        // Settings validation normally prevents this; keep the preview safe.
-      }
+      previewByInterview.set(interviewId, token);
       return {
         token,
-        provider,
+        provider: providerOrigin,
         model: settings.model,
+        inputHash,
         positionLabel: `${position.company} · ${position.title}`,
         roundName: interview.roundName,
+        outbound: {
+          position: { ...immutableInput.position },
+          interview: { ...immutableInput.interview },
+          prompt: prompt.content,
+          selectedAssets: JSON.parse(
+            JSON.stringify(immutableInput.selectedAssets),
+          ) as InterviewReviewSelectedAssets,
+        },
         dataTypes: [...REVIEW_DATA_TYPES],
       };
     },
 
     async confirm(token) {
-      const bound = previews.get(token);
-      previews.delete(token);
-      if (!bound || nowMs() - bound.createdAt > PREVIEW_TTL_MS) {
+      cleanupExpired();
+      const bound = removePreview(token);
+      if (!bound) {
         throw new RepositoryError(
           'CONFLICT',
           '复盘确认已失效，请重新预览后再试。',
         );
       }
 
+      const currentInterview = interviews.get(bound.input.interview.id);
+      if (currentInterview.reviewSnapshot !== null) {
+        throw new RepositoryError(
+          'CONFLICT',
+          '这次面试已经完成复盘，请重新载入面试记录。',
+        );
+      }
+      const hasPending = proposals.list('pending')
+        .some((proposal) => proposal.interviewId === bound.input.interview.id);
+      if (hasPending) {
+        throw new RepositoryError(
+          'CONFLICT',
+          '这次面试已有待确认变更，请先处理后再重新复盘。',
+        );
+      }
+      const settings = await getSettings();
+      if (
+        originOf(settings.baseUrl) !== bound.providerOrigin
+        || settings.model !== bound.model
+      ) {
+        throw new RepositoryError(
+          'CONFLICT',
+          'AI 服务地址或模型已变化，请重新预览后再确认。',
+        );
+      }
       const candidate = await ai.completeJson(
         buildRequest(bound),
         interviewReviewOutputSchema,
-        bound.settings,
+        settings,
       );
       const parsed = interviewReviewOutputSchema.safeParse(candidate);
       if (!parsed.success) throw asInvalidOutput();
@@ -293,13 +389,19 @@ export function createInterviewReviewService({
         const key = JSON.stringify(proposal);
         if (unique.has(key)) throw asInvalidOutput();
         unique.add(key);
-        validateProposalReferences(proposal, bound.input, positions, assets);
+        validateProposalReferences(
+          proposal,
+          bound.input,
+          bound.selectedAssetIds,
+          positions,
+          assets,
+        );
       }
 
       const reviewedAt = now();
       const snapshot: InterviewReviewSnapshot = {
         promptSnapshot: bound.prompt,
-        modelSnapshot: bound.settings.model,
+        modelSnapshot: bound.model,
         inputSnapshot: bound.inputJson,
         output: parsed.data,
         reviewedAt,
@@ -319,6 +421,11 @@ export function createInterviewReviewService({
         interview: interviews.get(bound.input.interview.id),
         proposals: committed,
       };
+    },
+
+    async cancelPreview(token) {
+      cleanupExpired();
+      removePreview(token);
     },
   };
 }

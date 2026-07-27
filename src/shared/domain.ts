@@ -179,12 +179,49 @@ export interface InterviewReviewSnapshot {
   reviewedAt: string;
 }
 
+export interface InterviewReviewSelectedAssetIds {
+  projectIds: string[];
+  questionIds: string[];
+  capabilityIds: string[];
+  insightIds: string[];
+}
+
+export interface InterviewReviewPreviewInput {
+  interviewId: string;
+  selectedAssets: InterviewReviewSelectedAssetIds;
+}
+
+export interface InterviewReviewSelectedAssets {
+  projects: Project[];
+  questions: Question[];
+  capabilities: Capability[];
+  insights: Insight[];
+}
+
+export interface InterviewReviewOutbound {
+  position: Pick<Position, 'id' | 'company' | 'title' | 'rawJd'>;
+  interview: Pick<
+    Interview,
+    | 'id'
+    | 'positionId'
+    | 'roundName'
+    | 'interviewDate'
+    | 'transcript'
+    | 'personalNotes'
+    | 'feedbackResult'
+  >;
+  prompt: string;
+  selectedAssets: InterviewReviewSelectedAssets;
+}
+
 export interface InterviewReviewPreview {
   token: string;
   provider: string;
   model: string;
+  inputHash: string;
   positionLabel: string;
   roundName: string;
+  outbound: InterviewReviewOutbound;
   dataTypes: [
     '面试文字记录',
     '个人感受与补充',

@@ -616,12 +616,72 @@ export const changeProposalSchema = z.object({
 
 export const changeProposalListSchema = z.array(changeProposalSchema);
 
+const uniqueIdListSchema = z.array(idSchema).max(100)
+  .refine((ids) => new Set(ids).size === ids.length, '资产 ID 不能重复');
+
+export const interviewReviewSelectedAssetIdsSchema = z.object({
+  projectIds: uniqueIdListSchema.default([]),
+  questionIds: uniqueIdListSchema.default([]),
+  capabilityIds: uniqueIdListSchema.default([]),
+  insightIds: uniqueIdListSchema.default([]),
+}).strict();
+
+export const interviewReviewPreviewInputSchema = z.object({
+  interviewId: idSchema,
+  selectedAssets: interviewReviewSelectedAssetIdsSchema.default({
+    projectIds: [],
+    questionIds: [],
+    capabilityIds: [],
+    insightIds: [],
+  }),
+}).strict();
+
+const reviewProjectSnapshotSchema = strictProjectProposalPayloadSchema.extend({
+  id: idSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+const reviewQuestionSnapshotSchema = strictQuestionProposalPayloadSchema.extend({
+  id: idSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+const reviewCapabilitySnapshotSchema = strictCapabilityProposalPayloadSchema.extend({
+  id: idSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+const reviewInsightSnapshotSchema = strictInsightProposalPayloadSchema.extend({
+  id: idSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+
 export const interviewReviewPreviewSchema = z.object({
   token: idSchema,
   provider: z.string().trim().min(1).max(500),
   model: z.string().trim().min(1).max(500),
+  inputHash: z.string().regex(/^[a-f0-9]{64}$/),
   positionLabel: z.string().trim().min(1).max(500),
   roundName: z.string().trim().min(1).max(120),
+  outbound: z.object({
+    position: z.object({
+      id: idSchema,
+      company: z.string().max(120),
+      title: z.string().max(120),
+      rawJd: z.string().max(100_000),
+    }).strict(),
+    interview: interviewBaseSchema.extend({
+      id: idSchema,
+    }).strict(),
+    prompt: nonBlankSnapshotText(200_000),
+    selectedAssets: z.object({
+      projects: z.array(reviewProjectSnapshotSchema).max(100),
+      questions: z.array(reviewQuestionSnapshotSchema).max(100),
+      capabilities: z.array(reviewCapabilitySnapshotSchema).max(100),
+      insights: z.array(reviewInsightSnapshotSchema).max(100),
+    }).strict(),
+  }).strict(),
   dataTypes: z.tuple([
     z.literal('面试文字记录'),
     z.literal('个人感受与补充'),

@@ -4,6 +4,7 @@ import {
   interviewListSchema,
   interviewInputSchema,
   interviewReviewPreviewSchema,
+  interviewReviewPreviewInputSchema,
   interviewReviewResultSchema,
   interviewSchema,
   interviewUpdateRequestSchema,
@@ -39,7 +40,7 @@ export function registerReviewHandlers(
   if (review) {
     ipcMain.handle(CHANNELS.reviews.review.preview, safeIpcHandler(async (_event, payload) => (
       interviewReviewPreviewSchema.parse(
-        await review.preview(idSchema.parse(payload)),
+        await review.preview(interviewReviewPreviewInputSchema.parse(payload)),
       )
     )));
     ipcMain.handle(CHANNELS.reviews.review.confirm, safeIpcHandler(async (_event, payload) => (
@@ -47,6 +48,9 @@ export function registerReviewHandlers(
         await review.confirm(idSchema.parse(payload)),
       )
     )));
+    ipcMain.handle(CHANNELS.reviews.review.cancelPreview, safeIpcHandler(async (_event, payload) => {
+      await review.cancelPreview(idSchema.parse(payload));
+    }));
   }
   ipcMain.handle(CHANNELS.reviews.proposals.list, safeIpcHandler((_event, payload) => {
     const parsed = proposalListSchema.parse(payload);

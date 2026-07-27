@@ -37,14 +37,56 @@ describe('review IPC and preload contract', () => {
   });
 
   it('rejects invalid review IDs before IPC and malformed responses after IPC', async () => {
-    await expect(exposedApi().reviews.review.preview('not-a-uuid')).rejects.toBeDefined();
+    await expect(exposedApi().reviews.review.preview({
+      interviewId: 'not-a-uuid',
+      selectedAssets: {
+        projectIds: [],
+        questionIds: [],
+        capabilityIds: [],
+        insightIds: [],
+      },
+    })).rejects.toBeDefined();
     await expect(exposedApi().reviews.review.confirm('not-a-uuid')).rejects.toBeDefined();
     expect(electronMocks.invoke).not.toHaveBeenCalled();
 
     electronMocks.invoke.mockResolvedValueOnce({ prompt: 'renderer controlled' });
-    await expect(exposedApi().reviews.review.preview(interviewId)).rejects.toBeDefined();
+    await expect(exposedApi().reviews.review.preview({
+      interviewId,
+      selectedAssets: {
+        projectIds: [],
+        questionIds: [],
+        capabilityIds: [],
+        insightIds: [],
+      },
+    })).rejects.toBeDefined();
     electronMocks.invoke.mockResolvedValueOnce({ interview: {}, proposals: [] });
     await expect(exposedApi().reviews.review.confirm(token)).rejects.toBeDefined();
+  });
+
+  it('passes only parsed selected asset ids and exposes narrow preview cancellation', async () => {
+    const input = {
+      interviewId,
+      selectedAssets: {
+        projectIds: ['44444444-4444-4444-8444-444444444444'],
+        questionIds: [],
+        capabilityIds: [],
+        insightIds: [],
+      },
+    };
+    electronMocks.invoke.mockResolvedValueOnce(undefined);
+
+    await exposedApi().reviews.review.cancelPreview(token);
+    expect(electronMocks.invoke).toHaveBeenLastCalledWith(
+      CHANNELS.reviews.review.cancelPreview,
+      token,
+    );
+
+    electronMocks.invoke.mockResolvedValueOnce({ malformed: true });
+    await expect(exposedApi().reviews.review.preview(input)).rejects.toBeDefined();
+    expect(electronMocks.invoke).toHaveBeenLastCalledWith(
+      CHANNELS.reviews.review.preview,
+      input,
+    );
   });
 
   it('keeps direct acceptance distinct from edited acceptance at the bridge', async () => {
@@ -110,15 +152,41 @@ describe('review IPC and preload contract', () => {
     };
     const preview: InterviewReviewPreview = {
       token,
-      provider: 'api.example.com',
+      provider: 'https://api.example.com',
       model: 'model-a',
+      inputHash: 'a'.repeat(64),
       positionLabel: '远山科技 · AI 产品经理',
       roundName: '一面',
+      outbound: {
+        position: {
+          id: positionId,
+          company: '远山科技',
+          title: 'AI 产品经理',
+          rawJd: '负责 AI 产品。',
+        },
+        interview: {
+          id: interviewId,
+          positionId,
+          roundName: '一面',
+          interviewDate: null,
+          transcript: '面试记录',
+          personalNotes: '',
+          feedbackResult: null,
+        },
+        prompt: '请复盘。',
+        selectedAssets: {
+          projects: [],
+          questions: [],
+          capabilities: [],
+          insights: [],
+        },
+      },
       dataTypes: ['面试文字记录', '个人感受与补充', '岗位信息与原始 JD', '面试复盘 Prompt'],
     };
     const review = {
       preview: vi.fn(async () => preview),
       confirm: vi.fn(),
+      cancelPreview: vi.fn(),
     };
     registerReviewHandlers({
       handle(channel, handler) {

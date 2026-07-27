@@ -12,6 +12,7 @@ import type {
   InsightInput,
   Interview,
   InterviewReviewPreview,
+  InterviewReviewPreviewInput,
   InterviewReviewResult,
   Position,
   PositionDetail,
@@ -78,6 +79,7 @@ export const CHANNELS = {
     review: {
       preview: 'reviews:review:preview',
       confirm: 'reviews:review:confirm',
+      cancelPreview: 'reviews:review:cancel-preview',
     },
     proposals: {
       list: 'reviews:proposals:list',
@@ -167,8 +169,9 @@ export interface JobSearchApi {
       list(positionId: string): Promise<Interview[]>;
     };
     readonly review: {
-      preview(interviewId: string): Promise<InterviewReviewPreview>;
+      preview(input: InterviewReviewPreviewInput): Promise<InterviewReviewPreview>;
       confirm(token: string): Promise<InterviewReviewResult>;
+      cancelPreview(token: string): Promise<void>;
     };
     readonly proposals: {
       list(status?: ProposalStatus): Promise<ChangeProposal[]>;

@@ -7,6 +7,7 @@ import type {
   Interview,
   InterviewReviewPreview,
   PositionDetail,
+  Project,
 } from '../../src/shared/domain';
 import { installJobSearchFake, resetJobSearchFake } from '../helpers/bridge';
 
@@ -43,11 +44,36 @@ const interview: Interview = {
 };
 
 const preview: InterviewReviewPreview = {
-  token: 'preview-token',
-  provider: 'api.example.com',
+  token: '44444444-4444-4444-8444-444444444444',
+  provider: 'https://api.example.com',
   model: 'model-review',
+  inputHash: 'a'.repeat(64),
   positionLabel: '远山科技 · AI 产品经理',
   roundName: '业务一面',
+  outbound: {
+    position: {
+      id: position.id,
+      company: position.company,
+      title: position.title,
+      rawJd: position.rawJd,
+    },
+    interview: {
+      id: interview.id,
+      positionId: interview.positionId,
+      roundName: interview.roundName,
+      interviewDate: interview.interviewDate,
+      transcript: interview.transcript,
+      personalNotes: interview.personalNotes,
+      feedbackResult: interview.feedbackResult,
+    },
+    prompt: '请基于事实复盘面试。',
+    selectedAssets: {
+      projects: [],
+      questions: [],
+      capabilities: [],
+      insights: [],
+    },
+  },
   dataTypes: ['面试文字记录', '个人感受与补充', '岗位信息与原始 JD', '面试复盘 Prompt'],
 };
 
@@ -73,6 +99,21 @@ const proposal: ChangeProposal = {
   createdAt: '2026-07-27T10:00:00.000Z',
   updatedAt: '2026-07-27T10:00:00.000Z',
   resolvedAt: null,
+};
+
+const projectAsset: Project = {
+  id: '77777777-7777-4777-8777-777777777777',
+  name: '求职闭环助手',
+  background: '求职记录分散',
+  goal: '形成复盘闭环',
+  role: '产品经理',
+  keyDecisions: '本地优先',
+  outcome: '完成 MVP',
+  evidence: '用户访谈',
+  reflections: '控制范围',
+  storytellingVersions: 'STAR',
+  createdAt: '2026-07-27T08:00:00.000Z',
+  updatedAt: '2026-07-27T08:00:00.000Z',
 };
 
 describe('interview and review UI', () => {
@@ -139,18 +180,76 @@ describe('interview and review UI', () => {
     expect(fake.reviews.review.preview).not.toHaveBeenCalled();
     expect(fake.reviews.review.confirm).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: '开始 AI 复盘' }));
+    expect(await screen.findByRole('heading', { name: '选择复盘参考资产' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '预览发送内容' }));
     expect(await screen.findByRole('heading', { name: '确认发送复盘数据' })).toBeInTheDocument();
-    expect(screen.getByText('api.example.com · model-review')).toBeInTheDocument();
-    expect(screen.getByText('岗位信息与原始 JD')).toBeInTheDocument();
+    expect(screen.getByText('https://api.example.com · model-review')).toBeInTheDocument();
+    expect(screen.getByText('岗位与原始 JD')).toBeInTheDocument();
     expect(fake.reviews.review.confirm).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: '取消' }));
     expect(fake.reviews.review.confirm).not.toHaveBeenCalled();
+    await waitFor(() => expect(fake.reviews.review.cancelPreview)
+      .toHaveBeenCalledWith(preview.token));
     await user.click(screen.getByRole('button', { name: '开始 AI 复盘' }));
+    await screen.findByRole('heading', { name: '选择复盘参考资产' });
+    await user.click(screen.getByRole('button', { name: '预览发送内容' }));
     await screen.findByRole('heading', { name: '确认发送复盘数据' });
 
     await user.click(screen.getByRole('button', { name: '确认并开始复盘' }));
-    await waitFor(() => expect(fake.reviews.review.confirm).toHaveBeenCalledWith('preview-token'));
+    await waitFor(() => expect(fake.reviews.review.confirm).toHaveBeenCalledWith(preview.token));
     expect(fake.reviews.review.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults asset selection to none, binds selected ids, shows full outbound detail, and cancels the token', async () => {
+    const fake = resetJobSearchFake();
+    fake.positions.get.mockResolvedValue(position);
+    fake.reviews.interviews.list.mockResolvedValue([interview]);
+    fake.assets.projects.list.mockResolvedValue([projectAsset]);
+    fake.reviews.review.preview.mockResolvedValue({
+      ...preview,
+      outbound: {
+        ...preview.outbound,
+        selectedAssets: {
+          ...preview.outbound.selectedAssets,
+          projects: [projectAsset],
+        },
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('tab', { name: '面试记录' }));
+    await user.click(screen.getByRole('button', { name: '开始 AI 复盘' }));
+    expect(await screen.findByRole('heading', { name: '选择复盘参考资产' })).toBeInTheDocument();
+    const projectCheckbox = screen.getByRole('checkbox', { name: projectAsset.name });
+    expect(projectCheckbox).not.toBeChecked();
+    expect(fake.reviews.review.preview).not.toHaveBeenCalled();
+
+    await user.click(projectCheckbox);
+    await user.click(screen.getByRole('button', { name: '预览发送内容' }));
+    await waitFor(() => expect(fake.reviews.review.preview).toHaveBeenCalledWith({
+      interviewId,
+      selectedAssets: {
+        projectIds: [projectAsset.id],
+        questionIds: [],
+        capabilityIds: [],
+        insightIds: [],
+      },
+    }));
+    expect(await screen.findByRole('heading', { name: '确认发送复盘数据' })).toBeInTheDocument();
+    expect(screen.getAllByText(position.rawJd).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(interview.transcript).length).toBeGreaterThan(0);
+    expect(screen.getByText(preview.outbound.prompt)).toBeInTheDocument();
+    expect(screen.getByText(projectAsset.name)).toBeInTheDocument();
+    expect(screen.getByText((content, element) => (
+      element?.tagName === 'PRE'
+      && content.includes(projectAsset.background)
+      && content.includes(projectAsset.evidence)
+    ))).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(fake.reviews.review.cancelPreview)
+      .toHaveBeenCalledWith(preview.token));
   });
 
   it('shows proposal context/history and supports accept, edit-accept validation, and ignore', async () => {

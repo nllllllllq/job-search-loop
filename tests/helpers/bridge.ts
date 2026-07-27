@@ -80,6 +80,7 @@ export interface JobSearchApiFake {
     readonly review: {
       preview: ApiMock<JobSearchApi['reviews']['review']['preview']>;
       confirm: ApiMock<JobSearchApi['reviews']['review']['confirm']>;
+      cancelPreview: ApiMock<JobSearchApi['reviews']['review']['cancelPreview']>;
     };
     readonly proposals: {
       list: ApiMock<JobSearchApi['reviews']['proposals']['list']>;
@@ -203,6 +204,7 @@ export function createJobSearchFake(): JobSearchApiFake {
       review: {
         preview: vi.fn<JobSearchApi['reviews']['review']['preview']>().mockRejectedValue(new Error('未设置复盘预览')),
         confirm: vi.fn<JobSearchApi['reviews']['review']['confirm']>().mockRejectedValue(new Error('未设置复盘确认')),
+        cancelPreview: vi.fn<JobSearchApi['reviews']['review']['cancelPreview']>().mockResolvedValue(undefined),
       },
       proposals: {
         list: vi.fn<JobSearchApi['reviews']['proposals']['list']>().mockResolvedValue([] as ChangeProposal[]),

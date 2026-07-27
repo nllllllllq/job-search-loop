@@ -10,6 +10,7 @@ import {
   interviewInputSchema,
   interviewListSchema,
   interviewReviewPreviewSchema,
+  interviewReviewPreviewInputSchema,
   interviewReviewResultSchema,
   interviewSchema,
   interviewUpdateSchema,
@@ -187,14 +188,17 @@ const api = frozen<JobSearchApi>({
       )),
     }),
     review: frozen<JobSearchApi['reviews']['review']>({
-      preview: async (interviewId) => interviewReviewPreviewSchema.parse(await invoke(
+      preview: async (input) => interviewReviewPreviewSchema.parse(await invoke(
         CHANNELS.reviews.review.preview,
-        idSchema.parse(interviewId),
+        interviewReviewPreviewInputSchema.parse(input),
       )),
       confirm: async (token) => interviewReviewResultSchema.parse(await invoke(
         CHANNELS.reviews.review.confirm,
         idSchema.parse(token),
       )),
+      cancelPreview: async (token) => {
+        await invoke(CHANNELS.reviews.review.cancelPreview, idSchema.parse(token));
+      },
     }),
     proposals: frozen<JobSearchApi['reviews']['proposals']>({
       list: async (status) => changeProposalListSchema.parse(await invoke(

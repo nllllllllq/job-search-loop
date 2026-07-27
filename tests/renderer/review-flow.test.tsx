@@ -166,9 +166,19 @@ describe('interview and review UI', () => {
 
   it('shows outbound review confirmation, does not auto-call AI, and confirms once', async () => {
     const fake = resetJobSearchFake();
+    const detailedPreview: InterviewReviewPreview = {
+      ...preview,
+      outbound: {
+        ...preview.outbound,
+        interview: {
+          ...preview.outbound.interview,
+          feedbackResult: '进入下一轮',
+        },
+      },
+    };
     fake.positions.get.mockResolvedValue(position);
     fake.reviews.interviews.list.mockResolvedValue([interview]);
-    fake.reviews.review.preview.mockResolvedValue(preview);
+    fake.reviews.review.preview.mockResolvedValue(detailedPreview);
     fake.reviews.review.confirm.mockResolvedValue({
       interview: { ...interview, summary: '复盘完成' },
       proposals: [proposal],
@@ -185,6 +195,18 @@ describe('interview and review UI', () => {
     expect(await screen.findByRole('heading', { name: '确认发送复盘数据' })).toBeInTheDocument();
     expect(screen.getByText('https://api.example.com · model-review')).toBeInTheDocument();
     expect(screen.getByText('岗位与原始 JD')).toBeInTheDocument();
+    expect(screen.getByText((content, element) => (
+      element?.tagName === 'PRE'
+      && content.includes(position.id)
+      && content.includes(position.rawJd)
+    ))).toBeInTheDocument();
+    expect(screen.getByText((content, element) => (
+      element?.tagName === 'PRE'
+      && content.includes(interview.id)
+      && content.includes(interview.positionId)
+      && content.includes(interview.interviewDate ?? '')
+      && content.includes('进入下一轮')
+    ))).toBeInTheDocument();
     expect(fake.reviews.review.confirm).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: '取消' }));
     expect(fake.reviews.review.confirm).not.toHaveBeenCalled();

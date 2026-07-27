@@ -304,11 +304,17 @@ export function InterviewPanel({ positionId }: InterviewPanelProps) {
               <summary>岗位与原始 JD</summary>
               <p>{preview.outbound.position.company} · {preview.outbound.position.title}</p>
               <pre className="user-text">{preview.outbound.position.rawJd}</pre>
+              <pre aria-label="完整岗位数据" className="user-text">
+                {JSON.stringify(preview.outbound.position, null, 2)}
+              </pre>
             </details>
             <details>
               <summary>完整面试记录</summary>
               <pre className="user-text">{preview.outbound.interview.transcript}</pre>
               <pre className="user-text">{preview.outbound.interview.personalNotes}</pre>
+              <pre aria-label="完整面试数据" className="user-text">
+                {JSON.stringify(preview.outbound.interview, null, 2)}
+              </pre>
             </details>
             <details>
               <summary>当前复盘 Prompt</summary>

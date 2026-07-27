@@ -61,6 +61,7 @@ describe('desktop navigation', () => {
     ['复盘中心', '复盘'],
     ['项目档案', '项目'],
     ['问题库', '题库'],
+    ['能力主题', '能力'],
     ['随想与心得', '随想'],
     ['设置', '设置'],
   ])('keeps a compact visible label for %s', (label, shortLabel) => {

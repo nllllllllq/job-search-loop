@@ -1,8 +1,12 @@
 import { HashRouter, Link, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { EmptyState } from './components/EmptyState';
+import { CapabilitiesPanel } from './features/capabilities/CapabilitiesPanel';
+import { InsightsPage } from './features/insights/InsightsPage';
 import { PositionDetailPage } from './features/positions/PositionDetailPage';
 import { PositionsPage } from './features/positions/PositionsPage';
+import { ProjectsPage } from './features/projects/ProjectsPage';
+import { QuestionsPage } from './features/questions/QuestionsPage';
 import { ToastProvider } from './hooks/useToast';
 
 interface PlaceholderConfig {
@@ -18,24 +22,6 @@ const placeholders: Record<string, PlaceholderConfig> = {
     body: '面试结束后，这里将承接逐轮记录、个人判断与后续沉淀，保留当时最鲜活的细节。',
     icon: '复',
     note: '记录事实，再提炼方法',
-  },
-  projects: {
-    title: '项目证据库尚待整理',
-    body: '把项目背景、关键决策、结果证据和反思收拢成可复用的叙事底稿。',
-    icon: '项',
-    note: '经历不是清单，而是有证据的判断',
-  },
-  questions: {
-    title: '问题会在练习中长出来',
-    body: '未来可把面试官提问与候选人反问放在一起，持续修订答案并建立关联。',
-    icon: '问',
-    note: '高频问题 × 项目证据 × 能力线索',
-  },
-  insights: {
-    title: '给临场想法留一页纸',
-    body: '零散观察、表达心得与职业判断，都可以先记下，再与岗位或项目建立联系。',
-    icon: '记',
-    note: '先捕捉，再归档',
   },
   settings: {
     title: '本地工作台设置',
@@ -141,15 +127,16 @@ export function App() {
             />
             <Route
               path="/projects"
-              element={<PlaceholderPage config={placeholders.projects} />}
+              element={<ProjectsPage />}
             />
             <Route
               path="/questions"
-              element={<PlaceholderPage config={placeholders.questions} />}
+              element={<QuestionsPage />}
             />
+            <Route path="/capabilities" element={<CapabilitiesPanel />} />
             <Route
               path="/insights"
-              element={<PlaceholderPage config={placeholders.insights} />}
+              element={<InsightsPage />}
             />
             <Route
               path="/settings"

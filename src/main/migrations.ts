@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
@@ -165,7 +165,7 @@ export function migrate(db: DatabaseSync): void {
 
   db.exec('BEGIN IMMEDIATE');
   try {
-    if (version < CURRENT_SCHEMA_VERSION) {
+    if (version < 1) {
       db.exec(CREATE_SCHEMA_V1);
       const now = new Date().toISOString();
       const insertTemplate = db.prepare(`
@@ -175,8 +175,16 @@ export function migrate(db: DatabaseSync): void {
       for (const template of DEFAULT_PROMPT_TEMPLATES) {
         insertTemplate.run(template.id, template.kind, template.name, template.content, now, now);
       }
-      db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     }
+    if (version < 2) {
+      db.exec(`
+        ALTER TABLE projects ADD COLUMN outcome TEXT NOT NULL DEFAULT '';
+        ALTER TABLE projects ADD COLUMN evidence TEXT NOT NULL DEFAULT '';
+        UPDATE projects SET outcome = outcomes_and_evidence
+        WHERE outcome = '' AND outcomes_and_evidence <> '';
+      `);
+    }
+    db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');

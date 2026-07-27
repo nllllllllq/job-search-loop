@@ -57,9 +57,9 @@ export const projectPayloadSchema = z.object({
   goal: z.string().max(20_000).default(''),
   role: z.string().max(20_000).default(''),
   keyDecisions: z.string().max(40_000).default(''),
-  outcomesAndEvidence: z.string().max(40_000).default(''),
+  outcome: z.string().max(40_000).default(''),
+  evidence: z.string().max(40_000).default(''),
   reflections: z.string().max(20_000).default(''),
-  storytellingVersions: z.string().max(40_000).default(''),
 });
 
 export const questionPayloadSchema = z.object({

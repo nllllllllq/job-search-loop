@@ -92,9 +92,9 @@ export interface ProjectInput {
   goal: string;
   role: string;
   keyDecisions: string;
-  outcomesAndEvidence: string;
+  outcome: string;
+  evidence: string;
   reflections: string;
-  storytellingVersions: string;
 }
 
 export interface Project extends ProjectInput {

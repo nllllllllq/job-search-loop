@@ -7,6 +7,7 @@ export const navigation = [
   { code: 'RV', label: '复盘中心', shortLabel: '复盘', to: '/reviews' },
   { code: 'PR', label: '项目档案', shortLabel: '项目', to: '/projects' },
   { code: 'QU', label: '问题库', shortLabel: '题库', to: '/questions' },
+  { code: 'CA', label: '能力主题', shortLabel: '能力', to: '/capabilities' },
   { code: 'IN', label: '随想与心得', shortLabel: '随想', to: '/insights' },
   { code: 'ST', label: '设置', shortLabel: '设置', to: '/settings' },
 ] as const;

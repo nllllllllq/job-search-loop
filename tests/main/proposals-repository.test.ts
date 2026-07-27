@@ -11,9 +11,9 @@ const originalProject = {
   goal: '提升次日留存',
   role: '产品负责人',
   keyDecisions: '缩短首次体验路径',
-  outcomesAndEvidence: '次日留存提升 8%',
+  outcome: '次日留存提升 8%',
+  evidence: '留存看板',
   reflections: '实验分层仍可优化',
-  storytellingVersions: '三分钟版本',
 };
 
 describe('proposals repository', () => {
@@ -28,7 +28,7 @@ describe('proposals repository', () => {
         targetType: 'project',
         targetId: project.id,
         operation: 'update',
-        payload: { ...originalProject, outcomesAndEvidence: '次日留存提升 12%' },
+        payload: { ...originalProject, outcome: '次日留存提升 12%' },
         rationale: '面试复盘补充了量化结果',
         positionId: null,
         interviewId: null,
@@ -36,14 +36,38 @@ describe('proposals repository', () => {
 
       const accepted = proposals.accept(proposal.id, {
         ...originalProject,
-        outcomesAndEvidence: '次日留存提升 10%',
+        outcome: '次日留存提升 10%',
       });
 
       expect(accepted.status).toBe('accepted');
-      expect(assets.getProject(project.id).outcomesAndEvidence).toBe('次日留存提升 10%');
+      expect(assets.getProject(project.id).outcome).toBe('次日留存提升 10%');
       const versions = assets.listVersions('project', project.id);
       expect(versions).toHaveLength(1);
       expect(JSON.parse(versions[0].snapshot)).toMatchObject(originalProject);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('accepts an unchanged project proposal without manufacturing a history version', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const proposals = createProposalsRepository(db);
+      const project = assets.saveProject(originalProject);
+      const proposal = proposals.create({
+        targetType: 'project',
+        targetId: project.id,
+        operation: 'update',
+        payload: originalProject,
+        rationale: '复核现有叙事',
+        positionId: null,
+        interviewId: null,
+      });
+
+      expect(proposals.accept(proposal.id, originalProject).status).toBe('accepted');
+      expect(assets.listVersions('project', project.id)).toEqual([]);
     } finally {
       db.close();
     }

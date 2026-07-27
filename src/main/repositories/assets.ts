@@ -25,6 +25,7 @@ import {
   json,
   notFound,
   nullableText,
+  RepositoryError,
   row,
   text,
   transaction,
@@ -49,9 +50,9 @@ function decodeProject(value: unknown): Project {
     goal: text(data.goal, 'goal'),
     role: text(data.role, 'role'),
     keyDecisions: text(data.key_decisions, 'key_decisions'),
-    outcomesAndEvidence: text(data.outcomes_and_evidence, 'outcomes_and_evidence'),
+    outcome: text(data.outcome, 'outcome'),
+    evidence: text(data.evidence, 'evidence'),
     reflections: text(data.reflections, 'reflections'),
-    storytellingVersions: text(data.storytelling_versions, 'storytelling_versions'),
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),
   };
@@ -132,6 +133,36 @@ function insertVersion(
   `).run(randomUUID(), assetType, assetId, version, JSON.stringify(snapshot), now);
 }
 
+function sameProjectNarrative(previous: Project, input: ProjectInput): boolean {
+  return previous.name === input.name
+    && previous.background === input.background
+    && previous.goal === input.goal
+    && previous.role === input.role
+    && previous.keyDecisions === input.keyDecisions
+    && previous.outcome === input.outcome
+    && previous.evidence === input.evidence
+    && previous.reflections === input.reflections;
+}
+
+function requireExistingIds(
+  db: DatabaseSync,
+  table: 'projects' | 'capabilities',
+  ids: string[],
+): void {
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) return;
+  const placeholders = uniqueIds.map(() => '?').join(', ');
+  const value = row(db.prepare(`
+    SELECT COUNT(*) AS count FROM ${table} WHERE id IN (${placeholders})
+  `).get(...uniqueIds), `${table} references`);
+  if (integer(value.count, 'count') !== uniqueIds.length) {
+    throw new RepositoryError(
+      'VALIDATION_ERROR',
+      `Referenced ${table} record does not exist`,
+    );
+  }
+}
+
 export interface AssetsRepository {
   listProjects(): Project[];
   getProject(id: string): Project;
@@ -183,28 +214,29 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
         const id = parsed.id ?? randomUUID();
         if (parsed.id !== undefined) {
           const previous = getProject(id);
+          if (sameProjectNarrative(previous, parsed)) return previous;
           insertVersion(db, 'project', id, previous, now);
           db.prepare(`
             UPDATE projects SET name = ?, background = ?, goal = ?, role = ?,
-              key_decisions = ?, outcomes_and_evidence = ?, reflections = ?,
-              storytelling_versions = ?, updated_at = ? WHERE id = ?
+              key_decisions = ?, outcome = ?, evidence = ?, reflections = ?,
+              updated_at = ? WHERE id = ?
           `).run(
             parsed.name,
             parsed.background,
             parsed.goal,
             parsed.role,
             parsed.keyDecisions,
-            parsed.outcomesAndEvidence,
+            parsed.outcome,
+            parsed.evidence,
             parsed.reflections,
-            parsed.storytellingVersions,
             now,
             id,
           );
         } else {
           db.prepare(`
             INSERT INTO projects (
-              id, name, background, goal, role, key_decisions, outcomes_and_evidence,
-              reflections, storytelling_versions, created_at, updated_at
+              id, name, background, goal, role, key_decisions, outcome,
+              evidence, reflections, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             id,
@@ -213,9 +245,9 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
             parsed.goal,
             parsed.role,
             parsed.keyDecisions,
-            parsed.outcomesAndEvidence,
+            parsed.outcome,
+            parsed.evidence,
             parsed.reflections,
-            parsed.storytellingVersions,
             now,
             now,
           );
@@ -238,6 +270,8 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
     saveQuestion(input) {
       const parsed = questionSaveSchema.parse(input);
       return transaction(db, () => {
+        requireExistingIds(db, 'projects', parsed.projectIds);
+        requireExistingIds(db, 'capabilities', parsed.capabilityIds);
         const now = new Date().toISOString();
         const id = parsed.id ?? randomUUID();
         if (parsed.id !== undefined) {

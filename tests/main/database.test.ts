@@ -206,6 +206,61 @@ describe('database migrations', () => {
     }
   });
 
+  it('migrates legacy combined project results without losing the narrative', () => {
+    const db = new DatabaseSync(':memory:');
+    const now = '2026-07-27T00:00:00.000Z';
+
+    try {
+      db.exec(`
+        PRAGMA user_version = 1;
+        CREATE TABLE projects (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          background TEXT NOT NULL DEFAULT '',
+          goal TEXT NOT NULL DEFAULT '',
+          role TEXT NOT NULL DEFAULT '',
+          key_decisions TEXT NOT NULL DEFAULT '',
+          outcomes_and_evidence TEXT NOT NULL DEFAULT '',
+          reflections TEXT NOT NULL DEFAULT '',
+          storytelling_versions TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+      `);
+      db.prepare(`
+        INSERT INTO projects (
+          id, name, background, goal, role, key_decisions, outcomes_and_evidence,
+          reflections, storytelling_versions, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'legacy-project',
+        '旧项目',
+        '旧背景',
+        '旧目标',
+        '旧角色',
+        '旧决策',
+        '结果与证据原文',
+        '旧反思',
+        '旧讲述版本',
+        now,
+        now,
+      );
+
+      migrate(db);
+
+      expect(db.prepare(
+        'SELECT outcome, evidence FROM projects WHERE id = ?',
+      ).get('legacy-project')).toEqual({
+        outcome: '结果与证据原文',
+        evidence: '',
+      });
+      expect(db.prepare('PRAGMA user_version').get())
+        .toMatchObject({ user_version: CURRENT_SCHEMA_VERSION });
+    } finally {
+      db.close();
+    }
+  });
+
   it('rejects future database versions before schema writes and preserves the database', () => {
     const db = new DatabaseSync(':memory:');
 

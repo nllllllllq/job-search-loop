@@ -91,21 +91,21 @@ function writeTarget(
       if (create) {
         db.prepare(`
           INSERT INTO projects (
-            id, name, background, goal, role, key_decisions, outcomes_and_evidence,
-            reflections, storytelling_versions, created_at, updated_at
+            id, name, background, goal, role, key_decisions, outcome,
+            evidence, reflections, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           id, value.name, value.background, value.goal, value.role, value.keyDecisions,
-          value.outcomesAndEvidence, value.reflections, value.storytellingVersions, now, now,
+          value.outcome, value.evidence, value.reflections, now, now,
         );
       } else {
         db.prepare(`
           UPDATE projects SET name = ?, background = ?, goal = ?, role = ?,
-            key_decisions = ?, outcomes_and_evidence = ?, reflections = ?,
-            storytelling_versions = ?, updated_at = ? WHERE id = ?
+            key_decisions = ?, outcome = ?, evidence = ?, reflections = ?,
+            updated_at = ? WHERE id = ?
         `).run(
           value.name, value.background, value.goal, value.role, value.keyDecisions,
-          value.outcomesAndEvidence, value.reflections, value.storytellingVersions, now, id,
+          value.outcome, value.evidence, value.reflections, now, id,
         );
       }
       return;
@@ -244,14 +244,17 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
         } else {
           if (targetId === null) throw new Error('Proposal target ID is required');
           const previous = readTarget(db, proposal.targetType, targetId);
-          assetRepositoryInternals.insertVersion(
-            db,
-            proposal.targetType,
-            targetId,
-            previous,
-            now,
-          );
-          writeTarget(db, proposal.targetType, targetId, payload, false, now);
+          const previousPayload = parsePayload(proposal.targetType, previous);
+          if (JSON.stringify(previousPayload) !== JSON.stringify(payload)) {
+            assetRepositoryInternals.insertVersion(
+              db,
+              proposal.targetType,
+              targetId,
+              previous,
+              now,
+            );
+            writeTarget(db, proposal.targetType, targetId, payload, false, now);
+          }
         }
         db.prepare(`
           UPDATE change_proposals

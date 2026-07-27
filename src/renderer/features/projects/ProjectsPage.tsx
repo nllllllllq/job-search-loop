@@ -1,0 +1,174 @@
+import { useState } from 'react';
+import type { AssetVersion, Project, ProjectInput } from '../../../shared/domain';
+import { projectPayloadSchema } from '../../../shared/schemas';
+import { EmptyState } from '../../components/EmptyState';
+import { useAsyncResource } from '../../hooks/useAsyncResource';
+import { useToast } from '../../hooks/useToast';
+import { ResourceView } from '../assets/ResourceView';
+import { ProjectEditor } from './ProjectEditor';
+
+function versionProject(version: AssetVersion): ProjectInput | null {
+  try {
+    const decoded: unknown = JSON.parse(version.snapshot);
+    const parsed = projectPayloadSchema.safeParse(decoded);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export function ProjectsPage() {
+  const projects = useAsyncResource(() => window.jobSearch.assets.projects.list());
+  const toast = useToast();
+  const [editing, setEditing] = useState<Project | null | undefined>(undefined);
+  const [selected, setSelected] = useState<Project | null>(null);
+  const [versions, setVersions] = useState<AssetVersion[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+
+  const openProject = async (project: Project) => {
+    setSelected(project);
+    setVersions([]);
+    setVersionsLoading(true);
+    try {
+      const loaded = await window.jobSearch.assets.versions('project', project.id);
+      setVersions(loaded);
+    } catch {
+      toast.error('载入项目历史失败，请稍后重试');
+    } finally {
+      setVersionsLoading(false);
+    }
+  };
+
+  const save = async (input: ProjectInput) => {
+    try {
+      const saved = await window.jobSearch.assets.projects.save({
+        ...input,
+        ...(editing ? { id: editing.id } : {}),
+      });
+      setEditing(undefined);
+      setSelected(saved);
+      const refreshed = await projects.reload();
+      if (refreshed) {
+        setSelected(refreshed.find((item) => item.id === saved.id) ?? saved);
+      }
+      setVersions(await window.jobSearch.assets.versions('project', saved.id));
+      toast.success('项目档案已保存');
+    } catch {
+      toast.error('保存项目失败，请稍后重试');
+      throw new Error('project save failed');
+    }
+  };
+
+  const addButton = (
+    <button className="button button--primary" onClick={() => setEditing(null)} type="button">
+      新增项目
+    </button>
+  );
+
+  return (
+    <div className="assets-page projects-page">
+      <header className="page-heading">
+        <div>
+          <p className="section-label">PROJECT EVIDENCE / 项目证据</p>
+          <h2>把经历整理成可靠证据</h2>
+          <p>这里只维护项目事实与表达底稿，不修改简历；每次实际内容变化都会留下上一版。</p>
+        </div>
+        {addButton}
+      </header>
+
+      <ResourceView
+        empty={(projects.data?.length ?? 0) === 0}
+        emptyAction={addButton}
+        emptyBody="记录第一个项目的背景、决策、结果与证据。"
+        emptyTitle="还没有项目档案"
+        error={projects.error}
+        errorTitle="项目档案载入失败"
+        loading={projects.loading}
+        loadingLabel="正在读取项目档案…"
+      >
+        <div className="asset-split">
+          <section aria-label="项目列表" className="asset-list">
+            {projects.data?.map((project) => (
+              <article className="asset-card" key={project.id}>
+                <p className="asset-card__index">PROJECT / {project.updatedAt.slice(0, 10)}</p>
+                <h3>{project.name}</h3>
+                <p>{project.background || '尚未记录背景'}</p>
+                <button
+                  aria-label={`查看 ${project.name}`}
+                  className="text-button"
+                  onClick={() => void openProject(project)}
+                  type="button"
+                >
+                  查看档案
+                </button>
+              </article>
+            ))}
+          </section>
+
+          <aside aria-label="项目详情与历史" className="asset-detail">
+            {selected ? (
+              <>
+                <div className="asset-detail__heading">
+                  <div>
+                    <p className="section-label">ACTIVE FILE / 当前档案</p>
+                    <h3>{selected.name}</h3>
+                  </div>
+                  <button className="button button--quiet" onClick={() => setEditing(selected)} type="button">
+                    编辑项目
+                  </button>
+                </div>
+                <dl className="narrative-grid">
+                  {[
+                    ['背景', selected.background],
+                    ['目标', selected.goal],
+                    ['角色', selected.role],
+                    ['关键决策', selected.keyDecisions],
+                    ['结果', selected.outcome],
+                    ['证据', selected.evidence],
+                    ['反思', selected.reflections],
+                  ].map(([label, content]) => (
+                    <div key={label}>
+                      <dt>{label}</dt>
+                      <dd>{content || '—'}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <section className="version-history" aria-label="只读历史">
+                  <div className="version-history__heading">
+                    <h4>只读历史</h4>
+                    <span>{versions.length} 个版本</span>
+                  </div>
+                  {versionsLoading ? <p role="status">正在读取历史…</p> : null}
+                  {!versionsLoading && versions.length === 0 ? <p>当前还没有历史版本。</p> : null}
+                  {versions.map((version) => {
+                    const snapshot = versionProject(version);
+                    return (
+                      <article key={version.id}>
+                        <h5>历史版本 {version.version}</h5>
+                        <time dateTime={version.createdAt}>{version.createdAt.slice(0, 10)}</time>
+                        {snapshot ? <p>{snapshot.background || '该版本未记录背景'}</p> : <p>该历史版本无法读取。</p>}
+                      </article>
+                    );
+                  })}
+                </section>
+              </>
+            ) : (
+              <EmptyState
+                body="从左侧选择一个项目，查看完整叙事与只读版本历史。"
+                icon="项"
+                title="选择一份项目档案"
+              />
+            )}
+          </aside>
+        </div>
+      </ResourceView>
+
+      <ProjectEditor
+        initialValue={editing ?? undefined}
+        onClose={() => setEditing(undefined)}
+        onSave={save}
+        open={editing !== undefined}
+      />
+    </div>
+  );
+}

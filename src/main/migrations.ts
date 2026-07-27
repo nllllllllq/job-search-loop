@@ -165,7 +165,7 @@ export function migrate(db: DatabaseSync): void {
         VALUES (?, ?, ?, ?, ?, ?)
       `);
       for (const template of DEFAULT_PROMPT_TEMPLATES) {
-        insertTemplate.run(`default-${template.kind}`, template.kind, template.name, template.content, now, now);
+        insertTemplate.run(template.id, template.kind, template.name, template.content, now, now);
       }
       db.exec('PRAGMA user_version = 1');
     }

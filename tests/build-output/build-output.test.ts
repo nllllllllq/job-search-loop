@@ -9,4 +9,15 @@ describe('production renderer build', () => {
     expect(builtHtml).toMatch(/(?:src|href)="\.\/assets\//);
     expect(builtHtml).not.toMatch(/(?:src|href)="\/assets\//);
   });
+
+  it('bundles preload dependencies for Electron sandbox execution', async () => {
+    const builtPreload = await readFile(
+      resolve(process.cwd(), 'dist-electron/preload/index.js'),
+      'utf8',
+    );
+
+    expect(builtPreload).toContain('require("electron")');
+    expect(builtPreload).not.toMatch(/require\(["']\.\.\/shared\//);
+    expect(builtPreload).not.toMatch(/require\(["']zod/);
+  });
 });

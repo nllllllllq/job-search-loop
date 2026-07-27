@@ -16,5 +16,11 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src/renderer", "tests", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src/renderer",
+    "tests",
+    "vite.config.ts",
+    "vite.preload.config.ts",
+    "vitest.config.ts"
+  ]
 }

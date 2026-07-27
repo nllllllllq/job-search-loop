@@ -6,15 +6,17 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev:renderer": "vite --host 127.0.0.1",
-    "dev:electron": "tsc -p tsconfig.electron.json --watch",
+    "dev:electron": "npm run build:electron && concurrently -k \"tsc -p tsconfig.electron.json --watch\" \"vite build --config vite.preload.config.ts --watch\"",
     "dev:app": "wait-on tcp:5173 dist-electron/main/index.js && electron .",
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\" \"npm:dev:app\"",
-    "build": "tsc -p tsconfig.electron.json && vite build",
+    "build:electron": "tsc -p tsconfig.electron.json && vite build --config vite.preload.config.ts",
+    "build": "npm run build:electron && vite build",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:build-output": "npm run build && vitest run --config vitest.build-output.config.ts",
     "test:e2e": "npm run build && playwright test",
+    "smoke:win": "node scripts/smoke-win.mjs",
     "package:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
@@ -45,9 +47,19 @@
   "build": {
     "appId": "local.jobsearch.loop",
     "productName": "求职闭环",
+    "artifactName": "JobSearchLoop-Setup-${version}.${ext}",
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
     "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
     "directories": { "output": "release" },
-    "win": { "target": "nsis" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

@@ -16,6 +16,15 @@ import {
   type LiveDatabaseController,
 } from './services/backup';
 
+const isE2e = process.env.JOB_SEARCH_LOOP_E2E === '1';
+const e2eUserDataPath = process.env.JOB_SEARCH_LOOP_USER_DATA;
+if (isE2e && e2eUserDataPath) {
+  // Electron requires userData to be redirected before the ready event. This
+  // branch is only enabled by the test harness; production keeps the standard
+  // OS-managed application data directory.
+  app.setPath('userData', e2eUserDataPath);
+}
+
 function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -35,7 +44,7 @@ function createMainWindow(): BrowserWindow {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
 
-  if (app.isPackaged) {
+  if (app.isPackaged || isE2e) {
     void mainWindow.loadFile(join(__dirname, '../../dist/index.html'));
   } else {
     void mainWindow.loadURL('http://localhost:5173');

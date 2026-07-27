@@ -1,0 +1,20 @@
+:root {
+  color-scheme: light;
+  --ink: #10261f;
+  --ink-muted: #5d6a64;
+  --canvas: #f7f4ed;
+  --surface: #fffdf8;
+  --line: #d6ddd1;
+  --moss: #35624d;
+  --moss-light: #e3eee4;
+  --clay: #c8663d;
+  --shadow: 0 20px 55px rgba(16, 38, 31, 0.08);
+  --font-display: "Noto Serif SC", "Songti SC", SimSun, serif;
+  --font-body: "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  --space-1: 0.5rem;
+  --space-2: 0.75rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2.25rem;
+  --space-6: 3.5rem;
+}

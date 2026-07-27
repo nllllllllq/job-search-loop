@@ -1,5 +1,8 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
+import type { DatabaseSync } from 'node:sqlite';
+import { openDatabase } from './database';
+import { registerIpcHandlers } from './ipc/register';
 
 function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -29,7 +32,19 @@ function createMainWindow(): BrowserWindow {
   return mainWindow;
 }
 
+let database: DatabaseSync | null = null;
+let databaseClosed = false;
+
+function closeDatabaseOnce(): void {
+  if (database === null || databaseClosed) return;
+  databaseClosed = true;
+  database.close();
+  database = null;
+}
+
 app.whenReady().then(() => {
+  database = openDatabase(join(app.getPath('userData'), 'job-search-loop.sqlite'));
+  registerIpcHandlers(ipcMain, database);
   createMainWindow();
 
   app.on('activate', () => {
@@ -38,6 +53,9 @@ app.whenReady().then(() => {
     }
   });
 });
+
+app.on('before-quit', closeDatabaseOnce);
+app.on('will-quit', closeDatabaseOnce);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

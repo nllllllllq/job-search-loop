@@ -1,9 +1,9 @@
-export {};
+import type { JobSearchApi } from '../shared/ipc';
 
 declare global {
   interface Window {
-    readonly jobSearch: Readonly<{
-      version: '0.1.0';
-    }>;
+    readonly jobSearch: JobSearchApi;
   }
 }
+
+export {};

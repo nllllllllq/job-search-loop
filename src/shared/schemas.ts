@@ -121,3 +121,89 @@ export const changeProposalInputSchema = changeProposalBaseSchema.superRefine((p
     });
   }
 });
+
+export const idSchema = z.string().uuid();
+export const noPayloadSchema = z.undefined();
+export const optionalIdSchema = z.object({ id: idSchema });
+
+export const positionListFilterSchema = z.object({
+  query: z.string().max(500).optional(),
+  stage: canonicalStageSchema.optional(),
+}).optional();
+
+export const positionUpdateSchema = z.object({
+  id: idSchema,
+  input: positionInputSchema,
+});
+
+export const processStageSaveSchema = processStageInputSchema.extend({
+  id: idSchema.optional(),
+});
+
+export const reorderStagesSchema = z.object({
+  positionId: idSchema,
+  orderedIds: z.array(idSchema),
+});
+
+export const preparationInputSchema = z.object({
+  positionId: idSchema,
+  rawJdSnapshot: z.string().max(100_000),
+  promptSnapshot: z.string().max(100_000),
+  assetsSnapshot: z.string().max(1_000_000),
+  modelSnapshot: z.string().trim().min(1).max(500),
+  outputSnapshot: z.string().max(1_000_000),
+  generatedAt: z.string().datetime(),
+});
+
+const interviewBaseSchema = z.object({
+  positionId: idSchema,
+  roundName: z.string().trim().min(1).max(120),
+  interviewDate: isoDateSchema.nullable(),
+  transcript: z.string().max(1_000_000),
+  personalNotes: z.string().max(100_000),
+  feedbackResult: z.string().max(20_000).nullable(),
+});
+
+export const interviewInputSchema = interviewBaseSchema.extend({
+  summary: z.never().optional(),
+});
+
+// User edits cannot silently overwrite an AI-generated summary. That field is
+// persisted only by InterviewsRepository.saveSummary.
+export const interviewUpdateSchema = interviewBaseSchema.extend({
+  summary: z.never().optional(),
+});
+
+export const interviewSummarySchema = z.string().trim().min(1).max(200_000);
+export const interviewUpdateRequestSchema = z.object({
+  id: idSchema,
+  input: interviewUpdateSchema,
+});
+
+export const projectSaveSchema = projectPayloadSchema.extend({ id: idSchema.optional() });
+export const questionSaveSchema = questionPayloadSchema.extend({ id: idSchema.optional() });
+export const capabilitySaveSchema = capabilityPayloadSchema.extend({ id: idSchema.optional() });
+export const insightSaveSchema = insightPayloadSchema.extend({ id: idSchema.optional() });
+
+export const questionListSchema = z.object({
+  type: questionTypeSchema.optional(),
+}).optional();
+
+export const assetReferenceSchema = z.object({
+  type: proposalTargetSchema,
+  id: idSchema,
+});
+
+export const proposalListSchema = z.object({
+  status: proposalStatusSchema.optional(),
+}).optional();
+
+export const proposalAcceptSchema = z.object({
+  id: idSchema,
+  editedPayload: z.unknown(),
+});
+
+export const promptSaveSchema = z.object({
+  kind: promptKindSchema,
+  content: z.string().trim().min(1).max(200_000),
+});

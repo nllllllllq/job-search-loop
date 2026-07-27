@@ -320,4 +320,28 @@ describe('preparation service', () => {
     })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
     expect(generate).not.toHaveBeenCalled();
   });
+
+  it('rejects invalid list and get IDs at the main IPC boundary', async () => {
+    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+    const ipcMain = {
+      handle(channel: string, handler: (event: unknown, payload: unknown) => unknown) {
+        handlers.set(channel, handler);
+      },
+    };
+    const preparations = {
+      create: vi.fn(),
+      get: vi.fn(),
+      listByPosition: vi.fn(),
+    };
+    registerPreparationHandlers(ipcMain, preparations);
+
+    await expect(
+      handlers.get(CHANNELS.preparations.list)!({}, 'not-a-uuid'),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    await expect(
+      handlers.get(CHANNELS.preparations.get)!({}, 'not-a-uuid'),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(preparations.listByPosition).not.toHaveBeenCalled();
+    expect(preparations.get).not.toHaveBeenCalled();
+  });
 });

@@ -4,6 +4,7 @@ import {
   aiConnectionResultSchema,
   aiPublicSettingsSchema,
   aiSettingsSaveSchema,
+  idSchema,
   preparationGenerateSchema,
   preparationMaterialListSchema,
   preparationMaterialSchema,
@@ -99,10 +100,10 @@ const api = frozen<JobSearchApi>({
   }),
   preparations: frozen<JobSearchApi['preparations']>({
     list: async (positionId) => preparationMaterialListSchema.parse(
-      await invoke(CHANNELS.preparations.list, positionId),
+      await invoke(CHANNELS.preparations.list, idSchema.parse(positionId)),
     ),
     get: async (id) => preparationMaterialSchema.parse(
-      await invoke(CHANNELS.preparations.get, id),
+      await invoke(CHANNELS.preparations.get, idSchema.parse(id)),
     ),
     generate: async (input) => preparationMaterialSchema.parse(
       await invoke(

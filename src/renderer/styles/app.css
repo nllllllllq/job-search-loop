@@ -1177,6 +1177,7 @@ a {
 
 .stage-card__title > div:first-child {
   display: flex;
+  min-width: 0;
   gap: var(--space-3);
   align-items: center;
 }
@@ -1187,8 +1188,15 @@ a {
   font-size: 1.08rem;
 }
 
+.stage-card__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .stage-card__actions {
   display: flex;
+  flex: 0 0 auto;
   gap: 0.35rem;
 }
 

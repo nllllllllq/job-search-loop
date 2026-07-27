@@ -72,7 +72,7 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
               <div className="stage-card__content">
                 <div className="stage-card__title">
                   <div>
-                    <h4>{stage.name}</h4>
+                    <h4 className="stage-card__name">{stage.name}</h4>
                     <StatusBadge stage={stage.canonicalStage} />
                   </div>
                   <div className="stage-card__actions">
@@ -96,8 +96,13 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
                     >
                       ↓
                     </button>
-                    <button className="text-button" onClick={() => setEditing(stage)} type="button">
-                      <span className="sr-only">编辑 </span>{stage.name}
+                    <button
+                      aria-label={`编辑 ${stage.name}`}
+                      className="text-button"
+                      onClick={() => setEditing(stage)}
+                      type="button"
+                    >
+                      编辑
                     </button>
                   </div>
                 </div>

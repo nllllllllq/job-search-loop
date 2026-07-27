@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../src/renderer/App';
@@ -159,6 +159,23 @@ describe('positions flow', () => {
     });
   });
 
+  it('limits search input to the API schema maximum before filtering', async () => {
+    const { fake, user } = renderAt('#/positions');
+    const search = await screen.findByRole('searchbox', { name: '搜索岗位' });
+    const overlongQuery = '岗'.repeat(501);
+
+    expect(search).toHaveAttribute('maxlength', '500');
+    fireEvent.change(search, { target: { value: overlongQuery.slice(0, 500) } });
+    expect(search).toHaveValue('岗'.repeat(500));
+    await user.click(screen.getByRole('button', { name: '筛选' }));
+
+    await waitFor(() => {
+      expect(fake.positions.list).toHaveBeenLastCalledWith({
+        query: '岗'.repeat(500),
+      });
+    });
+  });
+
   it('shows exact detail tabs and renders raw JD as safe text with line breaks', async () => {
     renderAt(`#/positions/${positionId}`);
 
@@ -172,6 +189,33 @@ describe('positions flow', () => {
     expect(rawJd).toHaveTextContent('负责产品规划 与用户研究 <script>alert(1)</script>');
     expect(rawJd).toHaveStyle({ whiteSpace: 'pre-wrap' });
     expect(document.querySelector('.raw-jd script')).toBeNull();
+  });
+
+  it('supports roving focus and standard keyboard navigation across detail tabs', async () => {
+    const { user } = renderAt(`#/positions/${positionId}`);
+    const overview = await screen.findByRole('tab', { name: '概况' });
+    const rawJd = screen.getByRole('tab', { name: '原始 JD' });
+    const interviews = screen.getByRole('tab', { name: '面试记录' });
+
+    expect(overview).toHaveAttribute('tabindex', '0');
+    expect(rawJd).toHaveAttribute('tabindex', '-1');
+    overview.focus();
+
+    await user.keyboard('{ArrowRight}');
+    expect(rawJd).toHaveFocus();
+    expect(rawJd).toHaveAttribute('aria-selected', 'true');
+
+    await user.keyboard('{End}');
+    expect(interviews).toHaveFocus();
+    expect(interviews).toHaveAttribute('aria-selected', 'true');
+
+    await user.keyboard('{ArrowRight}');
+    expect(overview).toHaveFocus();
+    await user.keyboard('{ArrowLeft}');
+    expect(interviews).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(overview).toHaveFocus();
+    expect(overview).toHaveAttribute('aria-selected', 'true');
   });
 
   it('labels expected and actual dates explicitly and saves an edited interview stage', async () => {
@@ -202,6 +246,29 @@ describe('positions flow', () => {
       });
     });
     expect(fake.positions.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects an empty stage order without silently moving it to the first position', async () => {
+    const { fake, user } = renderAt(`#/positions/${positionId}`);
+    await user.click(await screen.findByRole('tab', { name: '流程' }));
+    await user.click(screen.getByRole('button', { name: '编辑 面试' }));
+    const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
+    const order = within(editor).getByRole('spinbutton', { name: /顺序/ });
+
+    expect(order).toBeRequired();
+    await user.clear(order);
+    await user.click(within(editor).getByRole('button', { name: '保存阶段' }));
+
+    expect(await within(editor).findByText('请输入非负整数')).toBeInTheDocument();
+    expect(order).toHaveValue(null);
+    expect(fake.positions.saveStage).not.toHaveBeenCalled();
+  });
+
+  it('uses a fixed visible edit label instead of repeating the stage name', async () => {
+    const { user } = renderAt(`#/positions/${positionId}`);
+    await user.click(await screen.findByRole('tab', { name: '流程' }));
+
+    expect(screen.getByRole('button', { name: '编辑 面试' })).toHaveTextContent(/^编辑$/);
   });
 
   it('adds stages, reorders existing stages, and refreshes detail after each mutation', async () => {

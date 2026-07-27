@@ -80,6 +80,7 @@ export function PositionsPage() {
           <span>搜索岗位</span>
           <input
             aria-label="搜索岗位"
+            maxLength={500}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="公司、岗位或 JD 关键词"
             type="search"

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type KeyboardEvent, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { PositionInput } from '../../../shared/domain';
 import type { AppError } from '../../../shared/ipc';
@@ -46,6 +46,7 @@ export function PositionDetailPage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const resource = useAsyncResource(
     () => loadPositionDetail(id),
     [id],
@@ -99,6 +100,27 @@ export function PositionDetailPage() {
   const position = resource.data;
   if (!position) return null;
 
+  const activateTab = (index: number) => {
+    const nextTab = tabs[index];
+    if (!nextTab) return;
+    setTab(nextTab.id);
+    tabRefs.current[index]?.focus();
+  };
+
+  const handleTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = tabs.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    activateTab(nextIndex);
+  };
+
   return (
     <div className="position-detail-page">
       <Link className="back-link" to="/positions">← 返回岗位台账</Link>
@@ -119,15 +141,20 @@ export function PositionDetailPage() {
       </header>
 
       <div aria-label="岗位详情" className="detail-tabs" role="tablist">
-        {tabs.map((item) => (
+        {tabs.map((item, index) => (
           <button
             aria-controls={`panel-${item.id}`}
             aria-selected={tab === item.id}
             className="detail-tab"
             id={`tab-${item.id}`}
             key={item.id}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
             onClick={() => setTab(item.id)}
+            ref={(element) => {
+              tabRefs.current[index] = element;
+            }}
             role="tab"
+            tabIndex={tab === item.id ? 0 : -1}
             type="button"
           >
             {item.label}

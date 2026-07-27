@@ -75,6 +75,16 @@ export function StageEditor({
     event.preventDefault();
     if (saving) return;
 
+    if (value.orderIndex.trim() === '') {
+      setErrors((current) => ({ ...current, orderIndex: '请输入非负整数' }));
+      return;
+    }
+    const orderIndex = Number(value.orderIndex);
+    if (!Number.isInteger(orderIndex) || orderIndex < 0) {
+      setErrors((current) => ({ ...current, orderIndex: '请输入非负整数' }));
+      return;
+    }
+
     const input: ProcessStageInput = {
       positionId,
       name: value.name,
@@ -83,7 +93,7 @@ export function StageEditor({
       expectedDate: value.expectedDate || null,
       feedback: value.feedback,
       notes: value.notes,
-      orderIndex: Number(value.orderIndex),
+      orderIndex,
     };
     const parsed = processStageInputSchema.safeParse(input);
     if (!parsed.success) {
@@ -147,7 +157,7 @@ export function StageEditor({
           <Field error={errors.expectedDate} label="预计日期">
             <input onChange={(event) => setField('expectedDate', event.target.value)} type="date" value={value.expectedDate} />
           </Field>
-          <Field error={errors.orderIndex} hint="从 0 开始；保存后将插入对应位置。" label="顺序">
+          <Field error={errors.orderIndex} hint="从 0 开始；保存后将插入对应位置。" label="顺序" required>
             <input min={0} onChange={(event) => setField('orderIndex', event.target.value)} step={1} type="number" value={value.orderIndex} />
           </Field>
         </div>

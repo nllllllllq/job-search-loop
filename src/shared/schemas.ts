@@ -9,18 +9,31 @@ const proposalOperations = ['create', 'update', 'merge'] as const;
 const questionTypes = ['interviewer', 'candidate'] as const;
 const promptKinds = ['preparation', 'interview-review', 'capability-analysis'] as const;
 
+const interestSchema = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+]);
+
 export const canonicalStageSchema = z.enum(canonicalStages);
 export const proposalStatusSchema = z.enum(proposalStatuses);
 export const proposalTargetSchema = z.enum(proposalTargets);
 export const proposalOperationSchema = z.enum(proposalOperations);
 export const questionTypeSchema = z.enum(questionTypes);
 export const promptKindSchema = z.enum(promptKinds);
-export const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期必须是 YYYY-MM-DD');
+export const isoDateSchema = z.string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, '日期必须是 YYYY-MM-DD')
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+  }, '日期必须是实际存在的 YYYY-MM-DD 日期');
 
 export const positionInputSchema = z.object({
   company: z.string().trim().min(1).max(120),
   title: z.string().trim().min(1).max(120),
-  interest: z.number().int().min(1).max(5),
+  interest: interestSchema,
   rawJd: z.string().min(1).max(100_000),
 });
 
@@ -80,7 +93,7 @@ export const proposalPayloadSchema = z.discriminatedUnion('targetType', [
   z.object({ targetType: z.literal('insight'), payload: insightPayloadSchema }),
 ]);
 
-export const changeProposalInputSchema = z.object({
+const changeProposalBaseSchema = z.object({
   targetType: proposalTargetSchema,
   targetId: z.string().uuid().nullable(),
   operation: proposalOperationSchema,
@@ -88,3 +101,23 @@ export const changeProposalInputSchema = z.object({
   positionId: z.string().uuid().nullable(),
   interviewId: z.string().uuid().nullable(),
 }).and(proposalPayloadSchema);
+
+export const changeProposalInputSchema = changeProposalBaseSchema.superRefine((proposal, context) => {
+  if (proposal.operation === 'create' && proposal.targetId !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['targetId'],
+      message: '创建建议不能指定既有资产',
+    });
+  }
+  if (
+    (proposal.operation === 'update' || proposal.operation === 'merge')
+    && proposal.targetId === null
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['targetId'],
+      message: '更新或合并建议必须指定目标资产',
+    });
+  }
+});

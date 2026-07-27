@@ -2,7 +2,24 @@
 
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { DatabaseSync } from 'node:sqlite';
+import { existsSync, rmSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { openDatabase } from '../../src/main/database';
+import { CURRENT_SCHEMA_VERSION, migrate } from '../../src/main/migrations';
 import { createTestDatabase } from '../helpers/database';
+
+function temporaryDatabasePath(label: string): string {
+  return join(tmpdir(), `job-search-loop-${label}-${randomUUID()}.sqlite`);
+}
+
+function removeDatabaseFiles(path: string): void {
+  for (const candidate of [path, `${path}-shm`, `${path}-wal`]) {
+    rmSync(candidate, { force: true });
+  }
+}
 
 describe('database migrations', () => {
   it('creates the Stage 1 schema and default prompt templates', () => {
@@ -27,17 +44,97 @@ describe('database migrations', () => {
         'prompt_templates',
         'questions',
       ]);
-      const templates = db.prepare('SELECT id, kind FROM prompt_templates ORDER BY kind').all();
-      expect(templates.map((row) => String(row.kind))).toEqual([
-        'capability-analysis', 'interview-review', 'preparation',
+      const templates = db.prepare(
+        'SELECT id, kind, name, content FROM prompt_templates ORDER BY kind',
+      ).all();
+      expect(templates.map(({ id, kind, name }) => ({ id, kind, name }))).toEqual([
+        {
+          id: '2c4e2b10-52aa-4a0a-b5a3-3e3b9c5e7f03',
+          kind: 'capability-analysis',
+          name: '共性能力分析',
+        },
+        {
+          id: '1b4a8791-78e5-42f2-8da4-a322bb32f9e2',
+          kind: 'interview-review',
+          name: '面试复盘',
+        },
+        {
+          id: '0a8d1dfc-9a87-4d57-9e3c-451c20a6a901',
+          kind: 'preparation',
+          name: '岗位准备',
+        },
       ]);
       for (const template of templates) {
         expect(z.string().uuid().safeParse(template.id).success).toBe(true);
+        expect(String(template.content).trim()).not.toBe('');
       }
       expect(db.prepare('SELECT COUNT(*) AS count FROM prompt_templates').get())
         .toMatchObject({ count: 3 });
-      expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 1 });
+      expect(db.prepare('PRAGMA user_version').get())
+        .toMatchObject({ user_version: CURRENT_SCHEMA_VERSION });
       expect(db.prepare('PRAGMA foreign_keys').get()).toMatchObject({ foreign_keys: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('enforces database constraints and creates only STRICT tables', () => {
+    const db = createTestDatabase();
+    const now = '2026-07-27T00:00:00.000Z';
+
+    try {
+      const definitions = db.prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+      ).all();
+      expect(definitions).toHaveLength(12);
+      for (const definition of definitions) {
+        expect(String(definition.sql).trim()).toMatch(/\) STRICT;?$/);
+      }
+
+      const insertPosition = db.prepare(`
+        INSERT INTO positions (
+          id, company, title, interest, raw_jd, current_stage, final_result, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      expect(() => insertPosition.run(
+        'invalid-interest', '远山科技', '产品经理', 0, '负责产品规划', null, null, now, now,
+      )).toThrow();
+      insertPosition.run('constraint-position', '远山科技', '产品经理', 5, '负责产品规划', null, null, now, now);
+
+      const insertStage = db.prepare(`
+        INSERT INTO process_stages (
+          id, position_id, name, canonical_stage, actual_date, expected_date, feedback, notes, order_index, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      insertStage.run('constraint-stage-1', 'constraint-position', '感兴趣', 'interested', null, null, '', '', 0, now, now);
+      expect(() => insertStage.run(
+        'constraint-stage-2', 'constraint-position', '已投递', 'applied', null, null, '', '', 0, now, now,
+      )).toThrow();
+
+      expect(() => db.prepare(`
+        INSERT INTO questions (id, type, text, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+      `).run('invalid-question', 'unknown', '问题', now, now)).toThrow();
+      for (const [column, value] of [
+        ['target_type', 'unknown'],
+        ['operation', 'replace'],
+        ['status', 'unknown'],
+      ]) {
+        expect(() => db.prepare(`
+          INSERT INTO change_proposals (
+            id, target_type, target_id, operation, payload_json, rationale, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          `invalid-proposal-${column}`,
+          column === 'target_type' ? value : 'project',
+          null,
+          column === 'operation' ? value : 'create',
+          '{}',
+          '测试约束',
+          column === 'status' ? value : 'pending',
+          now,
+          now,
+        )).toThrow();
+      }
     } finally {
       db.close();
     }
@@ -98,7 +195,6 @@ describe('database migrations', () => {
         'interested', null, '2026-07-27T00:00:00.000Z', '2026-07-27T00:00:00.000Z',
       );
 
-      const { migrate } = await import('../../src/main/migrations');
       migrate(db);
 
       expect(db.prepare('SELECT company FROM positions WHERE id = ?').get('position-1'))
@@ -107,6 +203,74 @@ describe('database migrations', () => {
         .toMatchObject({ count: 3 });
     } finally {
       db.close();
+    }
+  });
+
+  it('rejects future database versions before schema writes and preserves the database', () => {
+    const db = new DatabaseSync(':memory:');
+
+    try {
+      db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION + 1}`);
+
+      expect(() => migrate(db)).toThrow(
+        `Unsupported database schema version ${CURRENT_SCHEMA_VERSION + 1}; current version is ${CURRENT_SCHEMA_VERSION}`,
+      );
+      expect(db.prepare('PRAGMA user_version').get())
+        .toMatchObject({ user_version: CURRENT_SCHEMA_VERSION + 1 });
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('closes a rejected future-version database so its file can be replaced immediately', () => {
+    const path = temporaryDatabasePath('future-version');
+
+    try {
+      const futureVersion = new DatabaseSync(path);
+      futureVersion.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION + 1}`);
+      futureVersion.close();
+
+      expect(() => openDatabase(path)).toThrow('Unsupported database schema version');
+      removeDatabaseFiles(path);
+      expect(existsSync(path)).toBe(false);
+
+      const replacement = new DatabaseSync(path);
+      replacement.exec('CREATE TABLE replacement_check (id INTEGER PRIMARY KEY)');
+      replacement.close();
+      expect(existsSync(path)).toBe(true);
+    } finally {
+      removeDatabaseFiles(path);
+    }
+  });
+
+  it('uses WAL and a five-second busy timeout for file-backed databases that persist after reopen', () => {
+    const path = temporaryDatabasePath('persistence');
+    let db: DatabaseSync | undefined;
+    let reopened: DatabaseSync | undefined;
+
+    try {
+      db = openDatabase(path);
+      expect(db.prepare('PRAGMA journal_mode').get()).toMatchObject({ journal_mode: 'wal' });
+      expect(db.prepare('PRAGMA busy_timeout').get()).toMatchObject({ timeout: 5000 });
+      db.prepare(`
+        INSERT INTO positions (
+          id, company, title, interest, raw_jd, current_stage, final_result, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'persisted-position', '远山科技', '产品经理', 4, '负责产品规划', 'applied', null,
+        '2026-07-27T00:00:00.000Z', '2026-07-27T00:00:00.000Z',
+      );
+      db.close();
+      db = undefined;
+
+      reopened = openDatabase(path);
+      expect(reopened.prepare('SELECT company FROM positions WHERE id = ?').get('persisted-position'))
+        .toMatchObject({ company: '远山科技' });
+    } finally {
+      reopened?.close();
+      db?.close();
+      removeDatabaseFiles(path);
     }
   });
 });

@@ -1,6 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
+export const CURRENT_SCHEMA_VERSION = 1;
+
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
     id TEXT PRIMARY KEY,
@@ -150,14 +152,20 @@ const CREATE_SCHEMA_V1 = `
 `;
 
 export function migrate(db: DatabaseSync): void {
+  const version = readSchemaVersion(db);
+  if (version > CURRENT_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported database schema version ${version}; current version is ${CURRENT_SCHEMA_VERSION}`,
+    );
+  }
+
   db.exec('PRAGMA foreign_keys = ON');
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA busy_timeout = 5000');
 
   db.exec('BEGIN IMMEDIATE');
   try {
-    const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
-    if (version.user_version < 1) {
+    if (version < CURRENT_SCHEMA_VERSION) {
       db.exec(CREATE_SCHEMA_V1);
       const now = new Date().toISOString();
       const insertTemplate = db.prepare(`
@@ -167,11 +175,27 @@ export function migrate(db: DatabaseSync): void {
       for (const template of DEFAULT_PROMPT_TEMPLATES) {
         insertTemplate.run(template.id, template.kind, template.name, template.content, now, now);
       }
-      db.exec('PRAGMA user_version = 1');
+      db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     }
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
   }
+}
+
+function readSchemaVersion(db: DatabaseSync): number {
+  const row = db.prepare('PRAGMA user_version').get();
+  if (
+    row === undefined
+    || row === null
+    || typeof row !== 'object'
+    || !('user_version' in row)
+    || typeof row.user_version !== 'number'
+    || !Number.isSafeInteger(row.user_version)
+    || row.user_version < 0
+  ) {
+    throw new Error('Unable to read database schema version from PRAGMA user_version');
+  }
+  return row.user_version;
 }

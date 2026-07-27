@@ -10,48 +10,7 @@ import { QuestionsPage } from './features/questions/QuestionsPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { ReviewCenterPage } from './features/reviews/ReviewCenterPage';
 import { ToastProvider } from './hooks/useToast';
-
-function OverviewPage() {
-  return (
-    <div className="overview-page">
-      <section className="overview-intro" aria-labelledby="overview-intro-title">
-        <div>
-          <p className="section-label">本期焦点 / ISSUE NO. 01</p>
-          <h2 id="overview-intro-title">
-            把每一次求职行动，
-            <br />
-            变成下一次的底气。
-          </h2>
-        </div>
-        <p>
-          在一个只属于你的本地工作台里，记录岗位进展、复盘真实对话，并让项目经验逐渐成为可靠的表达素材。
-        </p>
-      </section>
-      <div className="overview-ledger" aria-label="工作方法">
-        <article>
-          <span>01</span>
-          <h3>追踪</h3>
-          <p>记住机会走到哪里，也记住为什么出发。</p>
-        </article>
-        <article>
-          <span>02</span>
-          <h3>复盘</h3>
-          <p>把感受拆成事实、判断与下一步练习。</p>
-        </article>
-        <article>
-          <span>03</span>
-          <h3>沉淀</h3>
-          <p>让项目、问题与心得互相提供证据。</p>
-        </article>
-      </div>
-      <EmptyState
-        body="岗位模块将在下一阶段承接第一条目标记录。现在先熟悉这套以记录、复盘和沉淀为主线的工作方式。"
-        icon="启"
-        title="从一条真实机会开始"
-      />
-    </div>
-  );
-}
+import { DashboardPage } from './features/dashboard/DashboardPage';
 
 function NotFoundPage() {
   return (
@@ -77,7 +36,7 @@ export function App() {
       <ToastProvider>
         <AppShell>
           <Routes>
-            <Route path="/" element={<OverviewPage />} />
+            <Route path="/" element={<DashboardPage />} />
             <Route
               path="/positions"
               element={<PositionsPage />}

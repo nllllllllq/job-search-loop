@@ -81,6 +81,29 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
           evidenceCount: integer(data.evidence_count, 'evidence_count'),
         };
       });
+      const recentPositions = db.prepare(`
+        SELECT id, company, title, interest, current_stage, final_result, updated_at
+        FROM positions
+        ORDER BY updated_at DESC, created_at DESC, id DESC
+        LIMIT 8
+      `).all().map((value) => {
+        const data = row(value, 'recent position');
+        const interest = integer(data.interest, 'interest');
+        const currentStage = data.current_stage === null
+          ? null
+          : canonicalStageSchema.parse(text(data.current_stage, 'current_stage'));
+        return {
+          id: text(data.id, 'id'),
+          company: text(data.company, 'company'),
+          title: text(data.title, 'title'),
+          interest: interest as 1 | 2 | 3 | 4 | 5,
+          currentStage,
+          finalResult: data.final_result === null
+            ? null
+            : text(data.final_result, 'final_result'),
+          updatedAt: text(data.updated_at, 'updated_at'),
+        };
+      });
       return {
         totalPositions,
         stageDistribution,
@@ -89,6 +112,7 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
         pendingProposals,
         processEvents,
         capabilityFrequency,
+        recentPositions,
       };
     },
   };

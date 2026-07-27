@@ -4,7 +4,10 @@ import {
   aiConnectionResultSchema,
   aiPublicSettingsSchema,
   aiSettingsSaveSchema,
+  capabilityAnalysisPreviewSchema,
+  capabilityAnalysisSelectionSchema,
   changeProposalListSchema,
+  dashboardSummarySchema,
   changeProposalSchema,
   idSchema,
   interviewInputSchema,
@@ -218,7 +221,21 @@ const api = frozen<JobSearchApi>({
     }),
   }),
   system: frozen<JobSearchApi['system']>({
-    getDashboardSummary: () => invoke(CHANNELS.system.getDashboardSummary),
+    getDashboardSummary: async () => dashboardSummarySchema.parse(
+      await invoke(CHANNELS.system.getDashboardSummary),
+    ),
+    previewCapabilityAnalysis: async (positionIds) => capabilityAnalysisPreviewSchema.parse(
+      await invoke(
+        CHANNELS.system.previewCapabilityAnalysis,
+        capabilityAnalysisSelectionSchema.parse(positionIds),
+      ),
+    ),
+    confirmCapabilityAnalysis: async (token) => changeProposalListSchema.parse(
+      await invoke(
+        CHANNELS.system.confirmCapabilityAnalysis,
+        idSchema.parse(token),
+      ),
+    ),
   }),
 });
 

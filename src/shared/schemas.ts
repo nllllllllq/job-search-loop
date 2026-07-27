@@ -697,6 +697,68 @@ export const interviewReviewResultSchema = z.object({
   proposals: changeProposalListSchema,
 }).strict();
 
+export const capabilityAnalysisSelectionSchema = z.array(idSchema)
+  .min(2, '请至少选择 2 个岗位')
+  .max(20, '一次最多分析 20 个岗位')
+  .refine((ids) => new Set(ids).size === ids.length, '岗位不能重复选择');
+
+export const capabilityAnalysisOutputSchema = z.object({
+  capabilities: z.array(z.object({
+    name: z.string().trim().min(1).max(200),
+    jdFrequency: z.number().int().positive(),
+    evidence: z.array(z.string().trim().min(1).max(2_000)).max(30),
+    gaps: z.array(z.string().trim().min(1).max(2_000)).max(30),
+  }).strict()).min(1).max(30),
+}).strict();
+
+export const capabilityAnalysisPreviewSchema = z.object({
+  token: idSchema,
+  provider: z.string().trim().min(1).max(500),
+  model: z.string().trim().min(1).max(500),
+  prompt: z.string().trim().min(1).max(200_000),
+  positions: z.array(z.object({
+    id: idSchema,
+    label: z.string().trim().min(1).max(500),
+    rawJd: z.string().min(1).max(100_000),
+  }).strict()).min(2).max(20),
+}).strict();
+
+const dashboardPositionSchema = z.object({
+  id: idSchema,
+  company: z.string().max(120),
+  title: z.string().max(120),
+  interest: interestSchema,
+  currentStage: canonicalStageSchema.nullable(),
+  finalResult: z.string().max(20_000).nullable(),
+  updatedAt: z.string().datetime(),
+}).strict();
+
+export const dashboardSummarySchema = z.object({
+  totalPositions: z.number().int().nonnegative(),
+  stageDistribution: z.array(z.object({
+    stage: canonicalStageSchema,
+    count: z.number().int().nonnegative(),
+  }).strict()).max(canonicalStages.length),
+  positionsWithInterviews: z.number().int().nonnegative(),
+  completedReviews: z.number().int().nonnegative(),
+  pendingProposals: z.number().int().nonnegative(),
+  processEvents: z.array(z.object({
+    positionId: idSchema,
+    positionLabel: z.string().max(500),
+    stageName: z.string().max(120),
+    canonicalStage: canonicalStageSchema,
+    date: isoDateSchema,
+    dateType: z.enum(['actual', 'expected']),
+  }).strict()).max(100_000),
+  capabilityFrequency: z.array(z.object({
+    capabilityId: idSchema,
+    name: z.string().max(200),
+    jdFrequency: z.number().int().nonnegative(),
+    evidenceCount: z.number().int().nonnegative(),
+  }).strict()).max(100_000),
+  recentPositions: z.array(dashboardPositionSchema).max(8),
+}).strict();
+
 export const promptSaveSchema = z.object({
   kind: promptKindSchema,
   content: z.string()

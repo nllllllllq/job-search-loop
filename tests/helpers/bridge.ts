@@ -90,6 +90,8 @@ export interface JobSearchApiFake {
   };
   readonly system: {
     getDashboardSummary: ApiMock<JobSearchApi['system']['getDashboardSummary']>;
+    previewCapabilityAnalysis: ApiMock<JobSearchApi['system']['previewCapabilityAnalysis']>;
+    confirmCapabilityAnalysis: ApiMock<JobSearchApi['system']['confirmCapabilityAnalysis']>;
   };
 }
 
@@ -119,6 +121,7 @@ const dashboardSummary: DashboardSummary = {
   pendingProposals: 0,
   processEvents: [],
   capabilityFrequency: [],
+  recentPositions: [],
 };
 
 export function createJobSearchFake(): JobSearchApiFake {
@@ -214,6 +217,10 @@ export function createJobSearchFake(): JobSearchApiFake {
     },
     system: {
       getDashboardSummary: vi.fn<JobSearchApi['system']['getDashboardSummary']>().mockResolvedValue(dashboardSummary),
+      previewCapabilityAnalysis: vi.fn<JobSearchApi['system']['previewCapabilityAnalysis']>()
+        .mockRejectedValue(new Error('未配置共性能力分析预览')),
+      confirmCapabilityAnalysis: vi.fn<JobSearchApi['system']['confirmCapabilityAnalysis']>()
+        .mockRejectedValue(new Error('未配置共性能力分析确认')),
     },
   };
 }

@@ -5,6 +5,7 @@ import type {
   AssetVersion,
   CanonicalStage,
   Capability,
+  CapabilityAnalysisPreview,
   CapabilityInput,
   ChangeProposal,
   DashboardSummary,
@@ -89,6 +90,8 @@ export const CHANNELS = {
   },
   system: {
     getDashboardSummary: 'system:dashboard-summary',
+    previewCapabilityAnalysis: 'system:capability-analysis:preview',
+    confirmCapabilityAnalysis: 'system:capability-analysis:confirm',
   },
 } as const;
 
@@ -181,5 +184,7 @@ export interface JobSearchApi {
   };
   readonly system: {
     getDashboardSummary(): Promise<DashboardSummary>;
+    previewCapabilityAnalysis(positionIds: string[]): Promise<CapabilityAnalysisPreview>;
+    confirmCapabilityAnalysis(token: string): Promise<ChangeProposal[]>;
   };
 }

@@ -381,4 +381,26 @@ export interface DashboardSummary {
     jdFrequency: number;
     evidenceCount: number;
   }>;
+  recentPositions: PositionListItem[];
+}
+
+export interface CapabilityAnalysisPreview {
+  token: string;
+  provider: string;
+  model: string;
+  prompt: string;
+  positions: Array<{
+    id: string;
+    label: string;
+    rawJd: string;
+  }>;
+}
+
+export interface CapabilityAnalysisOutput {
+  capabilities: Array<{
+    name: string;
+    jdFrequency: number;
+    evidence: string[];
+    gaps: string[];
+  }>;
 }

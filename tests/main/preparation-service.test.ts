@@ -11,6 +11,7 @@ import {
 } from '../../src/main/services/preparation';
 import { registerPreparationHandlers } from '../../src/main/ipc/positions';
 import { CHANNELS } from '../../src/shared/ipc';
+import { canonicalizePreparationJobData } from '../../src/shared/schemas';
 import { createTestDatabase } from '../helpers/database';
 
 const POSITION_ID = '11111111-1111-4111-8111-111111111111';
@@ -236,17 +237,17 @@ describe('preparation service', () => {
           questions: [fixture.question],
         },
       });
-      expect(preview.jobDataJson).toBe(JSON.stringify({
-        position: {
+      expect(preview.jobDataJson).toBe(canonicalizePreparationJobData(
+        {
           company: fixture.position.company,
           title: fixture.position.title,
           rawJd: fixture.position.rawJd,
         },
-        selectedAssets: {
+        {
           projects: [fixture.project],
           questions: [fixture.question],
         },
-      }, null, 2));
+      ).jobDataJson);
       expect(fixture.completeJson).not.toHaveBeenCalled();
       expect(fixture.preparations.listByPosition(fixture.position.id)).toEqual([]);
     } finally {

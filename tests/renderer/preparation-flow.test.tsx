@@ -253,6 +253,65 @@ describe('preparation flow', () => {
       .toBeInTheDocument();
   });
 
+  it('locks selections while preview is pending', async () => {
+    let resolvePreview!: (value: typeof outboundPreview) => void;
+    const pending = new Promise<typeof outboundPreview>((resolve) => {
+      resolvePreview = resolve;
+    });
+    const { fake, user } = renderPreparation((api) => {
+      api.preparations.preview.mockReturnValue(pending);
+    });
+    await openPreparationTab(user);
+    await user.click(screen.getByRole('button', { name: '生成准备材料' }));
+    const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
+    const projectCheckbox = within(dialog).getByRole('checkbox', { name: /项目：增长实验/ });
+    await user.click(projectCheckbox);
+    await user.click(within(dialog).getByRole('button', { name: '查看发送摘要' }));
+
+    expect(projectCheckbox).toBeDisabled();
+    await user.click(projectCheckbox);
+    expect(projectCheckbox).toBeChecked();
+    expect(fake.preparations.generate).not.toHaveBeenCalled();
+
+    resolvePreview(outboundPreview);
+    expect(await within(dialog).findByText('实际外发内容预览')).toBeInTheDocument();
+  });
+
+  it('discards an old preview after returning to change selection and generates exact previewed IDs', async () => {
+    const { fake, user } = renderPreparation((api) => {
+      api.preparations.generate.mockResolvedValue(preparation);
+    });
+    await openPreparationTab(user);
+    await user.click(screen.getByRole('button', { name: '生成准备材料' }));
+    const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
+    const projectCheckbox = within(dialog).getByRole('checkbox', { name: /项目：增长实验/ });
+    const questionCheckbox = within(dialog).getByRole('checkbox', { name: /问题：如何设计用户研究/ });
+    await user.click(projectCheckbox);
+    await user.click(within(dialog).getByRole('button', { name: '查看发送摘要' }));
+    expect(await within(dialog).findByText('实际外发内容预览')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: '返回选择' }));
+    const changedProject = within(dialog).getByRole('checkbox', { name: /项目：增长实验/ });
+    const changedQuestion = within(dialog).getByRole('checkbox', { name: /问题：如何设计用户研究/ });
+    await user.click(changedProject);
+    await user.click(changedQuestion);
+    expect(within(dialog).queryByRole('button', { name: '确认生成' })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: '查看发送摘要' }));
+    await user.click(await within(dialog).findByRole('button', { name: '确认生成' }));
+
+    await waitFor(() => expect(fake.preparations.preview).toHaveBeenCalledTimes(2));
+    expect(fake.preparations.preview).toHaveBeenLastCalledWith({
+      positionId,
+      projectIds: [],
+      questionIds: [questionId],
+    });
+    expect(fake.preparations.generate).toHaveBeenCalledWith({
+      positionId,
+      projectIds: [],
+      questionIds: [questionId],
+    });
+  });
+
   it('blocks confirmation and links to settings when public AI configuration is incomplete', async () => {
     const { fake, user } = renderPreparation((api) => {
       api.ai.settings.get.mockResolvedValue({
@@ -353,6 +412,8 @@ describe('preparation flow', () => {
     expect(screen.getByRole('heading', { name: 'Company Map' })).toBeInTheDocument();
     expect(screen.getByText(/Realignment · 重新校准/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Dream Candidate Avatar' }))
+      .toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Typical Day · 任务时间线' }))
       .toBeInTheDocument();
     expect(screen.getByText('09:00')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Action Guide' })).toBeInTheDocument();

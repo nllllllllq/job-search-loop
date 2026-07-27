@@ -936,7 +936,7 @@ git commit -m "feat: add encrypted external AI configuration"
 - 更新后的默认 Prompt 只应用于新安装或缺失默认值的初始化；绝不覆盖用户已经保存的自定义 Prompt。
 - 生成确认页仍明确展示“当前岗位准备 Prompt 的完整内容将发送”；主进程在确认后读取最新 Prompt，并将同一份原文写入不可变快照。
 - 单条损坏历史记录必须被隔离；岗位详情、列表和其他有效版本继续可用。
-- 发送确认使用 main 提供的只读 preview IPC：按与生成服务相同的装配和序列化路径返回 exact Prompt、完整岗位/JD、完整所选项目/问题及实际岗位数据 JSON。preview 不调用 AI、不落库，renderer 不能传入 Prompt；内容默认折叠并以安全文本显示。生成时仍重读当前数据，UI 明确提示变更后需重新预览。
+- 发送确认使用 main 提供的只读 preview IPC：按与生成服务相同的装配和 canonical 序列化路径返回 exact Prompt、完整岗位/JD、完整所选项目/问题及实际岗位数据 JSON。共享严格 schema 规范对象 key order，保留数组顺序和 Unicode，并拒绝篡改 JSON。preview 不调用 AI、不落库，renderer 不能传入 Prompt；内容默认折叠并以安全文本显示。preview pending 时锁定选择，最终 generate 使用 preview 时捕获的 ID 快照；返回修改选择会丢弃旧 preview。生成时仍重读当前数据，UI 明确提示变更后需重新预览。
 
 RED 记录：先增加默认 Prompt、严格输出约束、服务请求契约、四组 UI、legacy 兼容、隐私确认与损坏快照隔离测试；初次运行因实现尚无新字段与新界面而按预期失败，再进入实现。
 

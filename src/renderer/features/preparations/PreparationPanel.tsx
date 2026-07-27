@@ -214,6 +214,7 @@ function PreparationVersion({ item }: { item: PreparationMaterial }) {
                 </div>
               </OutputSection>
               <OutputSection title="Dream Candidate Avatar">
+                <h5>Typical Day · 任务时间线</h5>
                 <ol className="preparation-timeline" aria-label="Typical Day">
                   {output.dreamCandidateAvatar.typicalDay.map((entry, index) => (
                     <li key={`${entry.time}-${index}`}>

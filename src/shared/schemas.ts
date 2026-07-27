@@ -296,24 +296,42 @@ export const preparationAssetsSnapshotSchema = z.object({
   questions: z.array(questionSnapshotSchema).max(200),
 }).strict();
 
+export const preparationOutboundPositionSchema = z.object({
+  company: z.string().max(300),
+  title: z.string().max(300),
+  rawJd: z.string().max(100_000),
+}).strict();
+
+export function canonicalizePreparationJobData(
+  position: unknown,
+  selectedAssets: unknown,
+) {
+  const canonicalPosition = preparationOutboundPositionSchema.parse(position);
+  const canonicalSelectedAssets = preparationAssetsSnapshotSchema.parse(selectedAssets);
+  return {
+    position: canonicalPosition,
+    selectedAssets: canonicalSelectedAssets,
+    jobDataJson: JSON.stringify({
+      position: canonicalPosition,
+      selectedAssets: canonicalSelectedAssets,
+    }, null, 2),
+  };
+}
+
 export const preparationOutboundPreviewSchema = z.object({
   prompt: z.string().max(200_000).refine(
     (value) => value.trim().length > 0,
     'Prompt 不能为空',
   ),
-  position: z.object({
-    company: z.string().max(300),
-    title: z.string().max(300),
-    rawJd: z.string().max(100_000),
-  }).strict(),
+  position: preparationOutboundPositionSchema,
   selectedAssets: preparationAssetsSnapshotSchema,
   jobDataJson: z.string().max(1_000_000),
 }).strict().superRefine((value, context) => {
-  const expected = JSON.stringify({
-    position: value.position,
-    selectedAssets: value.selectedAssets,
-  }, null, 2);
-  if (value.jobDataJson !== expected) {
+  const canonical = canonicalizePreparationJobData(
+    value.position,
+    value.selectedAssets,
+  );
+  if (value.jobDataJson !== canonical.jobDataJson) {
     context.addIssue({
       code: 'custom',
       path: ['jobDataJson'],

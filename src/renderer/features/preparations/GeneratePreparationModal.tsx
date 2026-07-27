@@ -54,6 +54,7 @@ export function GeneratePreparationModal({
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreparationOutboundPreview | null>(null);
+  const [previewPayload, setPreviewPayload] = useState<PreparationGenerateInput | null>(null);
   const projects = resources.data?.projects ?? [];
   const questions = resources.data?.questions ?? [];
   const settings = resources.data?.settings ?? null;
@@ -82,6 +83,9 @@ export function GeneratePreparationModal({
     selected: string[],
     setSelected: (value: string[]) => void,
   ) => {
+    setPreview(null);
+    setPreviewPayload(null);
+    setPreviewError(null);
     setSelected(selected.includes(id)
       ? selected.filter((value) => value !== id)
       : [...selected, id]);
@@ -92,12 +96,12 @@ export function GeneratePreparationModal({
   };
 
   const generate = async () => {
-    if (submitting || submitted) return;
+    if (submitting || submitted || !previewPayload) return;
     setSubmitting(true);
     setSubmitted(true);
     setError(null);
     try {
-      const saved = await window.jobSearch.preparations.generate(payload);
+      const saved = await window.jobSearch.preparations.generate(previewPayload);
       await onGenerated(saved);
     } catch (reason) {
       const message = errorMessage(reason);
@@ -112,9 +116,17 @@ export function GeneratePreparationModal({
     if (previewing || !configured) return;
     setPreviewing(true);
     setPreviewError(null);
+    setPreview(null);
+    setPreviewPayload(null);
+    const requestedPayload = {
+      positionId: payload.positionId,
+      projectIds: [...payload.projectIds],
+      questionIds: [...payload.questionIds],
+    };
     try {
-      const next = await window.jobSearch.preparations.preview(payload);
+      const next = await window.jobSearch.preparations.preview(requestedPayload);
       setPreview(next);
+      setPreviewPayload(requestedPayload);
       setStep('confirm');
     } catch {
       setPreviewError('无法读取实际外发内容，请检查所选档案后重试。当前未调用外部 AI。');
@@ -152,6 +164,7 @@ export function GeneratePreparationModal({
         disabled={submitting}
         onClick={() => {
           setPreview(null);
+          setPreviewPayload(null);
           setStep('select');
         }}
         type="button"
@@ -160,7 +173,7 @@ export function GeneratePreparationModal({
       </button>
       <button
         className="button button--primary"
-        disabled={submitting || submitted}
+        disabled={submitting || submitted || !previewPayload}
         onClick={() => void generate()}
         type="button"
       >
@@ -221,6 +234,7 @@ export function GeneratePreparationModal({
                 <label className="user-text" key={project.id}>
                   <input
                     checked={projectIds.includes(project.id)}
+                    disabled={previewing}
                     onChange={() => toggle(project.id, projectIds, setProjectIds)}
                     type="checkbox"
                   />
@@ -234,6 +248,7 @@ export function GeneratePreparationModal({
                 <label className="user-text" key={question.id}>
                   <input
                     checked={questionIds.includes(question.id)}
+                    disabled={previewing}
                     onChange={() => toggle(question.id, questionIds, setQuestionIds)}
                     type="checkbox"
                   />
@@ -244,7 +259,11 @@ export function GeneratePreparationModal({
           </div>
         </div>
       ) : null}
-      {!resources.loading && !resources.error && step === 'confirm' && preview ? (
+      {!resources.loading
+        && !resources.error
+        && step === 'confirm'
+        && preview
+        && previewPayload ? (
         <div className="payload-summary">
           <p className="section-label">OUTBOUND DATA / 发送前确认</p>
           <h3>预计载荷摘要</h3>
@@ -281,13 +300,17 @@ export function GeneratePreparationModal({
             </details>
             {preview.selectedAssets.projects.map((project, index) => (
               <details key={project.id}>
-                <summary>项目档案 {index + 1}：{project.name}</summary>
+                <summary className="user-text">
+                  项目档案 {index + 1}：{project.name}
+                </summary>
                 <pre className="user-text">{JSON.stringify(project, null, 2)}</pre>
               </details>
             ))}
             {preview.selectedAssets.questions.map((question, index) => (
               <details key={question.id}>
-                <summary>问题档案 {index + 1}：{question.text}</summary>
+                <summary className="user-text">
+                  问题档案 {index + 1}：{question.text}
+                </summary>
                 <pre className="user-text">{JSON.stringify(question, null, 2)}</pre>
               </details>
             ))}

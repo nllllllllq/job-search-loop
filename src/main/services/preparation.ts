@@ -8,6 +8,7 @@ import type {
   Question,
 } from '../../shared/domain';
 import {
+  canonicalizePreparationJobData,
   preparationGenerateSchema,
   preparationOutputSchema,
 } from '../../shared/schemas';
@@ -170,23 +171,18 @@ function assembleOutbound(
   const parsed = preparationGenerateSchema.parse(input);
   const position = positions.get(parsed.positionId);
   const prompt = prompts.get('preparation');
-  const positionSnapshot = {
-    company: position.company,
-    title: position.title,
-    rawJd: position.rawJd,
-  };
   const selectedAssets: PreparationAssetsSnapshot = {
     projects: loadProjects(assets, unique(parsed.projectIds)),
     questions: loadQuestions(assets, unique(parsed.questionIds)),
   };
+  const canonical = canonicalizePreparationJobData({
+    company: position.company,
+    title: position.title,
+    rawJd: position.rawJd,
+  }, selectedAssets);
   const outbound = {
     prompt: prompt.content,
-    position: positionSnapshot,
-    selectedAssets,
-    jobDataJson: JSON.stringify({
-      position: positionSnapshot,
-      selectedAssets,
-    }, null, 2),
+    ...canonical,
   };
   if (outbound.jobDataJson.length > 1_000_000) {
     throw new RepositoryError(

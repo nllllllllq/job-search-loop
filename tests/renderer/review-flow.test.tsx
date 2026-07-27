@@ -180,10 +180,17 @@ describe('interview and review UI', () => {
     const editor = within(dialog).getByLabelText('建议内容 JSON');
     fireEvent.change(editor, { target: { value: '{"type":"interviewer","text":""}' } });
     expect(within(dialog).getByRole('button', { name: '确认写入' })).toBeDisabled();
+    fireEvent.change(editor, {
+      target: {
+        value: JSON.stringify({ ...proposal.payload as object, unexpected: true }),
+      },
+    });
+    expect(within(dialog).getByRole('button', { name: '确认写入' })).toBeDisabled();
     fireEvent.change(editor, { target: { value: JSON.stringify(proposal.payload) } });
     await user.click(within(dialog).getByRole('button', { name: '确认写入' }));
     await waitFor(() => expect(fake.reviews.proposals.accept)
       .toHaveBeenCalledWith(proposal.id, proposal.payload));
+    expect(await screen.findByText('修改后的建议已接受并写入资产。')).toBeInTheDocument();
   });
 
   it('retains proposal editor content after mutation failure', async () => {
@@ -202,6 +209,7 @@ describe('interview and review UI', () => {
     fireEvent.change(editor, { target: { value: JSON.stringify(edited) } });
     await user.click(screen.getByRole('button', { name: '确认写入' }));
     expect(await screen.findByText('写入失败，已保留你的修改。')).toBeInTheDocument();
+    expect(screen.getByText('写入失败，请检查内容后重试。')).toBeInTheDocument();
     expect(screen.getByLabelText('建议内容 JSON')).toHaveValue(JSON.stringify(edited));
   });
 
@@ -233,9 +241,11 @@ describe('interview and review UI', () => {
     await user.click(acceptButtons[0]);
     await waitFor(() => expect(fake.reviews.proposals.accept)
       .toHaveBeenCalledWith(proposal.id));
+    expect(await screen.findByText('建议已接受并写入资产。')).toBeInTheDocument();
     const ignoreButtons = screen.getAllByRole('button', { name: '忽略' });
     await user.click(ignoreButtons[0]);
     await waitFor(() => expect(fake.reviews.proposals.ignore)
       .toHaveBeenCalledWith(second.id));
+    expect(await screen.findByText('建议已忽略，资产没有变化。')).toBeInTheDocument();
   });
 });

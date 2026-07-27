@@ -232,6 +232,33 @@ describe('interview review service', () => {
     }
   });
 
+  it('lets only one of two preview tokens commit when the AI returns zero proposals', async () => {
+    const fixture = createFixture();
+    try {
+      fixture.completeJson.mockResolvedValue({
+        summary: '没有需要沉淀的资产变更。',
+        strengths: [],
+        gaps: [],
+        proposals: [],
+      });
+      const first = await fixture.service.preview(fixture.interview.id);
+      const second = await fixture.service.preview(fixture.interview.id);
+
+      await expect(fixture.service.confirm(first.token)).resolves.toMatchObject({
+        proposals: [],
+      });
+      await expect(fixture.service.confirm(second.token))
+        .rejects.toMatchObject({ code: 'CONFLICT' });
+
+      expect(fixture.proposals.list()).toEqual([]);
+      expect(fixture.interviews.get(fixture.interview.id).reviewSnapshot?.output.summary)
+        .toBe('没有需要沉淀的资产变更。');
+      expect(fixture.completeJson).toHaveBeenCalledTimes(2);
+    } finally {
+      fixture.db.close();
+    }
+  });
+
   it('applies target-specific payload contracts and target-id semantics to every proposal operation', () => {
     const targetId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const payloads = {
@@ -291,6 +318,24 @@ describe('interview review service', () => {
         ...validCreate,
         proposals: [{
           ...validCreate.proposals[0],
+          payload: { ...payload, unexpected: 'must fail' },
+        }],
+      }).success).toBe(false);
+      const firstPayloadKey = Object.keys(payload)[0];
+      const missingPayload = { ...payload } as Record<string, unknown>;
+      delete missingPayload[firstPayloadKey];
+      expect(interviewReviewOutputSchema.safeParse({
+        ...validCreate,
+        proposals: [{ ...validCreate.proposals[0], payload: missingPayload }],
+      }).success).toBe(false);
+      expect(interviewReviewOutputSchema.safeParse({
+        ...validCreate,
+        proposals: [{ ...validCreate.proposals[0], unexpected: true }],
+      }).success).toBe(false);
+      expect(interviewReviewOutputSchema.safeParse({
+        ...validCreate,
+        proposals: [{
+          ...validCreate.proposals[0],
           operation: 'update',
           targetId,
         }],
@@ -312,6 +357,10 @@ describe('interview review service', () => {
         }],
       }).success).toBe(false);
     }
+    expect(interviewReviewOutputSchema.safeParse({
+      ...output,
+      unexpected: true,
+    }).success).toBe(false);
   });
 
   it('rejects missing update targets and invalid linked IDs before any write', async () => {

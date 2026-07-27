@@ -54,6 +54,30 @@ describe('controlled proposal acceptance', () => {
     }
   });
 
+  it('rejects incomplete or unknown fields in edited acceptance payloads', () => {
+    const db = createTestDatabase();
+    try {
+      const proposals = createProposalsRepository(db);
+      const assets = createAssetsRepository(db);
+      const proposal = proposals.create({
+        targetType: 'project',
+        targetId: null,
+        operation: 'create',
+        payload: project,
+        rationale: '严格校验编辑后的内容',
+        positionId: null,
+        interviewId: null,
+      });
+
+      expect(() => proposals.accept(proposal.id, { ...project, unexpected: true })).toThrow();
+      expect(() => proposals.accept(proposal.id, { name: project.name })).toThrow();
+      expect(proposals.get(proposal.id).status).toBe('pending');
+      expect(assets.listProjects()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
   it('ignores without writing assets and rejects invalid, repeated, or concurrent resolution', async () => {
     const db = createTestDatabase();
     try {
@@ -210,6 +234,73 @@ describe('controlled proposal acceptance', () => {
         evidence: '旧证据',
         jdFrequency: 2,
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('keeps identical merge proposals pending for every asset type', () => {
+    const db = createTestDatabase();
+    try {
+      const proposals = createProposalsRepository(db);
+      const assets = createAssetsRepository(db);
+      const projectAsset = assets.saveProject(project);
+      const capabilityAsset = assets.saveCapability({
+        name: '问题拆解',
+        jdFrequency: 1,
+        evidence: '面试证据',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      const questionAsset = assets.saveQuestion({
+        type: 'interviewer',
+        text: '如何判断需求优先级？',
+        answerDraft: '目标、风险与证据。',
+        projectIds: [projectAsset.id],
+        capabilityIds: [capabilityAsset.id],
+        occurrenceCount: 1,
+        status: 'active',
+      });
+      const insightAsset = assets.saveInsight({
+        title: '表达顺序',
+        content: '先说结论。',
+        positionId: null,
+        projectId: projectAsset.id,
+        questionId: questionAsset.id,
+        capabilityId: capabilityAsset.id,
+      });
+      const cases = [
+        ['project', projectAsset.id, projectAsset],
+        ['question', questionAsset.id, {
+          ...questionAsset,
+          projectIds: [...questionAsset.projectIds].reverse(),
+          capabilityIds: [...questionAsset.capabilityIds].reverse(),
+        }],
+        ['capability', capabilityAsset.id, capabilityAsset],
+        ['insight', insightAsset.id, insightAsset],
+      ] as const;
+
+      for (const [targetType, targetId, entity] of cases) {
+        const {
+          id: _id,
+          createdAt: _createdAt,
+          updatedAt: _updatedAt,
+          ...payload
+        } = entity;
+        const proposal = proposals.create({
+          targetType,
+          targetId,
+          operation: 'merge',
+          payload,
+          rationale: '不应接受的无变化合并',
+          positionId: null,
+          interviewId: null,
+        });
+        expect(() => proposals.accept(proposal.id))
+          .toThrow(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+        expect(proposals.get(proposal.id).status).toBe('pending');
+        expect(assets.listVersions(targetType, targetId)).toEqual([]);
+      }
     } finally {
       db.close();
     }

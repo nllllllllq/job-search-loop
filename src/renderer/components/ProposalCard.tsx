@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangeProposal } from '../../shared/domain';
 import {
-  capabilityPayloadSchema,
-  insightPayloadSchema,
-  projectPayloadSchema,
-  questionPayloadSchema,
+  strictCapabilityProposalPayloadSchema,
+  strictInsightProposalPayloadSchema,
+  strictProjectProposalPayloadSchema,
+  strictQuestionProposalPayloadSchema,
 } from '../../shared/schemas';
 import { Modal } from './Modal';
 import { StatusBadge } from './StatusBadge';
+import { useToast } from '../hooks/useToast';
 
 interface ProposalCardProps {
   proposal: ChangeProposal;
@@ -31,10 +32,10 @@ function parsePayload(proposal: ChangeProposal, text: string): unknown | null {
   try {
     const value: unknown = JSON.parse(text);
     const schema = {
-      project: projectPayloadSchema,
-      question: questionPayloadSchema,
-      capability: capabilityPayloadSchema,
-      insight: insightPayloadSchema,
+      project: strictProjectProposalPayloadSchema,
+      question: strictQuestionProposalPayloadSchema,
+      capability: strictCapabilityProposalPayloadSchema,
+      insight: strictInsightProposalPayloadSchema,
     }[proposal.targetType];
     const parsed = schema.safeParse(value);
     return parsed.success ? parsed.data : null;
@@ -44,6 +45,7 @@ function parsePayload(proposal: ChangeProposal, text: string): unknown | null {
 }
 
 export function ProposalCard({ proposal, onResolved }: ProposalCardProps) {
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [jsonText, setJsonText] = useState(() => JSON.stringify(proposal.payload, null, 2));
   const [error, setError] = useState('');
@@ -82,7 +84,9 @@ export function ProposalCard({ proposal, onResolved }: ProposalCardProps) {
 
   const mutate = async (
     action: () => Promise<ChangeProposal>,
-    failureMessage: string,
+    successMessage: string,
+    inlineFailureMessage: string,
+    failureToastMessage: string,
   ) => {
     if (busy) return;
     setBusy(true);
@@ -91,8 +95,10 @@ export function ProposalCard({ proposal, onResolved }: ProposalCardProps) {
       const result = await action();
       onResolved(result);
       setEditing(false);
+      toast.success(successMessage);
     } catch {
-      setError(failureMessage);
+      setError(inlineFailureMessage);
+      toast.error(failureToastMessage);
     } finally {
       setBusy(false);
     }
@@ -138,7 +144,9 @@ export function ProposalCard({ proposal, onResolved }: ProposalCardProps) {
             disabled={busy}
             onClick={() => void mutate(
               () => window.jobSearch.reviews.proposals.accept(proposal.id),
+              '建议已接受并写入资产。',
               '写入失败，请稍后重试。',
+              '接受失败，请稍后重试。',
             )}
             type="button"
           >
@@ -161,6 +169,8 @@ export function ProposalCard({ proposal, onResolved }: ProposalCardProps) {
             disabled={busy}
             onClick={() => void mutate(
               () => window.jobSearch.reviews.proposals.ignore(proposal.id),
+              '建议已忽略，资产没有变化。',
+              '忽略失败，请稍后重试。',
               '忽略失败，请稍后重试。',
             )}
             type="button"
@@ -183,7 +193,9 @@ export function ProposalCard({ proposal, onResolved }: ProposalCardProps) {
                 if (editedPayload !== null) {
                   void mutate(
                     () => window.jobSearch.reviews.proposals.accept(proposal.id, editedPayload),
+                    '修改后的建议已接受并写入资产。',
                     '写入失败，已保留你的修改。',
+                    '写入失败，请检查内容后重试。',
                   );
                 }
               }}

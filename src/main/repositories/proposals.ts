@@ -18,6 +18,10 @@ import {
   proposalStatusSchema,
   proposalTargetSchema,
   questionPayloadSchema,
+  strictCapabilityProposalPayloadSchema,
+  strictInsightProposalPayloadSchema,
+  strictProjectProposalPayloadSchema,
+  strictQuestionProposalPayloadSchema,
 } from '../../shared/schemas';
 import { assetRepositoryInternals } from './assets';
 import {
@@ -41,6 +45,44 @@ function parsePayload(targetType: ProposalTarget, payload: unknown): Record<stri
     case 'insight':
       return insightPayloadSchema.parse(payload);
   }
+}
+
+function parseFinalPayload(
+  targetType: ProposalTarget,
+  payload: unknown,
+): Record<string, unknown> {
+  switch (targetType) {
+    case 'project':
+      return strictProjectProposalPayloadSchema.parse(payload);
+    case 'question':
+      return strictQuestionProposalPayloadSchema.parse(payload);
+    case 'capability':
+      return strictCapabilityProposalPayloadSchema.parse(payload);
+    case 'insight':
+      return strictInsightProposalPayloadSchema.parse(payload);
+  }
+}
+
+function canonicalPayload(
+  targetType: ProposalTarget,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  if (targetType !== 'question') return payload;
+  const question = strictQuestionProposalPayloadSchema.parse(payload);
+  return {
+    ...question,
+    projectIds: [...question.projectIds].sort(),
+    capabilityIds: [...question.capabilityIds].sort(),
+  };
+}
+
+function sameCanonicalPayload(
+  targetType: ProposalTarget,
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean {
+  return JSON.stringify(canonicalPayload(targetType, left))
+    === JSON.stringify(canonicalPayload(targetType, right));
 }
 
 function decodeProposal(value: unknown): ChangeProposal {
@@ -265,14 +307,21 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
         const updated = db.prepare(`
           UPDATE interviews
           SET summary = ?, review_snapshot_json = ?, updated_at = ?
-          WHERE id = ?
+          WHERE id = ? AND review_snapshot_json IS NULL
         `).run(
           parsedSummary,
           JSON.stringify(parsedSnapshot),
           now,
           interviewId,
         );
-        if (updated.changes !== 1) notFound('Interview', interviewId);
+        if (updated.changes !== 1) {
+          const existing = db.prepare('SELECT id FROM interviews WHERE id = ?').get(interviewId);
+          if (existing === undefined) notFound('Interview', interviewId);
+          throw new RepositoryError(
+            'CONFLICT',
+            '这次面试已经完成复盘，不能重复覆盖审计快照。',
+          );
+        }
         return inputs.map(insert);
       });
     },
@@ -282,7 +331,7 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
         if (proposal.status !== 'pending') {
           throw new RepositoryError('CONFLICT', '该变更建议已处理，不能重复操作');
         }
-        const payload = parsePayload(
+        const payload = parseFinalPayload(
           proposal.targetType,
           editedPayload === undefined ? proposal.payload : editedPayload,
         );
@@ -298,8 +347,22 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
           // while this transaction snapshots the retained prior asset.
           if (targetId === null) throw new Error('Proposal target ID is required');
           const previous = readTarget(db, proposal.targetType, targetId);
-          const previousPayload = parsePayload(proposal.targetType, previous);
-          if (JSON.stringify(previousPayload) !== JSON.stringify(payload)) {
+          const previousPayload = parseFinalPayload(
+            proposal.targetType,
+            parsePayload(proposal.targetType, previous),
+          );
+          const unchanged = sameCanonicalPayload(
+            proposal.targetType,
+            previousPayload,
+            payload,
+          );
+          if (proposal.operation === 'merge' && unchanged) {
+            throw new RepositoryError(
+              'VALIDATION_ERROR',
+              '合并内容与现有资产相同，请先修改建议内容。',
+            );
+          }
+          if (!unchanged) {
             assetRepositoryInternals.insertVersion(
               db,
               proposal.targetType,

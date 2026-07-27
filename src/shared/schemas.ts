@@ -117,6 +117,48 @@ export const insightPayloadSchema = z.object({
   capabilityId: z.string().uuid().nullable().default(null),
 });
 
+// AI proposals and user-edited acceptance payloads intentionally use a
+// separate contract from the forgiving CRUD forms above. Nothing is defaulted
+// or silently stripped at an AI/write boundary.
+export const strictProjectProposalPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  background: z.string().max(20_000),
+  goal: z.string().max(20_000),
+  role: z.string().max(20_000),
+  keyDecisions: z.string().max(40_000),
+  outcome: z.string().max(40_000),
+  evidence: z.string().max(40_000),
+  reflections: z.string().max(20_000),
+  storytellingVersions: z.string().max(40_000),
+}).strict();
+
+export const strictQuestionProposalPayloadSchema = z.object({
+  type: questionTypeSchema,
+  text: z.string().trim().min(1).max(20_000),
+  answerDraft: z.string().max(40_000),
+  projectIds: z.array(z.string().uuid()).max(100),
+  capabilityIds: z.array(z.string().uuid()).max(100),
+  occurrenceCount: z.number().int().nonnegative(),
+  status: z.string().trim().min(1).max(80),
+}).strict();
+
+export const strictCapabilityProposalPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  jdFrequency: z.number().int().nonnegative(),
+  evidence: z.string().max(40_000),
+  gaps: z.string().max(40_000),
+  mergedIntoId: z.string().uuid().nullable(),
+}).strict();
+
+export const strictInsightProposalPayloadSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  content: z.string().trim().min(1).max(40_000),
+  positionId: z.string().uuid().nullable(),
+  projectId: z.string().uuid().nullable(),
+  questionId: z.string().uuid().nullable(),
+  capabilityId: z.string().uuid().nullable(),
+}).strict();
+
 export const proposalPayloadSchema = z.discriminatedUnion('targetType', [
   z.object({ targetType: z.literal('project'), payload: projectPayloadSchema }),
   z.object({ targetType: z.literal('question'), payload: questionPayloadSchema }),
@@ -450,12 +492,34 @@ export const proposalAcceptSchema = z.object({
   editedPayload: z.unknown().optional(),
 });
 
-const interviewReviewProposalSchema = z.object({
-  targetType: proposalTargetSchema,
+const reviewProposalCommon = {
   targetId: idSchema.nullable(),
   operation: proposalOperationSchema,
   rationale: nonBlankSnapshotText(20_000),
-}).and(proposalPayloadSchema).superRefine((proposal, context) => {
+};
+
+const interviewReviewProposalSchema = z.discriminatedUnion('targetType', [
+  z.object({
+    ...reviewProposalCommon,
+    targetType: z.literal('project'),
+    payload: strictProjectProposalPayloadSchema,
+  }).strict(),
+  z.object({
+    ...reviewProposalCommon,
+    targetType: z.literal('question'),
+    payload: strictQuestionProposalPayloadSchema,
+  }).strict(),
+  z.object({
+    ...reviewProposalCommon,
+    targetType: z.literal('capability'),
+    payload: strictCapabilityProposalPayloadSchema,
+  }).strict(),
+  z.object({
+    ...reviewProposalCommon,
+    targetType: z.literal('insight'),
+    payload: strictInsightProposalPayloadSchema,
+  }).strict(),
+]).superRefine((proposal, context) => {
   if (proposal.operation === 'create' && proposal.targetId !== null) {
     context.addIssue({
       code: 'custom',
@@ -506,13 +570,13 @@ export const interviewListSchema = z.array(interviewSchema);
 function payloadForTarget(targetType: typeof proposalTargets[number], payload: unknown) {
   switch (targetType) {
     case 'project':
-      return projectPayloadSchema.safeParse(payload);
+      return strictProjectProposalPayloadSchema.safeParse(payload);
     case 'question':
-      return questionPayloadSchema.safeParse(payload);
+      return strictQuestionProposalPayloadSchema.safeParse(payload);
     case 'capability':
-      return capabilityPayloadSchema.safeParse(payload);
+      return strictCapabilityProposalPayloadSchema.safeParse(payload);
     case 'insight':
-      return insightPayloadSchema.safeParse(payload);
+      return strictInsightProposalPayloadSchema.safeParse(payload);
   }
 }
 

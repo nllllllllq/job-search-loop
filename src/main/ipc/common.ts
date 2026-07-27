@@ -2,6 +2,7 @@ import { ZodError } from 'zod';
 import type { AppError } from '../../shared/ipc';
 import { RepositoryError } from '../repositories/common';
 import { AiServiceError } from '../services/ai-settings';
+import { BackupServiceError } from '../services/backup';
 
 export interface IpcMainRegistrar {
   handle(
@@ -29,6 +30,9 @@ function safeError(error: unknown): SafeIpcError {
     return new SafeIpcError(error.code, error.message);
   }
   if (error instanceof AiServiceError) {
+    return new SafeIpcError(error.code, error.message);
+  }
+  if (error instanceof BackupServiceError) {
     return new SafeIpcError(error.code, error.message);
   }
   return new SafeIpcError('INTERNAL_ERROR', 'The request could not be completed');

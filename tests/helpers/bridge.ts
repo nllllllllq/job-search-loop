@@ -92,6 +92,8 @@ export interface JobSearchApiFake {
     getDashboardSummary: ApiMock<JobSearchApi['system']['getDashboardSummary']>;
     previewCapabilityAnalysis: ApiMock<JobSearchApi['system']['previewCapabilityAnalysis']>;
     confirmCapabilityAnalysis: ApiMock<JobSearchApi['system']['confirmCapabilityAnalysis']>;
+    exportBackup: ApiMock<JobSearchApi['system']['exportBackup']>;
+    restoreBackup: ApiMock<JobSearchApi['system']['restoreBackup']>;
   };
 }
 
@@ -221,6 +223,10 @@ export function createJobSearchFake(): JobSearchApiFake {
         .mockRejectedValue(new Error('未配置共性能力分析预览')),
       confirmCapabilityAnalysis: vi.fn<JobSearchApi['system']['confirmCapabilityAnalysis']>()
         .mockRejectedValue(new Error('未配置共性能力分析确认')),
+      exportBackup: vi.fn<JobSearchApi['system']['exportBackup']>()
+        .mockResolvedValue({ status: 'cancelled' }),
+      restoreBackup: vi.fn<JobSearchApi['system']['restoreBackup']>()
+        .mockResolvedValue({ status: 'cancelled' }),
     },
   };
 }

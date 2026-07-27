@@ -198,6 +198,11 @@ export const changeProposalInputSchema = changeProposalBaseSchema.superRefine((p
 export const idSchema = z.string().uuid();
 export const noPayloadSchema = z.undefined();
 export const optionalIdSchema = z.object({ id: idSchema });
+export const backupActionResultSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('cancelled') }).strict(),
+  z.object({ status: z.literal('exported') }).strict(),
+  z.object({ status: z.literal('restored') }).strict(),
+]);
 
 export const positionListFilterSchema = z.object({
   query: z.string().max(500).optional(),

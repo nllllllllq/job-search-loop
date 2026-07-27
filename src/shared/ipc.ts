@@ -92,8 +92,15 @@ export const CHANNELS = {
     getDashboardSummary: 'system:dashboard-summary',
     previewCapabilityAnalysis: 'system:capability-analysis:preview',
     confirmCapabilityAnalysis: 'system:capability-analysis:confirm',
+    exportBackup: 'system:backup:export',
+    restoreBackup: 'system:backup:restore',
   },
 } as const;
+
+export type BackupActionResult =
+  | { status: 'cancelled' }
+  | { status: 'exported' }
+  | { status: 'restored' };
 
 export interface AppError {
   code:
@@ -108,7 +115,9 @@ export interface AppError {
     | 'AI_PROVIDER_ERROR'
     | 'AI_INVALID_OUTPUT'
     | 'AI_SETTINGS_CORRUPT'
-    | 'AI_SETTINGS_UNAVAILABLE';
+    | 'AI_SETTINGS_UNAVAILABLE'
+    | 'BACKUP_INVALID'
+    | 'BACKUP_FAILED';
   message: string;
 }
 
@@ -186,5 +195,7 @@ export interface JobSearchApi {
     getDashboardSummary(): Promise<DashboardSummary>;
     previewCapabilityAnalysis(positionIds: string[]): Promise<CapabilityAnalysisPreview>;
     confirmCapabilityAnalysis(token: string): Promise<ChangeProposal[]>;
+    exportBackup(): Promise<BackupActionResult>;
+    restoreBackup(): Promise<BackupActionResult>;
   };
 }

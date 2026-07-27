@@ -32,12 +32,13 @@ import { registerAiHandlers } from './ai';
 import { registerPositionHandlers, registerPreparationHandlers } from './positions';
 import { registerReviewHandlers } from './reviews';
 import { registerSystemHandlers } from './system';
-import type { IpcMainRegistrar } from './common';
+import { SafeIpcError, type IpcMainRegistrar } from './common';
 import type { AiClient } from '../services/ai-client';
 import type { AiSettingsStore } from '../services/ai-settings';
 import { createPreparationService } from '../services/preparation';
 import { createInterviewReviewService } from '../services/interview-review';
 import { createCapabilityAnalysisService } from '../services/capability-analysis';
+import type { SystemRuntime } from './system';
 
 export type { IpcMainRegistrar } from './common';
 
@@ -56,6 +57,11 @@ export interface AiRuntime {
   client: Pick<AiClient, 'testConnection' | 'completeJson'>;
 }
 
+export interface MainRuntime {
+  system?: SystemRuntime;
+  isBlocked?: () => boolean;
+}
+
 export function createRepositoryBundle(db: DatabaseSync): RepositoryBundle {
   return {
     positions: createPositionsRepository(db),
@@ -72,7 +78,23 @@ export function registerIpcHandlers(
   ipcMain: IpcMainRegistrar,
   repositories: RepositoryBundle,
   ai?: AiRuntime,
+  runtime?: MainRuntime,
 ): void {
+  const guardedIpcMain: IpcMainRegistrar = runtime?.isBlocked
+    ? {
+      handle(channel, handler) {
+        ipcMain.handle(channel, async (event, payload) => {
+          if (runtime.isBlocked?.()) {
+            throw new SafeIpcError(
+              'CONFLICT',
+              '应用正在完成数据恢复并准备重启。',
+            );
+          }
+          return handler(event, payload);
+        });
+      },
+    }
+    : ipcMain;
   const {
     positions,
     preparations,
@@ -83,7 +105,7 @@ export function registerIpcHandlers(
     dashboard,
   } = repositories;
 
-  registerPositionHandlers(ipcMain, positions);
+  registerPositionHandlers(guardedIpcMain, positions);
   const preparationService = ai
     ? createPreparationService({
       positions,
@@ -94,8 +116,8 @@ export function registerIpcHandlers(
       getSettings: () => ai.settings.getPrivate(),
     })
     : undefined;
-  registerPreparationHandlers(ipcMain, preparations, preparationService);
-  registerAssetHandlers(ipcMain, assets, prompts);
+  registerPreparationHandlers(guardedIpcMain, preparations, preparationService);
+  registerAssetHandlers(guardedIpcMain, assets, prompts);
   const reviewService = ai
     ? createInterviewReviewService({
       positions,
@@ -107,7 +129,7 @@ export function registerIpcHandlers(
       getSettings: () => ai.settings.getPrivate(),
     })
     : undefined;
-  registerReviewHandlers(ipcMain, interviews, proposals, reviewService);
+  registerReviewHandlers(guardedIpcMain, interviews, proposals, reviewService);
   const capabilityAnalysisService = ai
     ? createCapabilityAnalysisService({
       positions,
@@ -117,6 +139,11 @@ export function registerIpcHandlers(
       getSettings: () => ai.settings.getPrivate(),
     })
     : undefined;
-  registerSystemHandlers(ipcMain, dashboard, capabilityAnalysisService);
-  if (ai) registerAiHandlers(ipcMain, ai.settings, ai.client);
+  registerSystemHandlers(
+    guardedIpcMain,
+    dashboard,
+    capabilityAnalysisService,
+    runtime?.system,
+  );
+  if (ai) registerAiHandlers(guardedIpcMain, ai.settings, ai.client);
 }

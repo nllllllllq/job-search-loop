@@ -4,6 +4,7 @@ import {
   aiConnectionResultSchema,
   aiPublicSettingsSchema,
   aiSettingsSaveSchema,
+  backupActionResultSchema,
   capabilityAnalysisPreviewSchema,
   capabilityAnalysisSelectionSchema,
   changeProposalListSchema,
@@ -44,6 +45,8 @@ function parseAppError(value: unknown): AppError | null {
       'AI_INVALID_OUTPUT',
       'AI_SETTINGS_CORRUPT',
       'AI_SETTINGS_UNAVAILABLE',
+      'BACKUP_INVALID',
+      'BACKUP_FAILED',
     ].includes(
       String(candidate.code),
     )
@@ -235,6 +238,12 @@ const api = frozen<JobSearchApi>({
         CHANNELS.system.confirmCapabilityAnalysis,
         idSchema.parse(token),
       ),
+    ),
+    exportBackup: async () => backupActionResultSchema.parse(
+      await invoke(CHANNELS.system.exportBackup),
+    ),
+    restoreBackup: async () => backupActionResultSchema.parse(
+      await invoke(CHANNELS.system.restoreBackup),
     ),
   }),
 });

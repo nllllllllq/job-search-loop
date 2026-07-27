@@ -18,6 +18,7 @@ import { Field } from '../../components/Field';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useToast } from '../../hooks/useToast';
 import { PromptTemplatesSection } from './PromptTemplatesSection';
+import { BackupSection } from './BackupSection';
 
 function errorCode(error: unknown): AppError['code'] | null {
   if (
@@ -366,6 +367,7 @@ export function SettingsPage() {
           prompts={prompts.data}
         />
       ) : null}
+      <BackupSection />
     </div>
   );
 }

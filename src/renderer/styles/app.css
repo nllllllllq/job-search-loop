@@ -913,6 +913,47 @@ a {
   gap: var(--space-3);
 }
 
+.backup-section {
+  border-top: 3px solid var(--accent);
+}
+
+.backup-section__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-6);
+  align-items: center;
+  padding: 1.5rem;
+}
+
+.backup-section__note strong {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}
+
+.backup-section__note p,
+.backup-confirmation p {
+  max-width: 50rem;
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.65;
+}
+
+.backup-section__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+.backup-confirmation__warning {
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger) !important;
+  font-weight: 700;
+}
+
 .settings-section--prompts {
   border-top: 3px solid var(--ink-strong);
 }

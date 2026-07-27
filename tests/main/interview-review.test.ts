@@ -59,6 +59,14 @@ function reviewInput(interviewId: string) {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function createFixture(options: {
   nowMs?: () => number;
   getSettings?: InterviewReviewServiceDependencies['getSettings'];
@@ -269,6 +277,89 @@ describe('interview review service', () => {
       expect(fixture.proposals.list()).toEqual([]);
       expect(fixture.interviews.get(fixture.interview.id).reviewSnapshot?.output.summary)
         .toBe('没有需要沉淀的资产变更。');
+      expect(fixture.completeJson).toHaveBeenCalledTimes(1);
+    } finally {
+      fixture.db.close();
+    }
+  });
+
+  it('keeps the later-started preview when two previews finish in reverse order', async () => {
+    const firstSettings = deferred<{
+      baseUrl: string;
+      model: string;
+      apiKey: string;
+    }>();
+    const secondSettings = deferred<{
+      baseUrl: string;
+      model: string;
+      apiKey: string;
+    }>();
+    const settings = {
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-review',
+      apiKey: 'secret',
+    };
+    let settingsCall = 0;
+    const fixture = createFixture({
+      getSettings: async () => {
+        settingsCall += 1;
+        if (settingsCall === 1) return firstSettings.promise;
+        if (settingsCall === 2) return secondSettings.promise;
+        return settings;
+      },
+    });
+    try {
+      const firstProject = fixture.assets.saveProject({
+        name: 'First request asset',
+        background: '',
+        goal: '',
+        role: '',
+        keyDecisions: '',
+        outcome: '',
+        evidence: '',
+        reflections: '',
+        storytellingVersions: '',
+      });
+      const secondProject = fixture.assets.saveProject({
+        name: 'Second request asset',
+        background: '',
+        goal: '',
+        role: '',
+        keyDecisions: '',
+        outcome: '',
+        evidence: '',
+        reflections: '',
+        storytellingVersions: '',
+      });
+      const first = fixture.service.preview({
+        interviewId: fixture.interview.id,
+        selectedAssets: {
+          projectIds: [firstProject.id],
+          questionIds: [],
+          capabilityIds: [],
+          insightIds: [],
+        },
+      });
+      const second = fixture.service.preview({
+        interviewId: fixture.interview.id,
+        selectedAssets: {
+          projectIds: [secondProject.id],
+          questionIds: [],
+          capabilityIds: [],
+          insightIds: [],
+        },
+      });
+
+      secondSettings.resolve(settings);
+      const newestPreview = await second;
+      firstSettings.resolve(settings);
+      await expect(first).rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(newestPreview.outbound.selectedAssets.projects).toEqual([secondProject]);
+
+      await expect(fixture.service.confirm(newestPreview.token)).resolves.toBeDefined();
+      const [request] = fixture.completeJson.mock.calls[0];
+      expect(request.messages[1].content).toContain(secondProject.id);
+      expect(request.messages[1].content).not.toContain(firstProject.id);
       expect(fixture.completeJson).toHaveBeenCalledTimes(1);
     } finally {
       fixture.db.close();

@@ -43,6 +43,7 @@ interface ReviewInputSnapshot {
 }
 
 interface BoundPreview {
+  requestId: number;
   createdAt: number;
   prompt: string;
   providerOrigin: string;
@@ -219,12 +220,20 @@ export function createInterviewReviewService({
 }: InterviewReviewServiceDependencies): InterviewReviewService {
   const previews = new Map<string, BoundPreview>();
   const previewByInterview = new Map<string, string>();
+  const latestPreviewRequest = new Map<string, number>();
+  let previewRequestSequence = 0;
 
   const removePreview = (token: string): BoundPreview | undefined => {
     const bound = previews.get(token);
     previews.delete(token);
     if (bound && previewByInterview.get(bound.input.interview.id) === token) {
       previewByInterview.delete(bound.input.interview.id);
+    }
+    if (
+      bound
+      && latestPreviewRequest.get(bound.input.interview.id) === bound.requestId
+    ) {
+      latestPreviewRequest.delete(bound.input.interview.id);
     }
     return bound;
   };
@@ -247,6 +256,9 @@ export function createInterviewReviewService({
   return {
     async preview({ interviewId, selectedAssets }) {
       cleanupExpired();
+      const requestId = previewRequestSequence + 1;
+      previewRequestSequence = requestId;
+      latestPreviewRequest.set(interviewId, requestId);
       const hasPending = proposals.list('pending')
         .some((proposal) => proposal.interviewId === interviewId);
       if (hasPending) {
@@ -265,6 +277,12 @@ export function createInterviewReviewService({
       const position = positions.get(interview.positionId);
       const prompt = prompts.get('interview-review');
       const settings = await getSettings();
+      if (latestPreviewRequest.get(interviewId) !== requestId) {
+        throw new RepositoryError(
+          'CONFLICT',
+          '这次预览已被更新的请求替代，请使用最新预览。',
+        );
+      }
       const selectedAssetSnapshots: InterviewReviewSelectedAssets = {
         projects: selectedAssets.projectIds.map((id) => assets.getProject(id)),
         questions: selectedAssets.questionIds.map((id) => assets.getQuestion(id)),
@@ -313,6 +331,7 @@ export function createInterviewReviewService({
         removePreview(oldest);
       }
       previews.set(token, {
+        requestId,
         createdAt: nowMs(),
         prompt: prompt.content,
         providerOrigin,
@@ -349,6 +368,17 @@ export function createInterviewReviewService({
 
     async confirm(token) {
       cleanupExpired();
+      const pendingBound = previews.get(token);
+      if (
+        pendingBound
+        && latestPreviewRequest.get(pendingBound.input.interview.id) !== pendingBound.requestId
+      ) {
+        removePreview(token);
+        throw new RepositoryError(
+          'CONFLICT',
+          '这次预览已被更新的请求替代，请使用最新预览。',
+        );
+      }
       const bound = removePreview(token);
       if (!bound) {
         throw new RepositoryError(

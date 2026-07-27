@@ -8,14 +8,12 @@ import type {
   PositionDetail,
   PositionInput,
   PositionListItem,
-  PreparationMaterial,
   ProcessStage,
   ProcessStageInput,
 } from '../../shared/domain';
 import {
   canonicalStageSchema,
   positionInputSchema,
-  preparationMaterialSchema,
   processStageInputSchema,
 } from '../../shared/schemas';
 import {
@@ -71,21 +69,6 @@ function decodeStage(value: unknown): ProcessStage {
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),
   };
-}
-
-function decodePreparation(value: unknown): PreparationMaterial {
-  const data = row(value, 'preparation');
-  return preparationMaterialSchema.parse({
-    id: text(data.id, 'id'),
-    positionId: text(data.position_id, 'position_id'),
-    rawJdSnapshot: text(data.raw_jd_snapshot, 'raw_jd_snapshot'),
-    promptSnapshot: text(data.prompt_snapshot, 'prompt_snapshot'),
-    assetsSnapshot: text(data.assets_snapshot, 'assets_snapshot'),
-    modelSnapshot: text(data.model_snapshot, 'model_snapshot'),
-    outputSnapshot: text(data.output_snapshot, 'output_snapshot'),
-    generatedAt: text(data.generated_at, 'generated_at'),
-    createdAt: text(data.created_at, 'created_at'),
-  });
 }
 
 function decodeInterview(value: unknown): Interview {
@@ -238,15 +221,11 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
     getDetail(id) {
       const position = get(id);
       const stages = listStages(id);
-      const preparations = db.prepare(`
-        SELECT * FROM preparation_materials
-        WHERE position_id = ? ORDER BY generated_at DESC, created_at DESC
-      `).all(id).map(decodePreparation);
       const interviews = db.prepare(`
         SELECT * FROM interviews
         WHERE position_id = ? ORDER BY interview_date DESC, created_at DESC
       `).all(id).map(decodeInterview);
-      return { ...position, stages, preparations, interviews };
+      return { ...position, stages, interviews };
     },
 
     list(filter = {}) {

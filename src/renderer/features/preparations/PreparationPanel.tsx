@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import type {
   PreparationAssetsSnapshot,
+  PreparationHistoricalOutput,
   PreparationMaterial,
   PreparationOutput,
+  StarsStage,
 } from '../../../shared/domain';
 import {
   preparationAssetsSnapshotSchema,
-  preparationOutputSchema,
+  preparationHistoricalOutputSchema,
 } from '../../../shared/schemas';
 import { EmptyState } from '../../components/EmptyState';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
@@ -15,6 +17,8 @@ import { GeneratePreparationModal } from './GeneratePreparationModal';
 
 interface PreparationPanelProps {
   positionId: string;
+  company: string;
+  title: string;
   rawJd: string;
 }
 
@@ -45,10 +49,42 @@ function OutputSection({
   );
 }
 
+function generatedTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return '时间无效';
+  try {
+    return new Intl.DateTimeFormat('zh-CN', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(date);
+  } catch {
+    return '时间无效';
+  }
+}
+
+function sortableTime(value: string): number {
+  const timestamp = new Date(value).valueOf();
+  return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp;
+}
+
+const STARS_STAGE_LABELS: Record<StarsStage, string> = {
+  Startup: '创业起步',
+  Turnaround: '扭转',
+  Realignment: '重新校准',
+  'Sustaining Success': '延续成功',
+  Crisis: '危机',
+};
+
+function isCurrentOutput(
+  output: PreparationHistoricalOutput,
+): output is PreparationOutput {
+  return 'competencyMap' in output;
+}
+
 function PreparationVersion({ item }: { item: PreparationMaterial }) {
-  const output = parseSnapshot<PreparationOutput>(
+  const output = parseSnapshot<PreparationHistoricalOutput>(
     item.outputSnapshot,
-    preparationOutputSchema,
+    preparationHistoricalOutputSchema,
   );
   const assets = parseSnapshot<PreparationAssetsSnapshot>(
     item.assetsSnapshot,
@@ -67,7 +103,7 @@ function PreparationVersion({ item }: { item: PreparationMaterial }) {
         <div>
           <p className="section-label">IMMUTABLE SNAPSHOT / 只读版本</p>
           <time dateTime={item.generatedAt}>
-            {item.generatedAt.slice(0, 16).replace('T', ' ')}
+            {generatedTime(item.generatedAt)}
           </time>
         </div>
         <span>{item.modelSnapshot}</span>
@@ -135,6 +171,106 @@ function PreparationVersion({ item }: { item: PreparationMaterial }) {
               ))}</ul>
             )}
           </OutputSection>
+          {isCurrentOutput(output) ? (
+            <>
+              <OutputSection title="Map Competencies">
+                <table className="preparation-competency-table">
+                  <caption className="sr-only">岗位核心能力 Top 5</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">排名</th>
+                      <th scope="col">能力</th>
+                      <th scope="col">JD 证据与理由</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {output.competencyMap.map((competency) => (
+                      <tr key={competency.rank}>
+                        <th scope="row">{competency.rank}</th>
+                        <td className="user-text">{competency.name}</td>
+                        <td className="user-text">{competency.evidence}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </OutputSection>
+              <OutputSection title="Company Map">
+                <p className="preparation-stage">
+                  <strong>
+                    {`${output.companyMap.stage} · ${STARS_STAGE_LABELS[output.companyMap.stage]}`}
+                  </strong>
+                </p>
+                <p className="user-text">{output.companyMap.summary}</p>
+                <div className="preparation-framework-columns">
+                  <div>
+                    <h5>优先事项</h5>
+                    <ul>{output.companyMap.priorities.map((priority, index) => (
+                      <li className="user-text" key={`${priority}-${index}`}>{priority}</li>
+                    ))}</ul>
+                  </div>
+                  <div>
+                    <h5>文化信号</h5>
+                    <ul>{output.companyMap.culture.map((signal, index) => (
+                      <li className="user-text" key={`${signal}-${index}`}>{signal}</li>
+                    ))}</ul>
+                  </div>
+                </div>
+              </OutputSection>
+              <OutputSection title="Dream Candidate Avatar">
+                <ol className="preparation-timeline" aria-label="Typical Day">
+                  {output.dreamCandidateAvatar.typicalDay.map((entry, index) => (
+                    <li key={`${entry.time}-${index}`}>
+                      <span className="user-text">{entry.time}</span>
+                      <div>
+                        <strong className="user-text">{entry.activity}</strong>
+                        <p className="user-text">{entry.purpose}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <dl className="preparation-pairs">
+                  <div>
+                    <dt>Superpower</dt>
+                    <dd className="user-text">{output.dreamCandidateAvatar.superpower}</dd>
+                  </div>
+                  <div>
+                    <dt>Success Story</dt>
+                    <dd className="user-text">{output.dreamCandidateAvatar.successStory}</dd>
+                  </div>
+                  <div>
+                    <dt>Quote</dt>
+                    <dd className="user-text">{output.dreamCandidateAvatar.quote}</dd>
+                  </div>
+                  <div>
+                    <dt>Pain Profile</dt>
+                    <dd className="user-text">{output.dreamCandidateAvatar.painProfile}</dd>
+                  </div>
+                </dl>
+              </OutputSection>
+              <OutputSection title="Action Guide">
+                <dl className="preparation-pairs">
+                  <div>
+                    <dt>自我介绍 Tagline</dt>
+                    <dd className="user-text">{output.actionGuide.selfIntroTagline}</dd>
+                  </div>
+                  <div>
+                    <dt>文化匹配表达</dt>
+                    <dd className="user-text">{output.actionGuide.cultureFitPhrase}</dd>
+                  </div>
+                </dl>
+                <h5>3 个定制收尾问题</h5>
+                <ol aria-label="定制收尾问题">
+                  {output.actionGuide.questions.map((question, index) => (
+                    <li className="user-text" key={`${question}-${index}`}>{question}</li>
+                  ))}
+                </ol>
+              </OutputSection>
+            </>
+          ) : (
+            <p className="preparation-version__legacy">
+              旧版结构 · 此历史版本仅包含基础六部分
+            </p>
+          )}
           <section className="preparation-input-snapshot">
             <h4>输入快照</h4>
             <p>
@@ -149,7 +285,12 @@ function PreparationVersion({ item }: { item: PreparationMaterial }) {
   );
 }
 
-export function PreparationPanel({ positionId, rawJd }: PreparationPanelProps) {
+export function PreparationPanel({
+  positionId,
+  company,
+  title,
+  rawJd,
+}: PreparationPanelProps) {
   const toast = useToast();
   const [generateOpen, setGenerateOpen] = useState(false);
   const resource = useAsyncResource(
@@ -158,8 +299,8 @@ export function PreparationPanel({ positionId, rawJd }: PreparationPanelProps) {
   );
   const history = useMemo(
     () => [...(resource.data ?? [])].sort(
-      (left, right) => right.generatedAt.localeCompare(left.generatedAt)
-        || right.createdAt.localeCompare(left.createdAt),
+      (left, right) => sortableTime(right.generatedAt) - sortableTime(left.generatedAt)
+        || sortableTime(right.createdAt) - sortableTime(left.createdAt),
     ),
     [resource.data],
   );
@@ -231,11 +372,13 @@ export function PreparationPanel({ positionId, rawJd }: PreparationPanelProps) {
 
       {generateOpen ? (
         <GeneratePreparationModal
+          company={company}
           onClose={() => setGenerateOpen(false)}
           onGenerated={generated}
           open
           positionId={positionId}
           rawJdLength={rawJd.length}
+          title={title}
         />
       ) : null}
     </div>

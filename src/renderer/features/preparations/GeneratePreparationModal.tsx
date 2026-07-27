@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type {
   PreparationGenerateInput,
   PreparationMaterial,
@@ -11,6 +12,8 @@ import { useToast } from '../../hooks/useToast';
 interface GeneratePreparationModalProps {
   open: boolean;
   positionId: string;
+  company: string;
+  title: string;
   rawJdLength: number;
   onClose: () => void;
   onGenerated: (preparation: PreparationMaterial) => Promise<void>;
@@ -32,22 +35,45 @@ function errorMessage(error: unknown): string {
 export function GeneratePreparationModal({
   open,
   positionId,
+  company,
+  title,
   rawJdLength,
   onClose,
   onGenerated,
 }: GeneratePreparationModalProps) {
   const toast = useToast();
-  const resources = useAsyncResource(() => Promise.all([
-    window.jobSearch.assets.projects.list(),
-    window.jobSearch.assets.questions.list(),
-  ]));
+  const resources = useAsyncResource(async () => {
+    const [projects, questions, settings, prompt] = await Promise.all([
+      window.jobSearch.assets.projects.list(),
+      window.jobSearch.assets.questions.list(),
+      window.jobSearch.ai.settings.get(),
+      window.jobSearch.assets.prompts.get('preparation'),
+    ]);
+    return { projects, questions, settings, prompt };
+  });
   const [projectIds, setProjectIds] = useState<string[]>([]);
   const [questionIds, setQuestionIds] = useState<string[]>([]);
   const [step, setStep] = useState<'select' | 'confirm'>('select');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
-  const [projects, questions] = resources.data ?? [[], []];
+  const projects = resources.data?.projects ?? [];
+  const questions = resources.data?.questions ?? [];
+  const settings = resources.data?.settings ?? null;
+  const prompt = resources.data?.prompt ?? null;
+  const providerOrigin = (() => {
+    if (!settings?.baseUrl) return null;
+    try {
+      return new URL(settings.baseUrl).origin;
+    } catch {
+      return null;
+    }
+  })();
+  const configured = Boolean(
+    settings?.hasApiKey
+    && settings.model.trim().length > 0
+    && providerOrigin,
+  );
 
   const payload = useMemo<PreparationGenerateInput>(() => ({
     positionId,
@@ -93,6 +119,7 @@ export function GeneratePreparationModal({
       <button className="button button--quiet" onClick={close} type="button">取消</button>
       <button
         className="button button--primary"
+        disabled={!configured}
         onClick={() => {
           setError(null);
           setStep('confirm');
@@ -142,24 +169,34 @@ export function GeneratePreparationModal({
       {resources.loading ? (
         <div className="resource-state preparation-modal__state" role="status">
           <span aria-hidden="true" className="resource-state__mark" />
-          正在读取可选资产…
+          正在读取发送范围与可选资产…
         </div>
       ) : null}
       {resources.error ? (
         <div className="preparation-modal__error" role="alert">
-          <h3>可选资产载入失败</h3>
-          <p>暂时无法读取项目和问题库。你可以重试，当前不会调用外部 AI。</p>
+          <h3>生成信息载入失败</h3>
+          <p>暂时无法读取外部 AI 公开配置、Prompt 或可选资产。当前不会调用外部 AI。</p>
           <button
             className="button button--quiet"
             onClick={() => void resources.reload()}
             type="button"
           >
-            重试可选资产
+            重试生成信息
           </button>
         </div>
       ) : null}
       {!resources.loading && !resources.error && step === 'select' ? (
         <div className="preparation-picker">
+          {configured ? (
+            <p className="preparation-provider">
+              当前外部 AI：{providerOrigin} · 模型 {settings?.model}
+            </p>
+          ) : (
+            <div className="preparation-config-warning" role="alert">
+              <p>外部 AI 配置尚未完成，完成配置后才能查看发送摘要并生成。</p>
+              <Link className="button-link" onClick={close} to="/settings">前往设置</Link>
+            </div>
+          )}
           <p className="preparation-picker__notice">
             默认不选择任何资产。你可以用 0 项资产生成，只基于当前岗位的原始 JD。
           </p>
@@ -197,13 +234,24 @@ export function GeneratePreparationModal({
         <div className="payload-summary">
           <p className="section-label">OUTBOUND DATA / 发送前确认</p>
           <h3>预计载荷摘要</h3>
-          <dl>
-            <div><dt>原始 JD</dt><dd>{rawJdLength} 个字符</dd></div>
-            <div><dt>项目档案</dt><dd>{projectIds.length} 个项目</dd></div>
-            <div><dt>问题条目</dt><dd>{questionIds.length} 个问题</dd></div>
-          </dl>
+          <p className="payload-summary__destination">
+            目标服务：{providerOrigin} · 模型 {settings?.model}
+          </p>
+          <ul className="payload-summary__contents">
+            <li>公司与岗位名称的完整内容：{company} · {title}</li>
+            <li>原始 JD：完整原文（{rawJdLength} 个字符）</li>
+            <li>
+              当前「岗位准备」Prompt 模板完整内容
+              （{prompt?.content.length ?? 0} 个字符）
+            </li>
+            <li>{projectIds.length} 个所选项目档案的完整字段内容</li>
+            <li>{questionIds.length} 个所选问题条目的完整字段内容</li>
+          </ul>
           <p className="payload-summary__warning">
-            确认后，以上内容将发送到已配置的外部 AI。应用只保存通过本地校验的生成结果与本次输入快照。
+            确认后，列表中逐类说明的完整内容将发送到该外部 AI。
+            生成时主进程会再次读取最新外部 AI 配置与「岗位准备」Prompt；
+            如果它们在弹窗打开后发生变化，以确认生成时读取的内容为准。
+            应用只保存通过本地校验的生成结果与本次输入快照。
           </p>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
         </div>

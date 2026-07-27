@@ -186,7 +186,12 @@ export function PositionDetailPage() {
           <StageTimeline onRefresh={resource.reload} positionId={position.id} stages={position.stages} />
         ) : null}
         {tab === 'preparation' ? (
-          <PreparationPanel positionId={position.id} rawJd={position.rawJd} />
+          <PreparationPanel
+            company={position.company}
+            positionId={position.id}
+            rawJd={position.rawJd}
+            title={position.title}
+          />
         ) : null}
         {tab === 'interviews' ? (
           <EmptyState body="逐轮面试记录会在后续功能中出现在这里。" icon="面" title="还没有面试记录" />

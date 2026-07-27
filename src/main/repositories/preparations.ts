@@ -4,6 +4,7 @@ import type { PreparationMaterial } from '../../shared/domain';
 import {
   preparationInputSchema,
   preparationMaterialSchema,
+  preparationReadableMaterialSchema,
 } from '../../shared/schemas';
 import { notFound, row, text } from './common';
 
@@ -34,7 +35,7 @@ export function createPreparationsRepository(db: DatabaseSync): PreparationsRepo
   const get = (id: string): PreparationMaterial => {
     const value = db.prepare('SELECT * FROM preparation_materials WHERE id = ?').get(id);
     if (value === undefined) notFound('Preparation', id);
-    return decodePreparation(value);
+    return preparationReadableMaterialSchema.parse(decodePreparation(value));
   };
   return {
     create(input) {
@@ -63,7 +64,8 @@ export function createPreparationsRepository(db: DatabaseSync): PreparationsRepo
     listByPosition(positionId) {
       return db.prepare(`
         SELECT * FROM preparation_materials
-        WHERE position_id = ? ORDER BY generated_at DESC, created_at DESC
+        WHERE position_id = ?
+        ORDER BY generated_at DESC, created_at DESC, rowid DESC
       `).all(positionId).map(decodePreparation);
     },
   };

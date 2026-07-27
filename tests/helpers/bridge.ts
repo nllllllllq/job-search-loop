@@ -102,7 +102,6 @@ const emptyPosition: Position = {
 const emptyDetail: PositionDetail = {
   ...emptyPosition,
   stages: [],
-  preparations: [],
   interviews: [],
 };
 

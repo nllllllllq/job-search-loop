@@ -131,6 +131,26 @@ flowchart LR
 
 生成结果保存为独立快照。用户可以再次生成新版本，但旧版本保持不变。
 
+#### 4.3.1 用户确认的岗位准备分析框架（2026-07-27）
+
+岗位准备的默认 Prompt 在基础六部分之外，必须生成以下四组结构化结果：
+
+1. **Map Competencies**
+   - 从 JD 中提炼标准能力 Top 5。
+   - 综合关键词出现频率、所在位置与强调程度排序。
+   - 排名必须为唯一且有序的 1—5，并给出每项能力的 JD 证据或排序理由。
+2. **Company Map**
+   - 从 STARS 五阶段中严格选择一个：`Startup`、`Turnaround`、`Realignment`、`Sustaining Success`、`Crisis`。
+   - 同时说明阶段判断、当前优先事项和文化信号。
+3. **Dream Candidate Avatar**
+   - 包含 `Typical Day` 时间线、`Superpower`、`Success Story`、`Quote` 和 `Pain Profile`。
+4. **Action Guide**
+   - 包含一句自我介绍 tagline、一句文化匹配表达和恰好 3 个针对当前岗位定制的收尾问题。
+
+分析正文使用中文，但保留上述 English terms。默认 Prompt 的更新只用于新安装或默认初始化；用户已经自定义的岗位准备 Prompt 不会被覆盖。
+
+兼容策略为“新生成严格、旧历史宽容”：新的 AI 生成结果必须同时包含原基础六字段和四组新结构；旧版仅含基础六字段的历史快照继续可读，并在界面标注为“旧版结构”。单条损坏快照只影响自身展示，不影响岗位详情与其他历史版本。
+
 ### 4.4 面试记录与复盘
 
 第一阶段支持手动输入面试记录；第二阶段增加手机录音转写。
@@ -264,6 +284,9 @@ AI 可以提出以下候选变更：
 - Prompt 模板快照。
 - 使用的资产版本快照。
 - AI 生成结果。
+- 基础六字段：岗位摘要、能力重点、项目讲述要点、可能问题、候选人反问、风险提示。
+- 新版四组结构：`competencyMap`、`companyMap`、`dreamCandidateAvatar`、`actionGuide`。
+- `competencyMap` 固定 5 项且 rank 依次为 1—5；`companyMap.stage` 使用严格 STARS 枚举；`actionGuide.questions` 固定 3 项。
 - 生成时间。
 
 #### 面试记录

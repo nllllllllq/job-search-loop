@@ -7,7 +7,7 @@ import {
   idSchema,
   preparationGenerateSchema,
   preparationMaterialListSchema,
-  preparationMaterialSchema,
+  preparationReadableMaterialSchema,
   promptKindSchema,
   promptSaveSchema,
   promptTemplateListSchema,
@@ -102,10 +102,10 @@ const api = frozen<JobSearchApi>({
     list: async (positionId) => preparationMaterialListSchema.parse(
       await invoke(CHANNELS.preparations.list, idSchema.parse(positionId)),
     ),
-    get: async (id) => preparationMaterialSchema.parse(
+    get: async (id) => preparationReadableMaterialSchema.parse(
       await invoke(CHANNELS.preparations.get, idSchema.parse(id)),
     ),
-    generate: async (input) => preparationMaterialSchema.parse(
+    generate: async (input) => preparationReadableMaterialSchema.parse(
       await invoke(
         CHANNELS.preparations.generate,
         preparationGenerateSchema.parse(input),

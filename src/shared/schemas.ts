@@ -196,7 +196,7 @@ export const preparationGenerateSchema = z.object({
   questionIds: z.array(idSchema).max(200),
 }).strict();
 
-export const preparationOutputSchema = z.object({
+export const legacyPreparationOutputSchema = z.object({
   roleSummary: nonBlankSnapshotText(20_000),
   capabilityFocus: z.array(z.object({
     name: nonBlankSnapshotText(200),
@@ -213,6 +213,71 @@ export const preparationOutputSchema = z.object({
   candidateQuestions: z.array(nonBlankSnapshotText(20_000)).max(100),
   riskNotes: z.array(nonBlankSnapshotText(20_000)).max(100),
 }).strict();
+
+const competencyRankSchema = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+]);
+
+export const starsStageSchema = z.enum([
+  'Startup',
+  'Turnaround',
+  'Realignment',
+  'Sustaining Success',
+  'Crisis',
+]);
+
+export const preparationOutputSchema = legacyPreparationOutputSchema.extend({
+  competencyMap: z.array(z.object({
+    rank: competencyRankSchema,
+    name: nonBlankSnapshotText(200),
+    evidence: nonBlankSnapshotText(10_000),
+  }).strict()).length(5).superRefine((items, context) => {
+    items.forEach((item, index) => {
+      if (item.rank !== index + 1) {
+        context.addIssue({
+          code: 'custom',
+          path: [index, 'rank'],
+          message: '能力排名必须按 1 到 5 唯一且有序',
+        });
+      }
+    });
+  }),
+  companyMap: z.object({
+    stage: starsStageSchema,
+    summary: nonBlankSnapshotText(20_000),
+    priorities: z.array(nonBlankSnapshotText(10_000)).min(1).max(20),
+    culture: z.array(nonBlankSnapshotText(10_000)).min(1).max(20),
+  }).strict(),
+  dreamCandidateAvatar: z.object({
+    typicalDay: z.array(z.object({
+      time: nonBlankSnapshotText(80),
+      activity: nonBlankSnapshotText(10_000),
+      purpose: nonBlankSnapshotText(10_000),
+    }).strict()).min(1).max(24),
+    superpower: nonBlankSnapshotText(20_000),
+    successStory: nonBlankSnapshotText(40_000),
+    quote: nonBlankSnapshotText(20_000),
+    painProfile: nonBlankSnapshotText(40_000),
+  }).strict(),
+  actionGuide: z.object({
+    selfIntroTagline: nonBlankSnapshotText(20_000),
+    cultureFitPhrase: nonBlankSnapshotText(20_000),
+    questions: z.tuple([
+      nonBlankSnapshotText(20_000),
+      nonBlankSnapshotText(20_000),
+      nonBlankSnapshotText(20_000),
+    ]),
+  }).strict(),
+}).strict();
+
+export const preparationHistoricalOutputSchema = z.union([
+  preparationOutputSchema,
+  legacyPreparationOutputSchema,
+]);
 
 const projectSnapshotSchema = projectPayloadObjectSchema.extend({
   id: idSchema,
@@ -262,9 +327,11 @@ export const preparationMaterialSchema = z.object({
   assetsSnapshot: z.string().max(1_000_000),
   modelSnapshot: z.string().trim().min(1).max(500),
   outputSnapshot: z.string().max(1_000_000),
-  generatedAt: z.string().datetime(),
-  createdAt: z.string().datetime(),
-}).strict().superRefine((value, context) => {
+  generatedAt: z.string().min(1).max(100),
+  createdAt: z.string().min(1).max(100),
+}).strict();
+
+export const preparationReadableMaterialSchema = preparationMaterialSchema.superRefine((value, context) => {
   try {
     preparationAssetsSnapshotSchema.parse(JSON.parse(value.assetsSnapshot));
   } catch {
@@ -275,7 +342,7 @@ export const preparationMaterialSchema = z.object({
     });
   }
   try {
-    preparationOutputSchema.parse(JSON.parse(value.outputSnapshot));
+    preparationHistoricalOutputSchema.parse(JSON.parse(value.outputSnapshot));
   } catch {
     context.addIssue({
       code: 'custom',

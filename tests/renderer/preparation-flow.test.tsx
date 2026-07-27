@@ -25,7 +25,6 @@ const detail: PositionDetail = {
   createdAt: '2026-07-26T00:00:00.000Z',
   updatedAt: '2026-07-27T00:00:00.000Z',
   stages: [],
-  preparations: [],
   interviews: [],
 };
 
@@ -71,6 +70,34 @@ const preparation: PreparationMaterial = {
     likelyQuestions: [{ question: '如何验证需求？', answerOutline: '先验证高风险假设。' }],
     candidateQuestions: ['团队如何定义产品成功？'],
     riskNotes: ['跨团队案例需要补充。'],
+    competencyMap: [
+      { rank: 1, name: '用户洞察', evidence: '职责首段与要求段均出现。' },
+      { rank: 2, name: '产品规划', evidence: '核心职责明确强调。' },
+      { rank: 3, name: 'AI 理解', evidence: '岗位标题与技能要求均强调。' },
+      { rank: 4, name: '数据分析', evidence: '结果衡量要求中出现。' },
+      { rank: 5, name: '跨团队协作', evidence: '协作要求中出现。' },
+    ],
+    companyMap: {
+      stage: 'Realignment',
+      summary: '公司正重新校准 AI 产品方向。',
+      priorities: ['验证高价值场景'],
+      culture: ['快速实验'],
+    },
+    dreamCandidateAvatar: {
+      typicalDay: [
+        { time: '09:00', activity: '分析用户反馈', purpose: '识别高风险假设' },
+        { time: '14:00', activity: '跨团队评审', purpose: '形成决策' },
+      ],
+      superpower: '把模糊需求转成可验证实验。',
+      successStory: '推动关键指标改善。',
+      quote: '先验证最昂贵的假设。',
+      painProfile: '缺少完整从零到一案例。',
+    },
+    actionGuide: {
+      selfIntroTagline: '我擅长把复杂 AI 场景变成可验证的产品决策。',
+      cultureFitPhrase: '用小步实验建立跨团队共识。',
+      questions: ['问题一？', '问题二？', '问题三？'],
+    },
   }),
   generatedAt: '2026-07-27T09:30:00.000Z',
   createdAt: '2026-07-27T09:30:00.000Z',
@@ -85,6 +112,19 @@ function renderPreparation(
   fake.preparations.list.mockResolvedValue([]);
   fake.assets.projects.list.mockResolvedValue([project]);
   fake.assets.questions.list.mockResolvedValue([question]);
+  fake.ai.settings.get.mockResolvedValue({
+    baseUrl: 'https://api.example.com/v1',
+    model: 'model-a',
+    hasApiKey: true,
+  });
+  fake.assets.prompts.get.mockResolvedValue({
+    id: '77777777-7777-4777-8777-777777777777',
+    kind: 'preparation',
+    name: '岗位准备',
+    content: '岗位准备 prompt',
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-01T00:00:00.000Z',
+  });
   configure?.(fake);
   return { fake, user: userEvent.setup(), ...render(<App />) };
 }
@@ -96,6 +136,7 @@ async function openPreparationTab(user: ReturnType<typeof userEvent.setup>) {
 describe('preparation flow', () => {
   it('does not generate automatically, allows cancel, and selects no assets by default', async () => {
     const { fake, user } = renderPreparation();
+    expect(fake.preparations.list).not.toHaveBeenCalled();
     await openPreparationTab(user);
     expect(fake.preparations.generate).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: '生成准备材料' }));
@@ -123,10 +164,22 @@ describe('preparation flow', () => {
     await user.click(within(dialog).getByRole('button', { name: '查看发送摘要' }));
 
     expect(fake.preparations.generate).not.toHaveBeenCalled();
-    expect(within(dialog).getByText(`${detail.rawJd.length} 个字符`)).toBeInTheDocument();
-    expect(within(dialog).getByText('1 个项目')).toBeInTheDocument();
-    expect(within(dialog).getByText('1 个问题')).toBeInTheDocument();
-    expect(within(dialog).getByText(/将发送到已配置的外部 AI/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/公司与岗位名称的完整内容/)).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      new RegExp(`原始 JD：完整原文（${detail.rawJd.length} 个字符）`),
+    ))
+      .toBeInTheDocument();
+    expect(within(dialog).getByText(/当前「岗位准备」Prompt 模板完整内容/))
+      .toHaveTextContent(`${'岗位准备 prompt'.length} 个字符`);
+    expect(within(dialog).getByText(/1 个所选项目档案的完整字段内容/))
+      .toBeInTheDocument();
+    expect(within(dialog).getByText(/1 个所选问题条目的完整字段内容/))
+      .toBeInTheDocument();
+    expect(within(dialog).getByText(/https:\/\/api\.example\.com/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/model-a/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/生成时主进程会再次读取最新外部 AI 配置/))
+      .toBeInTheDocument();
+    expect(within(dialog).queryByText(/secret|API Key/i)).not.toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: '确认生成' }));
     await waitFor(() => expect(fake.preparations.generate).toHaveBeenCalledOnce());
@@ -137,6 +190,25 @@ describe('preparation flow', () => {
     });
     expect(await screen.findByRole('heading', { name: '负责把复杂需求整理为产品方案。' }))
       .toBeInTheDocument();
+  });
+
+  it('blocks confirmation and links to settings when public AI configuration is incomplete', async () => {
+    const { fake, user } = renderPreparation((api) => {
+      api.ai.settings.get.mockResolvedValue({
+        baseUrl: 'https://api.example.com/v1',
+        model: 'model-a',
+        hasApiKey: false,
+      });
+    });
+    await openPreparationTab(user);
+    await user.click(screen.getByRole('button', { name: '生成准备材料' }));
+    const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
+
+    expect(within(dialog).getByText(/外部 AI 配置尚未完成/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '查看发送摘要' })).toBeDisabled();
+    expect(within(dialog).getByRole('link', { name: '前往设置' }))
+      .toHaveAttribute('href', '#/settings');
+    expect(fake.preparations.generate).not.toHaveBeenCalled();
   });
 
   it('retains explicit selections after failure and retries without duplicate submission', async () => {
@@ -187,8 +259,14 @@ describe('preparation flow', () => {
     await openPreparationTab(user);
 
     const articles = await screen.findAllByRole('article', { name: /准备版本/ });
-    expect(articles[0]).toHaveTextContent('2026-07-27');
-    expect(articles[1]).toHaveTextContent('2026-07-26');
+    expect(articles[0].querySelector('time')).toHaveAttribute(
+      'dateTime',
+      '2026-07-27T09:30:00.000Z',
+    );
+    expect(articles[1].querySelector('time')).toHaveAttribute(
+      'dateTime',
+      '2026-07-26T09:30:00.000Z',
+    );
     expect(screen.getAllByText('岗位摘要')).toHaveLength(2);
     expect(screen.getAllByText('能力重点')).toHaveLength(2);
     expect(screen.getAllByText('项目讲述要点')).toHaveLength(2);
@@ -198,6 +276,70 @@ describe('preparation flow', () => {
     expect(screen.getAllByText('输入快照')).toHaveLength(2);
     expect(screen.getByText('<img src=x onerror=alert(1)>旧版本')).toBeInTheDocument();
     expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('renders the four new framework groups with an accessible Top 5 table and action guide', async () => {
+    const { user } = renderPreparation((api) => {
+      api.preparations.list.mockResolvedValue([preparation]);
+    });
+    await openPreparationTab(user);
+
+    expect(await screen.findByRole('heading', { name: 'Map Competencies' }))
+      .toBeInTheDocument();
+    const table = screen.getByRole('table', { name: '岗位核心能力 Top 5' });
+    expect(within(table).getAllByRole('row')).toHaveLength(6);
+    expect(within(table).getByText('用户洞察')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Company Map' })).toBeInTheDocument();
+    expect(screen.getByText(/Realignment · 重新校准/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dream Candidate Avatar' }))
+      .toBeInTheDocument();
+    expect(screen.getByText('09:00')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Action Guide' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: '定制收尾问题' }).children).toHaveLength(3);
+  });
+
+  it('keeps old six-field snapshots readable and labels them as legacy', async () => {
+    const parsed = JSON.parse(preparation.outputSnapshot);
+    delete parsed.competencyMap;
+    delete parsed.companyMap;
+    delete parsed.dreamCandidateAvatar;
+    delete parsed.actionGuide;
+    const legacy = {
+      ...preparation,
+      id: '99999999-9999-4999-8999-999999999999',
+      outputSnapshot: JSON.stringify(parsed),
+    };
+    const { user } = renderPreparation((api) => {
+      api.preparations.list.mockResolvedValue([legacy]);
+    });
+    await openPreparationTab(user);
+
+    expect(await screen.findByRole('heading', {
+      name: '负责把复杂需求整理为产品方案。',
+    })).toBeInTheDocument();
+    expect(screen.getByText(/旧版结构/)).toBeInTheDocument();
+    expect(screen.getByText('能力重点')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('isolates an unreadable snapshot while keeping valid history visible', async () => {
+    const corrupt: PreparationMaterial = {
+      ...preparation,
+      id: '88888888-8888-4888-8888-888888888888',
+      generatedAt: 'not-a-date',
+      outputSnapshot: 'not-json',
+    };
+    const { user } = renderPreparation((api) => {
+      api.preparations.list.mockResolvedValue([corrupt, preparation]);
+    });
+    await openPreparationTab(user);
+
+    expect(await screen.findByRole('heading', {
+      name: '负责把复杂需求整理为产品方案。',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('这个历史版本的数据无法安全读取');
+    expect(screen.getByText('时间无效')).toBeInTheDocument();
+    expect(screen.getAllByRole('article', { name: /准备版本/ })).toHaveLength(2);
   });
 
   it('shows independent loading, error with retry, and useful empty states', async () => {

@@ -31,6 +31,33 @@ const output = {
   }],
   candidateQuestions: ['团队如何定义产品成功？'],
   riskNotes: ['需要补充跨团队协作案例。'],
+  competencyMap: [
+    { rank: 1, name: '用户洞察', evidence: '职责首段与要求段均出现。' },
+    { rank: 2, name: '产品规划', evidence: '核心职责明确强调。' },
+    { rank: 3, name: 'AI 理解', evidence: '岗位标题与技能要求均强调。' },
+    { rank: 4, name: '数据分析', evidence: '结果衡量要求中出现。' },
+    { rank: 5, name: '跨团队协作', evidence: '协作要求中出现。' },
+  ],
+  companyMap: {
+    stage: 'Realignment',
+    summary: '公司正重新校准 AI 产品方向。',
+    priorities: ['验证高价值场景'],
+    culture: ['快速实验'],
+  },
+  dreamCandidateAvatar: {
+    typicalDay: [
+      { time: '09:00', activity: '分析用户反馈', purpose: '识别高风险假设' },
+    ],
+    superpower: '把模糊需求转成可验证实验。',
+    successStory: '推动关键指标改善。',
+    quote: '先验证最昂贵的假设。',
+    painProfile: '缺少完整从零到一案例。',
+  },
+  actionGuide: {
+    selfIntroTagline: '我擅长把复杂 AI 场景变成可验证的产品决策。',
+    cultureFitPhrase: '用小步实验建立跨团队共识。',
+    questions: ['问题一？', '问题二？', '问题三？'],
+  },
 };
 
 function createFixture() {
@@ -153,6 +180,14 @@ describe('preparation service', () => {
       expect(request.messages[1].content).toContain('"likelyQuestions"');
       expect(request.messages[1].content).toContain('"candidateQuestions"');
       expect(request.messages[1].content).toContain('"riskNotes"');
+      expect(request.messages[1].content).toContain('"competencyMap"');
+      expect(request.messages[1].content).toContain('"companyMap"');
+      expect(request.messages[1].content).toContain('"dreamCandidateAvatar"');
+      expect(request.messages[1].content).toContain('"actionGuide"');
+      expect(request.messages[1].content).toContain('Startup');
+      expect(request.messages[1].content).toContain('Sustaining Success');
+      expect(request.messages[1].content).toContain('必须恰好包含 5 项');
+      expect(request.messages[1].content).toContain('必须恰好包含 3 个');
       expect(schema.safeParse(fixture.output).success).toBe(true);
       expect(settings).toEqual({
         baseUrl: 'https://api.example.com/v1',
@@ -292,6 +327,44 @@ describe('preparation service', () => {
       ]);
       expect(JSON.parse(history[1].assetsSnapshot).projects[0].name)
         .toBe(fixture.project.name);
+    } finally {
+      fixture.db.close();
+    }
+  });
+
+  it('isolates a corrupt historical snapshot from position detail and other preparation versions', async () => {
+    const fixture = createFixture();
+    try {
+      const good = await fixture.service.generate({
+        positionId: fixture.position.id,
+        projectIds: [fixture.project.id],
+        questionIds: [],
+      });
+      fixture.now.mockReturnValue('2026-07-28T09:30:00.000Z');
+      const corrupt = await fixture.service.generate({
+        positionId: fixture.position.id,
+        projectIds: [fixture.project.id],
+        questionIds: [],
+      });
+      fixture.db.prepare(
+        'UPDATE preparation_materials SET output_snapshot = ? WHERE id = ?',
+      ).run('not-json', corrupt.id);
+
+      expect(fixture.positions.getDetail(fixture.position.id)).toMatchObject({
+        id: fixture.position.id,
+        company: fixture.position.company,
+        stages: expect.any(Array),
+        interviews: expect.any(Array),
+      });
+      expect('preparations' in fixture.positions.getDetail(fixture.position.id))
+        .toBe(false);
+
+      const history = fixture.preparations.listByPosition(fixture.position.id);
+      expect(history).toHaveLength(2);
+      expect(history.find((item) => item.id === corrupt.id)?.outputSnapshot)
+        .toBe('not-json');
+      expect(fixture.preparations.get(good.id).id).toBe(good.id);
+      expect(() => fixture.preparations.get(corrupt.id)).toThrow();
     } finally {
       fixture.db.close();
     }

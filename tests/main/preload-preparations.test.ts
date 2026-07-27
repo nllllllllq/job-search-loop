@@ -39,4 +39,31 @@ describe('preload preparation contract', () => {
     await expect(request()).rejects.toBeDefined();
     expect(electronMocks.invoke).not.toHaveBeenCalled();
   });
+
+  it('rejects invalid generate input before invoking main IPC', async () => {
+    await expect(exposedApi().preparations.generate({
+      positionId: 'not-a-uuid',
+      projectIds: [],
+      questionIds: [],
+    })).rejects.toBeDefined();
+    expect(electronMocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['list', () => exposedApi().preparations.list(
+      '11111111-1111-4111-8111-111111111111',
+    )],
+    ['get', () => exposedApi().preparations.get(
+      '22222222-2222-4222-8222-222222222222',
+    )],
+    ['generate', () => exposedApi().preparations.generate({
+      positionId: '11111111-1111-4111-8111-111111111111',
+      projectIds: [],
+      questionIds: [],
+    })],
+  ])('rejects malformed %s responses from main IPC', async (_method, request) => {
+    electronMocks.invoke.mockResolvedValueOnce({ unexpected: true });
+    await expect(request()).rejects.toBeDefined();
+    expect(electronMocks.invoke).toHaveBeenCalledOnce();
+  });
 });

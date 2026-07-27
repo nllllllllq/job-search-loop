@@ -51,7 +51,6 @@ export interface PositionListItem {
 
 export interface PositionDetail extends Position {
   stages: ProcessStage[];
-  preparations: PreparationMaterial[];
   interviews: Interview[];
 }
 
@@ -79,7 +78,7 @@ export interface PreparationGenerateInput {
   questionIds: string[];
 }
 
-export interface PreparationOutput {
+export interface LegacyPreparationOutput {
   roleSummary: string;
   capabilityFocus: Array<{ name: string; reason: string }>;
   projectTalkingPoints: Array<{ projectId: string; points: string[] }>;
@@ -87,6 +86,47 @@ export interface PreparationOutput {
   candidateQuestions: string[];
   riskNotes: string[];
 }
+
+export type StarsStage =
+  | 'Startup'
+  | 'Turnaround'
+  | 'Realignment'
+  | 'Sustaining Success'
+  | 'Crisis';
+
+export interface PreparationOutput extends LegacyPreparationOutput {
+  competencyMap: Array<{
+    rank: 1 | 2 | 3 | 4 | 5;
+    name: string;
+    evidence: string;
+  }>;
+  companyMap: {
+    stage: StarsStage;
+    summary: string;
+    priorities: string[];
+    culture: string[];
+  };
+  dreamCandidateAvatar: {
+    typicalDay: Array<{
+      time: string;
+      activity: string;
+      purpose: string;
+    }>;
+    superpower: string;
+    successStory: string;
+    quote: string;
+    painProfile: string;
+  };
+  actionGuide: {
+    selfIntroTagline: string;
+    cultureFitPhrase: string;
+    questions: [string, string, string];
+  };
+}
+
+export type PreparationHistoricalOutput =
+  | PreparationOutput
+  | LegacyPreparationOutput;
 
 export interface PreparationAssetsSnapshot {
   projects: Project[];

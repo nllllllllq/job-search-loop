@@ -103,6 +103,35 @@ function buildRequest(
     }],
     candidateQuestions: ['string'],
     riskNotes: ['string'],
+    competencyMap: [
+      { rank: 1, name: 'string', evidence: 'string' },
+      { rank: 2, name: 'string', evidence: 'string' },
+      { rank: 3, name: 'string', evidence: 'string' },
+      { rank: 4, name: 'string', evidence: 'string' },
+      { rank: 5, name: 'string', evidence: 'string' },
+    ],
+    companyMap: {
+      stage: 'Startup | Turnaround | Realignment | Sustaining Success | Crisis',
+      summary: 'string',
+      priorities: ['string'],
+      culture: ['string'],
+    },
+    dreamCandidateAvatar: {
+      typicalDay: [{
+        time: 'string',
+        activity: 'string',
+        purpose: 'string',
+      }],
+      superpower: 'string',
+      successStory: 'string',
+      quote: 'string',
+      painProfile: 'string',
+    },
+    actionGuide: {
+      selfIntroTagline: 'string',
+      cultureFitPhrase: 'string',
+      questions: ['string', 'string', 'string'],
+    },
   };
   const boundedData = {
     position: {
@@ -126,6 +155,10 @@ function buildRequest(
           '只返回 JSON，不要 Markdown。必须严格符合以下结构，字段不得增删：',
           JSON.stringify(outputContract, null, 2),
           'projectTalkingPoints.projectId 只能使用本次所选项目的 id；没有合适项目时返回空数组。',
+          'competencyMap 必须恰好包含 5 项，按关键词频率、位置与强调程度综合排序，rank 必须唯一且依次为 1 到 5。',
+          'companyMap.stage 必须严格选择 Startup、Turnaround、Realignment、Sustaining Success 或 Crisis。',
+          'actionGuide.questions 必须恰好包含 3 个针对当前岗位定制的收尾问题。',
+          '分析内容使用中文，但保留框架中的 English terms。',
           '<job_data_json>',
           JSON.stringify(boundedData, null, 2),
           '</job_data_json>',

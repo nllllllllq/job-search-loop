@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import { createPromptsRepository } from '../../src/main/repositories/prompts';
+import { DEFAULT_PROMPT_TEMPLATES } from '../../src/shared/defaults';
 import { createTestDatabase } from '../helpers/database';
 
 let database: DatabaseSync | null = null;
@@ -41,5 +42,36 @@ describe('prompt templates repository', () => {
 
     expect(() => prompts.save('interview-review', ' \n\t ')).toThrow();
     expect(prompts.get('interview-review').content).toBe(before.content);
+  });
+
+  it('ships the confirmed preparation framework in the new-install default', () => {
+    const content = DEFAULT_PROMPT_TEMPLATES.find(
+      (template) => template.kind === 'preparation',
+    )?.content ?? '';
+
+    expect(content).toContain('Map Competencies');
+    expect(content).toMatch(/Top ?5/i);
+    expect(content).toContain('STARS');
+    expect(content).toContain('Startup');
+    expect(content).toContain('Turnaround');
+    expect(content).toContain('Realignment');
+    expect(content).toContain('Sustaining Success');
+    expect(content).toContain('Crisis');
+    expect(content).toContain('Dream Candidate Avatar');
+    expect(content).toContain('Typical Day');
+    expect(content).toContain('Action Guide');
+    expect(content).toMatch(/恰好\s*3\s*个/);
+    expect(content).toMatch(/中文/);
+  });
+
+  it('never overwrites an existing customized preparation prompt', () => {
+    database = createTestDatabase();
+    const prompts = createPromptsRepository(database);
+    const custom = '  我的定制准备框架\n必须保留原样。  ';
+    prompts.save('preparation', custom);
+
+    const reopened = createPromptsRepository(database);
+
+    expect(reopened.get('preparation').content).toBe(custom);
   });
 });

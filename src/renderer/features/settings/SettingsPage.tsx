@@ -1,10 +1,18 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import {
+  type FormEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import type {
   AiPublicSettings,
   PromptTemplate,
 } from '../../../shared/domain';
 import type { AppError } from '../../../shared/ipc';
-import { aiSettingsSaveSchema } from '../../../shared/schemas';
+import {
+  aiBaseUrlSchema,
+  aiSettingsSaveSchema,
+} from '../../../shared/schemas';
 import { EmptyState } from '../../components/EmptyState';
 import { Field } from '../../components/Field';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
@@ -21,6 +29,14 @@ function errorCode(error: unknown): AppError['code'] | null {
     return error.code as AppError['code'];
   }
   return null;
+}
+
+const changedOriginKeyMessage = '服务地址已变化，必须填写新的 API Key。';
+const replacementKeyMessage = '当前配置需要重新填写 API Key。';
+
+function normalizedProviderOrigin(value: string): string | null {
+  const parsed = aiBaseUrlSchema.safeParse(value);
+  return parsed.success ? new URL(parsed.data).origin : null;
 }
 
 function connectionErrorMessage(error: unknown): string {
@@ -55,6 +71,8 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+  const apiKeyRef = useRef<HTMLInputElement>(null);
   const [testMessage, setTestMessage] = useState<{
     tone: 'success' | 'error';
     text: string;
@@ -90,6 +108,15 @@ export function SettingsPage() {
     || model !== effectivePublicSettings.model
     || apiKey.length > 0
   );
+  const savedOrigin = effectivePublicSettings?.hasApiKey
+    ? normalizedProviderOrigin(effectivePublicSettings.baseUrl)
+    : null;
+  const currentOrigin = normalizedProviderOrigin(baseUrl);
+  const providerOriginChanged = (
+    effectivePublicSettings?.hasApiKey === true
+    && currentOrigin !== null
+    && currentOrigin !== savedOrigin
+  );
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -97,28 +124,52 @@ export function SettingsPage() {
     const parsed = aiSettingsSaveSchema.safeParse({ baseUrl, model, apiKey });
     if (!parsed.success) {
       setFormError('请填写有效的 HTTP/HTTPS 地址、模型和密钥。');
+      setApiKeyError(null);
       return;
     }
     if (!effectivePublicSettings?.hasApiKey && apiKey.trim().length === 0) {
-      setFormError('首次保存需要填写 API Key。');
+      setFormError(null);
+      setApiKeyError('首次保存需要填写 API Key。');
+      apiKeyRef.current?.focus();
+      return;
+    }
+    if (providerOriginChanged && parsed.data.apiKey.trim().length === 0) {
+      setFormError(null);
+      setApiKeyError(changedOriginKeyMessage);
+      apiKeyRef.current?.focus();
       return;
     }
 
     setSaving(true);
     setFormError(null);
+    setApiKeyError(null);
+    const submittedOriginChanged = (
+      effectivePublicSettings?.hasApiKey === true
+      && normalizedProviderOrigin(parsed.data.baseUrl) !== savedOrigin
+    );
     try {
-      const saved = await window.jobSearch.ai.settings.save({
-        baseUrl,
-        model,
-        apiKey,
-      });
+      const saved = await window.jobSearch.ai.settings.save(parsed.data);
       settings.setData(saved);
       setPublicSettings(saved);
       setBaseUrl(saved.baseUrl);
       setModel(saved.model);
       setApiKey('');
+      setApiKeyError(null);
       toast.success('AI 配置已安全保存');
-    } catch {
+    } catch (error) {
+      if (
+        errorCode(error) === 'AI_NOT_CONFIGURED'
+        && parsed.data.apiKey.trim().length === 0
+      ) {
+        const message = submittedOriginChanged
+          ? changedOriginKeyMessage
+          : replacementKeyMessage;
+        setFormError(null);
+        setApiKeyError(message);
+        apiKeyRef.current?.focus();
+        toast.error(message);
+        return;
+      }
       setFormError('保存失败，请检查配置后重试。');
       toast.error('保存失败，请检查配置后重试。');
     } finally {
@@ -206,6 +257,7 @@ export function SettingsPage() {
                 onChange={(event) => {
                   setBaseUrl(event.target.value);
                   setFormError(null);
+                  setApiKeyError(null);
                   setTestMessage(null);
                 }}
                 placeholder="https://api.example.com/v1"
@@ -227,8 +279,11 @@ export function SettingsPage() {
               />
             </Field>
             <Field
+              error={apiKeyError}
               hint={
-                effectivePublicSettings.hasApiKey
+                providerOriginChanged
+                  ? changedOriginKeyMessage
+                  : effectivePublicSettings.hasApiKey
                   ? '密钥已安全保存在本机；留空表示保留当前密钥。'
                   : '密钥不会被回读或显示；首次保存必须填写。'
               }
@@ -240,8 +295,10 @@ export function SettingsPage() {
                 onChange={(event) => {
                   setApiKey(event.target.value);
                   setFormError(null);
+                  setApiKeyError(null);
                   setTestMessage(null);
                 }}
+                ref={apiKeyRef}
                 type="password"
                 value={apiKey}
               />

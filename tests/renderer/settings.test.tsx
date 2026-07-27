@@ -158,6 +158,96 @@ describe('settings page', () => {
     expect(screen.queryByText('请先保存当前配置')).not.toBeInTheDocument();
   });
 
+  it('requires a new key before saving a different provider origin', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      hasApiKey: true,
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    const baseUrl = await screen.findByLabelText(/^API 地址/);
+    const key = screen.getByLabelText('替换 API Key');
+    await user.clear(baseUrl);
+    await user.type(baseUrl, 'https://other.example.com/v1');
+
+    expect(screen.getByText(
+      '服务地址已变化，必须填写新的 API Key。',
+    )).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '保存 AI 配置' }));
+
+    expect(fake.ai.settings.save).not.toHaveBeenCalled();
+    expect(screen.getAllByText(
+      '服务地址已变化，必须填写新的 API Key。',
+    )).toHaveLength(2);
+    expect(key).toHaveFocus();
+  });
+
+  it('keeps the saved key when a normalized provider origin is unchanged', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      hasApiKey: true,
+    });
+    fake.ai.settings.save.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-a',
+      hasApiKey: true,
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    const baseUrl = await screen.findByLabelText(/^API 地址/);
+    await user.clear(baseUrl);
+    await user.type(baseUrl, 'https://API.EXAMPLE.com:443/v2/');
+
+    expect(screen.getByText(
+      '密钥已安全保存在本机；留空表示保留当前密钥。',
+    )).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '保存 AI 配置' }));
+    await waitFor(() => expect(fake.ai.settings.save).toHaveBeenCalledWith({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-a',
+      apiKey: '',
+    }));
+  });
+
+  it('maps a main-process key requirement to a safe field error', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      hasApiKey: true,
+    });
+    fake.ai.settings.save.mockRejectedValue({
+      code: 'AI_NOT_CONFIGURED',
+      message: 'unsafe internal key detail',
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    const model = await screen.findByLabelText(/^模型/);
+    const key = screen.getByLabelText('替换 API Key');
+    await user.clear(model);
+    await user.type(model, 'model-b');
+    await user.click(screen.getByRole('button', { name: '保存 AI 配置' }));
+
+    expect((await screen.findAllByText(
+      '当前配置需要重新填写 API Key。',
+    ))[0]).toBeVisible();
+    expect(key).toHaveFocus();
+    expect(document.body).not.toHaveTextContent('unsafe internal key detail');
+  });
+
   it('offers safe in-app recovery for damaged settings with a mandatory new key', async () => {
     const fake = createJobSearchFake();
     fake.ai.settings.get.mockRejectedValue({

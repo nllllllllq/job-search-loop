@@ -150,8 +150,8 @@ export function QuestionsPage() {
                     编辑
                   </button>
                 </div>
-                <h3>{question.text}</h3>
-                <p>{question.answerDraft || '尚未记录回答草稿'}</p>
+                <h3 className="user-text">{question.text}</h3>
+                <p className="user-text">{question.answerDraft || '尚未记录回答草稿'}</p>
                 <div className="relation-chips" aria-label="关联资产">
                   {question.projectIds.map((id) => (
                     <span key={id}>项目 · {byProject.get(id) ?? '已失效关联'}</span>

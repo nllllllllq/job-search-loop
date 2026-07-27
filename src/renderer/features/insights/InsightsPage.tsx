@@ -234,8 +234,8 @@ export function InsightsPage() {
               </div>
               <div>
                 <p className="asset-card__index">{insight.updatedAt.slice(0, 10)}</p>
-                <h3>{insight.title}</h3>
-                <p className="insight-card__content">{insight.content}</p>
+                <h3 className="user-text">{insight.title}</h3>
+                <p className="insight-card__content user-text">{insight.content}</p>
                 <div className="relation-chips" aria-label="关联资产">
                   {insight.positionId ? <span>岗位 · {labels.positions.get(insight.positionId) ?? '已失效关联'}</span> : null}
                   {insight.projectId ? <span>项目 · {labels.projects.get(insight.projectId) ?? '已失效关联'}</span> : null}

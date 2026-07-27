@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../src/renderer/App';
@@ -32,6 +32,7 @@ const project: Project = {
   outcome: '首周留存提升 8%',
   evidence: '实验数据与访谈记录',
   reflections: '应更早建立对照组',
+  storytellingVersions: '业务面试两分钟版本',
   createdAt: '2026-07-01T00:00:00.000Z',
   updatedAt: '2026-07-02T00:00:00.000Z',
 };
@@ -107,9 +108,20 @@ const version: AssetVersion = {
     outcome: '旧结果',
     evidence: '旧证据',
     reflections: '旧反思',
+    storytellingVersions: '旧版附加叙事',
   }),
   createdAt: '2026-07-01T00:00:00.000Z',
 };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
 
 function renderAt(hash: string, configure?: (fake: JobSearchApiFake) => void) {
   window.location.hash = hash;
@@ -161,6 +173,7 @@ describe('reusable assets flow', () => {
       ['结果', '旧结果'],
       ['证据', '旧证据'],
       ['反思', '旧反思'],
+      ['讲述版本（附加叙事）', '旧版附加叙事'],
     ]) {
       expect(within(historicalVersion).getByText(label)).toBeInTheDocument();
       expect(within(historicalVersion).getByText(content)).toBeInTheDocument();
@@ -174,6 +187,8 @@ describe('reusable assets flow', () => {
     ]) {
       expect(within(editor).getByLabelText(new RegExp(label))).toBeInTheDocument();
     }
+    expect(within(editor).getByLabelText('讲述版本（附加叙事）'))
+      .toHaveValue('业务面试两分钟版本');
     await user.clear(within(editor).getByLabelText(/背景/));
     await user.type(within(editor).getByLabelText(/背景/), '新的项目背景');
     await user.click(within(editor).getByRole('button', { name: '保存项目' }));
@@ -184,6 +199,7 @@ describe('reusable assets flow', () => {
         background: '新的项目背景',
         outcome: '首周留存提升 8%',
         evidence: '实验数据与访谈记录',
+        storytellingVersions: '业务面试两分钟版本',
       }),
     ));
   });
@@ -202,6 +218,63 @@ describe('reusable assets flow', () => {
     expect(await screen.findByText('保存项目失败，请稍后重试')).toBeInTheDocument();
     expect(within(editor).getByLabelText(/项目名称/)).toHaveValue('新的证据项目');
     expect(fake.assets.projects.save).toHaveBeenCalled();
+  });
+
+  it('keeps the selected project history when an earlier request resolves late', async () => {
+    const projectB: Project = {
+      ...project,
+      id: '88888888-8888-4888-8888-888888888888',
+      name: '支付改版',
+      background: '支付步骤太长',
+    };
+    const requestA = deferred<AssetVersion[]>();
+    const requestB = deferred<AssetVersion[]>();
+    const versionB: AssetVersion = {
+      ...version,
+      id: '99999999-9999-4999-8999-999999999999',
+      assetId: projectB.id,
+      snapshot: JSON.stringify({
+        ...projectB,
+        background: 'B 项目的历史背景',
+      }),
+    };
+    const { fake, user } = renderAt('#/projects', (api) => {
+      api.assets.projects.list.mockResolvedValue([project, projectB]);
+      api.assets.versions.mockImplementation((_, id) => (
+        id === project.id ? requestA.promise : requestB.promise
+      ));
+    });
+
+    await user.click(await screen.findByRole('button', { name: '查看 增长实验' }));
+    await user.click(screen.getByRole('button', { name: '查看 支付改版' }));
+    await act(async () => requestA.resolve([{
+      ...version,
+      snapshot: JSON.stringify({ ...project, background: 'A 的迟到版本' }),
+    }]));
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在读取历史…');
+    expect(screen.queryByText('A 的迟到版本')).not.toBeInTheDocument();
+
+    await act(async () => requestB.resolve([versionB]));
+    expect(await screen.findByText('B 项目的历史背景')).toBeInTheDocument();
+    expect(fake.assets.versions).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows an independent history error and retries without claiming the history is empty', async () => {
+    const { fake, user } = renderAt('#/projects', (api) => {
+      api.assets.versions
+        .mockRejectedValueOnce(new Error('disk failed'))
+        .mockResolvedValueOnce([version]);
+    });
+
+    await user.click(await screen.findByRole('button', { name: '查看 增长实验' }));
+    expect(await screen.findByRole('heading', { name: '项目历史载入失败' }))
+      .toBeInTheDocument();
+    expect(screen.queryByText('当前还没有历史版本。')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '重试项目历史' }));
+    expect(await screen.findByRole('article', { name: '历史版本 1' })).toBeInTheDocument();
+    expect(fake.assets.versions).toHaveBeenCalledTimes(2);
   });
 
   it('keeps interviewer and candidate libraries isolated with independent create entries', async () => {
@@ -276,6 +349,31 @@ describe('reusable assets flow', () => {
     await waitFor(() => expect(fake.assets.capabilities.save).toHaveBeenCalledWith(
       expect.objectContaining({ id: capabilityId, jdFrequency: 4 }),
     ));
+  });
+
+  it('marks long user-authored titles and narratives as wrapping text', async () => {
+    const projectsView = renderAt('#/projects');
+    expect(await screen.findByRole('heading', { name: '增长实验' }))
+      .toHaveClass('user-text');
+    expect(screen.getByText(project.background)).toHaveClass('user-text');
+    projectsView.unmount();
+
+    const questionsView = renderAt('#/questions');
+    expect(await screen.findByRole('heading', { name: interviewerQuestion.text }))
+      .toHaveClass('user-text');
+    expect(screen.getByText(interviewerQuestion.answerDraft)).toHaveClass('user-text');
+    questionsView.unmount();
+
+    const capabilitiesView = renderAt('#/capabilities');
+    expect(await screen.findByRole('heading', { name: capability.name }))
+      .toHaveClass('user-text');
+    expect(screen.getByText(capability.evidence)).toHaveClass('user-text');
+    capabilitiesView.unmount();
+
+    renderAt('#/insights');
+    expect(await screen.findByRole('heading', { name: insight.title }))
+      .toHaveClass('user-text');
+    expect(screen.getByText(insight.content)).toHaveClass('user-text');
   });
 
   it('saves free-text insights with optional links and preserves failures', async () => {

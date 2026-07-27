@@ -13,6 +13,7 @@ const projectInput = {
   outcome: '首周留存提升 8%',
   evidence: '实验数据与访谈记录',
   reflections: '应更早建立对照组',
+  storytellingVersions: '适合业务面试的两分钟讲述',
 };
 
 describe('assets repository', () => {
@@ -81,6 +82,31 @@ describe('assets repository', () => {
       const versions = assets.listVersions('project', created.id);
       expect(versions).toHaveLength(1);
       expect(JSON.parse(versions[0].snapshot)).toMatchObject(projectInput);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('keeps legacy storytelling versions editable and inside project snapshots', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const created = assets.saveProject(projectInput);
+      expect(created.storytellingVersions).toBe('适合业务面试的两分钟讲述');
+
+      const updated = assets.saveProject({
+        ...projectInput,
+        id: created.id,
+        storytellingVersions: '适合终面的五分钟讲述',
+      });
+
+      expect(updated.storytellingVersions).toBe('适合终面的五分钟讲述');
+      expect(JSON.parse(
+        assets.listVersions('project', created.id)[0].snapshot,
+      )).toMatchObject({
+        storytellingVersions: '适合业务面试的两分钟讲述',
+      });
     } finally {
       db.close();
     }

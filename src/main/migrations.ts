@@ -176,6 +176,12 @@ function migrateProjectJson(raw: unknown, field: string): string {
     payload.outcome = '';
   }
   if (typeof payload.evidence !== 'string') payload.evidence = '';
+  if (
+    typeof payload.storytellingVersions !== 'string'
+    && typeof payload.storytelling_versions === 'string'
+  ) {
+    payload.storytellingVersions = payload.storytelling_versions;
+  }
   return JSON.stringify(payload);
 }
 

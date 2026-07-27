@@ -95,6 +95,7 @@ export interface ProjectInput {
   outcome: string;
   evidence: string;
   reflections: string;
+  storytellingVersions: string;
 }
 
 export interface Project extends ProjectInput {

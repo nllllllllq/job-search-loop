@@ -14,6 +14,7 @@ const originalProject = {
   outcome: '次日留存提升 8%',
   evidence: '留存看板',
   reflections: '实验分层仍可优化',
+  storytellingVersions: '',
 };
 
 describe('proposals repository', () => {

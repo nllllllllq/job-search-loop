@@ -60,18 +60,29 @@ const projectPayloadObjectSchema = z.object({
   outcome: z.string().max(40_000).default(''),
   evidence: z.string().max(40_000).default(''),
   reflections: z.string().max(20_000).default(''),
+  storytellingVersions: z.string().max(40_000).default(''),
 });
 
 function normalizeLegacyProjectPayload(value: unknown): unknown {
   if (value === null || Array.isArray(value) || typeof value !== 'object') return value;
   const payload = value as Record<string, unknown>;
+  const normalized = { ...payload };
+  let changed = false;
   if (
     typeof payload.outcomesAndEvidence === 'string'
     && (typeof payload.outcome !== 'string' || payload.outcome === '')
   ) {
-    return { ...payload, outcome: payload.outcomesAndEvidence };
+    normalized.outcome = payload.outcomesAndEvidence;
+    changed = true;
   }
-  return value;
+  if (
+    typeof payload.storytelling_versions === 'string'
+    && typeof payload.storytellingVersions !== 'string'
+  ) {
+    normalized.storytellingVersions = payload.storytelling_versions;
+    changed = true;
+  }
+  return changed ? normalized : value;
 }
 
 export const projectPayloadSchema = z.preprocess(

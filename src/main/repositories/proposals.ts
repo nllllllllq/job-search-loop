@@ -92,20 +92,20 @@ function writeTarget(
         db.prepare(`
           INSERT INTO projects (
             id, name, background, goal, role, key_decisions, outcome,
-            evidence, reflections, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            evidence, reflections, storytelling_versions, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           id, value.name, value.background, value.goal, value.role, value.keyDecisions,
-          value.outcome, value.evidence, value.reflections, now, now,
+          value.outcome, value.evidence, value.reflections, value.storytellingVersions, now, now,
         );
       } else {
         db.prepare(`
           UPDATE projects SET name = ?, background = ?, goal = ?, role = ?,
             key_decisions = ?, outcome = ?, evidence = ?, reflections = ?,
-            updated_at = ? WHERE id = ?
+            storytelling_versions = ?, updated_at = ? WHERE id = ?
         `).run(
           value.name, value.background, value.goal, value.role, value.keyDecisions,
-          value.outcome, value.evidence, value.reflections, now, id,
+          value.outcome, value.evidence, value.reflections, value.storytellingVersions, now, id,
         );
       }
       return;

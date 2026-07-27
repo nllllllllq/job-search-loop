@@ -22,6 +22,7 @@ const emptyProject: ProjectInput = {
   outcome: '',
   evidence: '',
   reflections: '',
+  storytellingVersions: '',
 };
 
 const fields: Array<{
@@ -125,6 +126,17 @@ export function ProjectEditor({
             />
           </Field>
         ))}
+        <Field
+          hint="兼容保留不同场景下的项目讲述底稿；这里不是简历改写器。"
+          label="讲述版本（附加叙事）"
+        >
+          <textarea
+            maxLength={40_000}
+            onChange={(event) => change('storytellingVersions', event.target.value)}
+            rows={6}
+            value={value.storytellingVersions}
+          />
+        </Field>
       </form>
     </Modal>
   );

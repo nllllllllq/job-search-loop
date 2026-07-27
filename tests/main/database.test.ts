@@ -279,7 +279,7 @@ describe('database migrations', () => {
         keyDecisions: '提案旧决策',
         outcomesAndEvidence: '提案里的旧结果与证据',
         reflections: '提案旧反思',
-        storytellingVersions: '提案旧讲述版本',
+        storytelling_versions: '提案旧讲述版本',
       };
       const legacyAcceptedPayload = {
         ...legacyPendingPayload,
@@ -342,6 +342,7 @@ describe('database migrations', () => {
         outcomesAndEvidence: '提案里的旧结果与证据',
         outcome: '提案里的旧结果与证据',
         evidence: '',
+        storytellingVersions: '提案旧讲述版本',
       });
       const acceptedJson = JSON.parse(String(db.prepare(
         'SELECT accepted_payload_json FROM change_proposals WHERE id = ?',
@@ -350,6 +351,7 @@ describe('database migrations', () => {
         outcomesAndEvidence: '已接受提案的旧结果与证据',
         outcome: '已接受提案的旧结果与证据',
         evidence: '',
+        storytellingVersions: '提案旧讲述版本',
       });
       const versionJson = JSON.parse(String(db.prepare(
         'SELECT snapshot_json FROM asset_versions WHERE id = ?',
@@ -358,10 +360,13 @@ describe('database migrations', () => {
         outcomesAndEvidence: '历史版本的旧结果与证据',
         outcome: '历史版本的旧结果与证据',
         evidence: '',
+        storytellingVersions: '提案旧讲述版本',
       });
 
       const proposals = createProposalsRepository(db);
       const assets = createAssetsRepository(db);
+      expect(assets.getProject('legacy-project').storytellingVersions)
+        .toBe('旧讲述版本');
       const pending = proposals.get('legacy-pending-proposal');
       expect(pending.payload).toMatchObject({
         outcome: '提案里的旧结果与证据',
@@ -371,6 +376,7 @@ describe('database migrations', () => {
       expect(assets.getProject('legacy-project')).toMatchObject({
         outcome: '提案里的旧结果与证据',
         evidence: '',
+        storytellingVersions: '提案旧讲述版本',
       });
       expect(proposals.get('legacy-accepted-proposal').acceptedPayload).toMatchObject({
         outcome: '已接受提案的旧结果与证据',

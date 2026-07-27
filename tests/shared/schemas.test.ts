@@ -66,11 +66,13 @@ describe('shared schemas', () => {
       name: '旧项目',
       background: '旧背景',
       outcomesAndEvidence: '原样保留的结果与证据',
+      storytelling_versions: '旧版附加叙事',
     })).toMatchObject({
       name: '旧项目',
       background: '旧背景',
       outcome: '原样保留的结果与证据',
       evidence: '',
+      storytellingVersions: '旧版附加叙事',
     });
   });
 });

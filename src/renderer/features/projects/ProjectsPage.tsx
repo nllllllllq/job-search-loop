@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AssetVersion, Project, ProjectInput } from '../../../shared/domain';
 import { projectPayloadSchema } from '../../../shared/schemas';
 import { EmptyState } from '../../components/EmptyState';
@@ -24,19 +24,34 @@ export function ProjectsPage() {
   const [selected, setSelected] = useState<Project | null>(null);
   const [versions, setVersions] = useState<AssetVersion[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionsError, setVersionsError] = useState(false);
+  const versionsRequestId = useRef(0);
 
-  const openProject = async (project: Project) => {
-    setSelected(project);
+  useEffect(() => () => {
+    versionsRequestId.current += 1;
+  }, []);
+
+  const loadVersions = async (project: Project) => {
+    const requestId = ++versionsRequestId.current;
     setVersions([]);
+    setVersionsError(false);
     setVersionsLoading(true);
     try {
       const loaded = await window.jobSearch.assets.versions('project', project.id);
-      setVersions(loaded);
+      if (requestId === versionsRequestId.current) setVersions(loaded);
     } catch {
-      toast.error('载入项目历史失败，请稍后重试');
+      if (requestId === versionsRequestId.current) {
+        setVersionsError(true);
+        toast.error('载入项目历史失败，请稍后重试');
+      }
     } finally {
-      setVersionsLoading(false);
+      if (requestId === versionsRequestId.current) setVersionsLoading(false);
     }
+  };
+
+  const openProject = async (project: Project) => {
+    setSelected(project);
+    await loadVersions(project);
   };
 
   const save = async (input: ProjectInput) => {
@@ -51,7 +66,7 @@ export function ProjectsPage() {
       if (refreshed) {
         setSelected(refreshed.find((item) => item.id === saved.id) ?? saved);
       }
-      setVersions(await window.jobSearch.assets.versions('project', saved.id));
+      await loadVersions(saved);
       toast.success('项目档案已保存');
     } catch {
       toast.error('保存项目失败，请稍后重试');
@@ -91,8 +106,8 @@ export function ProjectsPage() {
             {projects.data?.map((project) => (
               <article className="asset-card" key={project.id}>
                 <p className="asset-card__index">PROJECT / {project.updatedAt.slice(0, 10)}</p>
-                <h3>{project.name}</h3>
-                <p>{project.background || '尚未记录背景'}</p>
+                <h3 className="user-text">{project.name}</h3>
+                <p className="user-text">{project.background || '尚未记录背景'}</p>
                 <button
                   aria-label={`查看 ${project.name}`}
                   className="text-button"
@@ -111,7 +126,7 @@ export function ProjectsPage() {
                 <div className="asset-detail__heading">
                   <div>
                     <p className="section-label">ACTIVE FILE / 当前档案</p>
-                    <h3>{selected.name}</h3>
+                    <h3 className="user-text">{selected.name}</h3>
                   </div>
                   <button className="button button--quiet" onClick={() => setEditing(selected)} type="button">
                     编辑项目
@@ -129,18 +144,39 @@ export function ProjectsPage() {
                   ].map(([label, content]) => (
                     <div key={label}>
                       <dt>{label}</dt>
-                      <dd>{content || '—'}</dd>
+                      <dd className="user-text">{content || '—'}</dd>
                     </div>
                   ))}
                 </dl>
+                {selected.storytellingVersions ? (
+                  <section className="supplemental-narrative" aria-labelledby="storytelling-versions-title">
+                    <h4 id="storytelling-versions-title">讲述版本（附加叙事）</h4>
+                    <p className="user-text">{selected.storytellingVersions}</p>
+                  </section>
+                ) : null}
                 <section className="version-history" aria-label="只读历史">
                   <div className="version-history__heading">
                     <h4>只读历史</h4>
                     <span>{versions.length} 个版本</span>
                   </div>
                   {versionsLoading ? <p role="status">正在读取历史…</p> : null}
-                  {!versionsLoading && versions.length === 0 ? <p>当前还没有历史版本。</p> : null}
-                  {versions.map((version) => {
+                  {!versionsLoading && versionsError ? (
+                    <div className="version-history__error" role="alert">
+                      <h5>项目历史载入失败</h5>
+                      <p>当前档案仍可查看和编辑；请重试历史读取。</p>
+                      <button
+                        className="button button--quiet"
+                        onClick={() => void loadVersions(selected)}
+                        type="button"
+                      >
+                        重试项目历史
+                      </button>
+                    </div>
+                  ) : null}
+                  {!versionsLoading && !versionsError && versions.length === 0
+                    ? <p>当前还没有历史版本。</p>
+                    : null}
+                  {!versionsError ? versions.map((version) => {
                     const snapshot = versionProject(version);
                     const headingId = `project-version-${version.id}`;
                     return (
@@ -160,17 +196,18 @@ export function ProjectsPage() {
                               ['结果', snapshot.outcome],
                               ['证据', snapshot.evidence],
                               ['反思', snapshot.reflections],
+                              ['讲述版本（附加叙事）', snapshot.storytellingVersions],
                             ].map(([label, content]) => (
                               <div key={label}>
                                 <dt>{label}</dt>
-                                <dd>{content || '—'}</dd>
+                                <dd className="user-text">{content || '—'}</dd>
                               </div>
                             ))}
                           </dl>
                         ) : <p>该历史版本无法读取。</p>}
                       </article>
                     );
-                  })}
+                  }) : null}
                 </section>
               </>
             ) : (

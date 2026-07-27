@@ -53,6 +53,7 @@ function decodeProject(value: unknown): Project {
     outcome: text(data.outcome, 'outcome'),
     evidence: text(data.evidence, 'evidence'),
     reflections: text(data.reflections, 'reflections'),
+    storytellingVersions: text(data.storytelling_versions, 'storytelling_versions'),
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),
   };
@@ -141,7 +142,8 @@ function sameProjectNarrative(previous: Project, input: ProjectInput): boolean {
     && previous.keyDecisions === input.keyDecisions
     && previous.outcome === input.outcome
     && previous.evidence === input.evidence
-    && previous.reflections === input.reflections;
+    && previous.reflections === input.reflections
+    && previous.storytellingVersions === input.storytellingVersions;
 }
 
 function requireExistingIds(
@@ -228,7 +230,7 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
           db.prepare(`
             UPDATE projects SET name = ?, background = ?, goal = ?, role = ?,
               key_decisions = ?, outcome = ?, evidence = ?, reflections = ?,
-              updated_at = ? WHERE id = ?
+              storytelling_versions = ?, updated_at = ? WHERE id = ?
           `).run(
             parsed.name,
             parsed.background,
@@ -238,6 +240,7 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
             parsed.outcome,
             parsed.evidence,
             parsed.reflections,
+            parsed.storytellingVersions,
             now,
             id,
           );
@@ -245,8 +248,8 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
           db.prepare(`
             INSERT INTO projects (
               id, name, background, goal, role, key_decisions, outcome,
-              evidence, reflections, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              evidence, reflections, storytelling_versions, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             id,
             parsed.name,
@@ -257,6 +260,7 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
             parsed.outcome,
             parsed.evidence,
             parsed.reflections,
+            parsed.storytellingVersions,
             now,
             now,
           );

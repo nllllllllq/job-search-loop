@@ -194,14 +194,14 @@ export function CapabilitiesPanel() {
                   编辑
                 </button>
               </div>
-              <h3>{capability.name}</h3>
+              <h3 className="user-text">{capability.name}</h3>
               <div>
                 <h4>已有证据</h4>
-                <p>{capability.evidence || '—'}</p>
+                <p className="user-text">{capability.evidence || '—'}</p>
               </div>
               <div>
                 <h4>差距</h4>
-                <p>{capability.gaps || '—'}</p>
+                <p className="user-text">{capability.gaps || '—'}</p>
               </div>
             </article>
           ))}

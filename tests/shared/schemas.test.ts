@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
 import type { PositionInput, ProcessStageInput } from '../../src/shared/domain';
 import {
+  aiBaseUrlSchema,
   changeProposalInputSchema,
   isoDateSchema,
   positionInputSchema,
@@ -74,5 +75,34 @@ describe('shared schemas', () => {
       evidence: '',
       storytellingVersions: '旧版附加叙事',
     });
+  });
+
+  it('allows HTTPS providers and exact loopback HTTP endpoints only', () => {
+    expect(aiBaseUrlSchema.parse('https://API.EXAMPLE.com:443/v1/')).toBe(
+      'https://api.example.com/v1',
+    );
+    expect(aiBaseUrlSchema.parse('http://localhost:11434/')).toBe(
+      'http://localhost:11434',
+    );
+    expect(aiBaseUrlSchema.parse('http://127.0.0.1:8000/v1/')).toBe(
+      'http://127.0.0.1:8000/v1',
+    );
+    expect(aiBaseUrlSchema.parse('http://[::1]:11434/v1/')).toBe(
+      'http://[::1]:11434/v1',
+    );
+  });
+
+  it.each([
+    'http://provider.example.com/v1',
+    'http://192.168.1.20:8000/v1',
+    'http://0.0.0.0:11434/v1',
+    'http://localhost.example.com/v1',
+    'http://127.0.0.2/v1',
+    'http://[::]:11434/v1',
+    'https://user:pass@provider.example.com/v1',
+    'https://provider.example.com/v1?token=secret',
+    'https://provider.example.com/v1#fragment',
+  ])('rejects unsafe AI base URL %s', (baseUrl) => {
+    expect(aiBaseUrlSchema.safeParse(baseUrl).success).toBe(false);
   });
 });

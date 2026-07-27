@@ -249,6 +249,10 @@ function normalizeBaseUrl(value: string): string {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error('API 地址必须使用 HTTP 或 HTTPS');
   }
+  const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
+  if (url.protocol === 'http:' && !loopbackHosts.has(url.hostname)) {
+    throw new Error('远程 API 地址必须使用 HTTPS');
+  }
   if (url.username || url.password || url.search || url.hash) {
     throw new Error('API 地址不能包含凭据、查询参数或片段');
   }

@@ -89,6 +89,70 @@ describe('encrypted AI settings', () => {
     expect((await store.getPrivate()).apiKey).toBe('second-key');
   });
 
+  it('keeps the old key only when the normalized provider origin is unchanged', async () => {
+    const { store } = settingsFixture();
+    await store.save({
+      baseUrl: 'https://API.EXAMPLE.com:443/v1',
+      model: 'model-a',
+      apiKey: 'origin-key',
+    });
+
+    await store.save({
+      baseUrl: 'https://api.example.COM/v2/',
+      model: 'model-b',
+      apiKey: '',
+    });
+    expect(await store.getPrivate()).toEqual({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-b',
+      apiKey: 'origin-key',
+    });
+  });
+
+  it.each([
+    'https://other.example.com/v1',
+    'https://api.example.com:8443/v1',
+    'http://localhost:3000/v1',
+  ])('requires a replacement key when provider origin changes to %s', async (baseUrl) => {
+    const { store } = settingsFixture();
+    await store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      apiKey: 'old-origin-key',
+    });
+
+    await expect(store.save({
+      baseUrl,
+      model: 'model-b',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_NOT_CONFIGURED' });
+    expect(await store.getPrivate()).toEqual({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      apiKey: 'old-origin-key',
+    });
+  });
+
+  it('requires a replacement key when only the provider protocol changes', async () => {
+    const { store } = settingsFixture();
+    await store.save({
+      baseUrl: 'http://localhost:3000/v1',
+      model: 'model-a',
+      apiKey: 'http-origin-key',
+    });
+
+    await expect(store.save({
+      baseUrl: 'https://localhost:3000/v1',
+      model: 'model-b',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_NOT_CONFIGURED' });
+    expect(await store.getPrivate()).toEqual({
+      baseUrl: 'http://localhost:3000/v1',
+      model: 'model-a',
+      apiKey: 'http-origin-key',
+    });
+  });
+
   it('reports an unconfigured state without creating a settings file', async () => {
     const { store } = settingsFixture();
     expect(await store.getPublic()).toEqual({
@@ -151,6 +215,36 @@ describe('encrypted AI settings', () => {
     }));
     await expect(store.getPublic()).rejects.toMatchObject({
       code: 'AI_SETTINGS_CORRUPT',
+    });
+  });
+
+  it('recovers a damaged settings file only with a complete new configuration and key', async () => {
+    const { settingsPath, store } = settingsFixture();
+    const damaged = '{"encryptedApiKey":"untrusted-secret"';
+    writeFileSync(settingsPath, damaged);
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_SETTINGS_CORRUPT' });
+    expect(readFileSync(settingsPath, 'utf8')).toBe(damaged);
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      apiKey: 'brand-new-key',
+    })).resolves.toEqual({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      hasApiKey: true,
+    });
+    expect(readFileSync(settingsPath, 'utf8')).not.toContain('brand-new-key');
+    expect(readFileSync(settingsPath, 'utf8')).not.toContain('untrusted-secret');
+    expect(await store.getPrivate()).toEqual({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      apiKey: 'brand-new-key',
     });
   });
 

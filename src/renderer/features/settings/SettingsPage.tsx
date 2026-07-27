@@ -61,11 +61,34 @@ export function SettingsPage() {
   } | null>(null);
 
   useEffect(() => {
-    if (!settings.data) return;
-    setBaseUrl(settings.data.baseUrl);
-    setModel(settings.data.model);
-    setPublicSettings(settings.data);
-  }, [settings.data]);
+    if (settings.data) {
+      setBaseUrl(settings.data.baseUrl);
+      setModel(settings.data.model);
+      setPublicSettings(settings.data);
+      return;
+    }
+    if (settings.error) {
+      setBaseUrl('');
+      setModel('');
+      setApiKey('');
+      setPublicSettings({
+        baseUrl: '',
+        model: '',
+        hasApiKey: false,
+      });
+    }
+  }, [settings.data, settings.error]);
+
+  const effectivePublicSettings = publicSettings ?? (settings.error ? {
+    baseUrl: '',
+    model: '',
+    hasApiKey: false,
+  } : null);
+  const settingsDirty = effectivePublicSettings !== null && (
+    baseUrl !== effectivePublicSettings.baseUrl
+    || model !== effectivePublicSettings.model
+    || apiKey.length > 0
+  );
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -75,7 +98,7 @@ export function SettingsPage() {
       setFormError('请填写有效的 HTTP/HTTPS 地址、模型和密钥。');
       return;
     }
-    if (!publicSettings?.hasApiKey && apiKey.trim().length === 0) {
+    if (!effectivePublicSettings?.hasApiKey && apiKey.trim().length === 0) {
       setFormError('首次保存需要填写 API Key。');
       return;
     }
@@ -88,6 +111,7 @@ export function SettingsPage() {
         model,
         apiKey,
       });
+      settings.setData(saved);
       setPublicSettings(saved);
       setBaseUrl(saved.baseUrl);
       setModel(saved.model);
@@ -102,7 +126,7 @@ export function SettingsPage() {
   };
 
   const testConnection = async () => {
-    if (saving || testing) return;
+    if (saving || testing || settingsDirty) return;
     setTesting(true);
     setTestMessage(null);
     try {
@@ -144,13 +168,13 @@ export function SettingsPage() {
         </div>
       ) : null}
       {settings.error ? (
-        <EmptyState
-          body="本机 AI 配置暂时无法安全读取。你的 API Key 不会显示在此页面。"
-          icon="！"
-          title="AI 配置读取失败"
-        />
+        <section className="settings-recovery-warning" role="alert">
+          <p className="section-label">RECOVERY / 安全恢复</p>
+          <h3>AI 配置需要重新建立</h3>
+          <p>配置文件已损坏，必须填写新的 API Key 才能覆盖恢复。</p>
+        </section>
       ) : null}
-      {!settings.loading && !settings.error && publicSettings ? (
+      {!settings.loading && effectivePublicSettings ? (
         <section
           aria-labelledby="ai-provider-title"
           className="settings-section settings-provider"
@@ -174,6 +198,7 @@ export function SettingsPage() {
                 onChange={(event) => {
                   setBaseUrl(event.target.value);
                   setFormError(null);
+                  setTestMessage(null);
                 }}
                 placeholder="https://api.example.com/v1"
                 type="url"
@@ -187,6 +212,7 @@ export function SettingsPage() {
                 onChange={(event) => {
                   setModel(event.target.value);
                   setFormError(null);
+                  setTestMessage(null);
                 }}
                 placeholder="例如 model-a"
                 value={model}
@@ -194,7 +220,7 @@ export function SettingsPage() {
             </Field>
             <Field
               hint={
-                publicSettings?.hasApiKey
+                effectivePublicSettings.hasApiKey
                   ? '密钥已安全保存在本机；留空表示保留当前密钥。'
                   : '密钥不会被回读或显示；首次保存必须填写。'
               }
@@ -206,6 +232,7 @@ export function SettingsPage() {
                 onChange={(event) => {
                   setApiKey(event.target.value);
                   setFormError(null);
+                  setTestMessage(null);
                 }}
                 type="password"
                 value={apiKey}
@@ -214,14 +241,15 @@ export function SettingsPage() {
             <div className="settings-provider__status">
               <span
                 className={`settings-key-state${
-                  publicSettings?.hasApiKey ? ' settings-key-state--saved' : ''
+                  effectivePublicSettings.hasApiKey ? ' settings-key-state--saved' : ''
                 }`}
               >
-                {publicSettings?.hasApiKey
+                {effectivePublicSettings.hasApiKey
                   ? '密钥已安全保存在本机'
                   : '尚未保存 API Key'}
               </span>
               {formError ? <p role="alert">{formError}</p> : null}
+              {settingsDirty ? <p>请先保存当前配置</p> : null}
               {testMessage ? (
                 <p className={`connection-result connection-result--${testMessage.tone}`} role="status">
                   {testMessage.text}
@@ -238,7 +266,12 @@ export function SettingsPage() {
               </button>
               <button
                 className="button button--quiet"
-                disabled={saving || testing || !publicSettings?.hasApiKey}
+                disabled={
+                  saving
+                  || testing
+                  || settingsDirty
+                  || !effectivePublicSettings.hasApiKey
+                }
                 onClick={() => void testConnection()}
                 type="button"
               >

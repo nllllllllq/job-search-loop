@@ -805,8 +805,33 @@ a {
 
 .settings-page > .resource-state,
 .settings-page > .empty-state,
+.settings-recovery-warning,
 .settings-section {
   margin-top: var(--space-5);
+}
+
+.settings-recovery-warning {
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--danger);
+  border-left-width: 4px;
+  background: rgba(164, 58, 43, 0.07);
+}
+
+.settings-recovery-warning h3,
+.settings-recovery-warning p {
+  margin: 0;
+}
+
+.settings-recovery-warning h3 {
+  margin-top: 0.25rem;
+  font-family: var(--font-display);
+}
+
+.settings-recovery-warning h3 + p {
+  margin-top: 0.45rem;
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .settings-section {

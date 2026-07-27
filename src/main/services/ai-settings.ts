@@ -152,12 +152,35 @@ export function createAiSettingsStore({
         throw error;
       }
 
-      const previous = await readStored();
       const replacementKey = parsed.apiKey.trim().length > 0
         ? parsed.apiKey
         : null;
+      let previous: StoredSettings | null;
+      try {
+        previous = await readStored();
+      } catch (error) {
+        if (
+          error instanceof AiServiceError
+          && error.code === 'AI_SETTINGS_CORRUPT'
+          && replacementKey !== null
+        ) {
+          previous = null;
+        } else {
+          throw error;
+        }
+      }
       if (replacementKey === null && previous === null) {
         throw serviceError('AI_NOT_CONFIGURED', '首次保存时需要填写 API Key。');
+      }
+      if (
+        replacementKey === null
+        && previous !== null
+        && new URL(previous.baseUrl).origin !== new URL(parsed.baseUrl).origin
+      ) {
+        throw serviceError(
+          'AI_NOT_CONFIGURED',
+          '服务地址来源发生变化，请填写新的 API Key。',
+        );
       }
 
       let encryptedApiKey = previous?.encryptedApiKey ?? '';

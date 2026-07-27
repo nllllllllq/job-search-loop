@@ -112,6 +112,11 @@ describe('settings page', () => {
     const model = await screen.findByLabelText(/^模型/);
     await user.clear(model);
     await user.type(model, 'model-b');
+    const testButton = screen.getByRole('button', { name: '测试连接' });
+    expect(testButton).toBeDisabled();
+    expect(screen.getByText('请先保存当前配置')).toBeVisible();
+    await user.click(testButton);
+    expect(fake.ai.testConnection).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: '保存 AI 配置' }));
 
     await waitFor(() => expect(fake.ai.settings.save).toHaveBeenCalledWith({
@@ -121,9 +126,78 @@ describe('settings page', () => {
     }));
     expect(fake.ai.testConnection).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: '测试连接' }));
+    await waitFor(() => expect(testButton).toBeEnabled());
+    expect(screen.queryByText('请先保存当前配置')).not.toBeInTheDocument();
+    await user.click(testButton);
     expect(fake.ai.testConnection).toHaveBeenCalledOnce();
     expect((await screen.findAllByText('连接成功，可以使用。'))[0]).toBeVisible();
+  });
+
+  it('treats a replacement key as unsaved configuration until it is cleared or saved', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      hasApiKey: true,
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    const key = await screen.findByLabelText('替换 API Key');
+    const testButton = screen.getByRole('button', { name: '测试连接' });
+    expect(testButton).toBeEnabled();
+
+    await user.type(key, 'new-unsaved-key');
+    expect(testButton).toBeDisabled();
+    expect(screen.getByText('请先保存当前配置')).toBeVisible();
+
+    await user.clear(key);
+    expect(testButton).toBeEnabled();
+    expect(screen.queryByText('请先保存当前配置')).not.toBeInTheDocument();
+  });
+
+  it('offers safe in-app recovery for damaged settings with a mandatory new key', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockRejectedValue({
+      code: 'AI_SETTINGS_CORRUPT',
+      message: 'damaged file contained sk-never-echo',
+    });
+    fake.ai.settings.save.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-recovered',
+      hasApiKey: true,
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    expect(await screen.findByText(
+      '配置文件已损坏，必须填写新的 API Key 才能覆盖恢复。',
+    )).toBeVisible();
+    expect(document.body).not.toHaveTextContent('sk-never-echo');
+
+    await user.type(screen.getByLabelText(/^API 地址/), 'https://api.example.com/v1');
+    await user.type(screen.getByLabelText(/^模型/), 'model-recovered');
+    expect(screen.getByRole('button', { name: '保存 AI 配置' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '保存 AI 配置' }));
+    expect(screen.getByText('首次保存需要填写 API Key。')).toBeVisible();
+    expect(fake.ai.settings.save).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText('替换 API Key'), 'brand-new-key');
+    await user.click(screen.getByRole('button', { name: '保存 AI 配置' }));
+    await waitFor(() => expect(fake.ai.settings.save).toHaveBeenCalledWith({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-recovered',
+      apiKey: 'brand-new-key',
+    }));
+    expect(screen.getByLabelText('替换 API Key')).toHaveValue('');
+    expect(screen.getByRole('button', { name: '测试连接' })).toBeEnabled();
+    expect(screen.queryByText(
+      '配置文件已损坏，必须填写新的 API Key 才能覆盖恢复。',
+    )).not.toBeInTheDocument();
   });
 
   it('maps connection errors to stable safe Chinese copy', async () => {

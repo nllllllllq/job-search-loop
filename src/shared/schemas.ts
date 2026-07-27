@@ -246,6 +246,9 @@ export const promptSaveSchema = z.object({
 
 function normalizeBaseUrl(value: string): string {
   const normalizedValue = value.trim();
+  if (/[\u0000-\u001F\u007F]/.test(normalizedValue)) {
+    throw new Error('API 地址不能包含控制字符');
+  }
   if (!/^https?:\/\/[^/\\]/i.test(normalizedValue)) {
     throw new Error('API 地址必须以 http:// 或 https:// 开始');
   }

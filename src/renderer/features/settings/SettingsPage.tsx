@@ -59,6 +59,7 @@ export function SettingsPage() {
     tone: 'success' | 'error';
     text: string;
   } | null>(null);
+  const settingsCorrupt = errorCode(settings.error) === 'AI_SETTINGS_CORRUPT';
 
   useEffect(() => {
     if (settings.data) {
@@ -67,7 +68,7 @@ export function SettingsPage() {
       setPublicSettings(settings.data);
       return;
     }
-    if (settings.error) {
+    if (settingsCorrupt) {
       setBaseUrl('');
       setModel('');
       setApiKey('');
@@ -77,9 +78,9 @@ export function SettingsPage() {
         hasApiKey: false,
       });
     }
-  }, [settings.data, settings.error]);
+  }, [settings.data, settingsCorrupt]);
 
-  const effectivePublicSettings = publicSettings ?? (settings.error ? {
+  const effectivePublicSettings = publicSettings ?? (settingsCorrupt ? {
     baseUrl: '',
     model: '',
     hasApiKey: false,
@@ -167,12 +168,19 @@ export function SettingsPage() {
           正在读取本机 AI 配置…
         </div>
       ) : null}
-      {settings.error ? (
+      {settingsCorrupt ? (
         <section className="settings-recovery-warning" role="alert">
           <p className="section-label">RECOVERY / 安全恢复</p>
           <h3>AI 配置需要重新建立</h3>
           <p>配置文件已损坏，必须填写新的 API Key 才能覆盖恢复。</p>
         </section>
+      ) : null}
+      {settings.error && !settingsCorrupt ? (
+        <EmptyState
+          body="本机 AI 配置暂时无法安全读取。你的 API Key 不会显示在此页面。"
+          icon="！"
+          title="AI 配置读取失败"
+        />
       ) : null}
       {!settings.loading && effectivePublicSettings ? (
         <section

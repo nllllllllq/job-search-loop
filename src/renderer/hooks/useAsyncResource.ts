@@ -16,6 +16,25 @@ export interface AsyncResource<T> {
   setData: Dispatch<SetStateAction<T | null>>;
 }
 
+function resourceError(reason: unknown): Error {
+  if (reason instanceof Error) return reason;
+  const error = new Error('加载资源时发生未知错误');
+  if (
+    reason !== null
+    && typeof reason === 'object'
+    && 'code' in reason
+    && typeof reason.code === 'string'
+  ) {
+    Object.defineProperty(error, 'code', {
+      configurable: false,
+      enumerable: false,
+      value: reason.code,
+      writable: false,
+    });
+  }
+  return error;
+}
+
 export function useAsyncResource<T>(
   loader: () => Promise<T>,
   dependencies: DependencyList = [],
@@ -42,9 +61,7 @@ export function useAsyncResource<T>(
       return result;
     } catch (reason) {
       if (mountedRef.current && requestId === requestIdRef.current) {
-        setError(
-          reason instanceof Error ? reason : new Error('加载资源时发生未知错误'),
-        );
+        setError(resourceError(reason));
         setLoading(false);
       }
       return undefined;

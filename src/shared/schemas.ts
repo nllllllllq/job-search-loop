@@ -246,6 +246,9 @@ export const promptSaveSchema = z.object({
 
 function normalizeBaseUrl(value: string): string {
   const normalizedValue = value.trim();
+  if (!/^https?:\/\/[^/\\]/i.test(normalizedValue)) {
+    throw new Error('API 地址必须以 http:// 或 https:// 开始');
+  }
   const schemeEnd = normalizedValue.indexOf('://');
   const authorityAndPath = schemeEnd >= 0
     ? normalizedValue.slice(schemeEnd + 3)

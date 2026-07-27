@@ -200,6 +200,27 @@ describe('settings page', () => {
     )).not.toBeInTheDocument();
   });
 
+  it('does not offer content-damage recovery for unavailable settings storage', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockRejectedValue({
+      code: 'AI_SETTINGS_UNAVAILABLE',
+      message: 'sensitive filesystem detail',
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+
+    renderSettings();
+    expect(await screen.findByText('AI 配置读取失败')).toBeVisible();
+    expect(screen.getByText(
+      '本机 AI 配置暂时无法安全读取。你的 API Key 不会显示在此页面。',
+    )).toBeVisible();
+    expect(screen.queryByText(
+      '配置文件已损坏，必须填写新的 API Key 才能覆盖恢复。',
+    )).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '保存 AI 配置' })).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('sensitive filesystem detail');
+  });
+
   it('maps connection errors to stable safe Chinese copy', async () => {
     const fake = createJobSearchFake();
     fake.ai.settings.get.mockResolvedValue({

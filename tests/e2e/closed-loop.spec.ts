@@ -143,7 +143,7 @@ test('turns one interview into reusable preparation for the next job', async () 
     await app.close();
     app = await launchTestApp(userData);
     page = await openWindow(app);
-    await page.getByRole('link', { name: '岗位' }).click();
+    await page.getByRole('link', { name: '岗位', exact: true }).click();
     const positionTable = page.locator('table.position-table');
     await expect(positionTable.getByRole('link', { name: /远山科技/ })).toBeVisible();
     await expect(positionTable.getByRole('link', { name: /海川软件/ })).toBeVisible();

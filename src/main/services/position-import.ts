@@ -15,6 +15,24 @@ function pickField(lines: string[], key: FieldKey): { value: string; confidence:
       if (match?.[1]?.trim()) return { value: match[1].trim().slice(0, 200), confidence: 0.95 };
     }
   }
+  const candidates = lines.slice(0, 12);
+  const patterns: Record<FieldKey, RegExp> = {
+    company: /(?:有限公司|公司|集团|科技|studio|inc\.?|ltd\.?)/i,
+    title: /(?:产品经理|工程师|设计师|分析师|运营|开发|研究员|顾问|负责人|manager|engineer|designer|analyst)/i,
+    location: /(?:北京|上海|广州|深圳|杭州|成都|武汉|南京|苏州|西安|远程|remote|hybrid)/i,
+  };
+  const heuristic = candidates.find((line) => (
+    line.length <= 120
+    && patterns[key].test(line)
+    && !(key === 'company' && /(?:岗位职责|职位描述|关于公司)/.test(line))
+  ));
+  if (heuristic) {
+    const value = heuristic
+      .split(/[|｜·]/)
+      .map((part) => part.trim())
+      .find((part) => patterns[key].test(part)) ?? heuristic;
+    return { value: value.slice(0, 200), confidence: 0.65 };
+  }
   return { value: '', confidence: 0.25 };
 }
 

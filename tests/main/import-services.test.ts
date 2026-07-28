@@ -84,6 +84,21 @@ describe('local import services', () => {
     expect(preview.confidence.company).toBeGreaterThanOrEqual(0.8);
   });
 
+  it('uses short title-area heuristics when screenshots omit field labels', () => {
+    const preview = previewPositionFromText([
+      'AI 产品经理｜远山科技有限公司｜杭州 Hybrid',
+      '我们正在寻找熟悉大模型产品设计的伙伴。',
+      '岗位职责包括需求研究、方案设计与跨团队推进。',
+    ].join('\n'));
+
+    expect(preview.suggested).toMatchObject({
+      company: '远山科技有限公司',
+      title: 'AI 产品经理',
+      location: '杭州 Hybrid',
+    });
+    expect(preview.confidence.title).toBeGreaterThan(0.5);
+  });
+
   it('segments project notes and supports the review operations', () => {
     const segments = classifyProjectText([
       '# 项目一：智能问答',

@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { createDashboardRepository } from '../../src/main/repositories/dashboard';
+import { createAssetsRepository } from '../../src/main/repositories/assets';
 import { createInterviewsRepository } from '../../src/main/repositories/interviews';
 import { createPositionsRepository } from '../../src/main/repositories/positions';
 import { createTestDatabase } from '../helpers/database';
@@ -19,6 +20,49 @@ function createPosition(
 }
 
 describe('dashboard repository', () => {
+  it('summarizes only active capabilities after a merge without losing frequency', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const source = assets.saveCapability({
+        name: '来源能力',
+        jdFrequency: 3,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      const target = assets.saveCapability({
+        name: '目标能力',
+        jdFrequency: 5,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      db.prepare(`
+        INSERT INTO capability_evidence (
+          id, capability_id, position_id, interview_id, evidence, created_at
+        ) VALUES (?, ?, NULL, NULL, ?, ?)
+      `).run(
+        '99999999-9999-4999-8999-999999999999',
+        source.id,
+        '来源证据',
+        '2026-07-28T00:00:00.000Z',
+      );
+
+      assets.mergeCapabilities(source.id, target.id);
+
+      expect(createDashboardRepository(db).getSummary().capabilityFrequency).toEqual([{
+        capabilityId: target.id,
+        name: target.name,
+        jdFrequency: 8,
+        evidenceCount: 1,
+      }]);
+    } finally {
+      db.close();
+    }
+  });
+
   it('sorts actual and expected process events globally by date', () => {
     const db = createTestDatabase();
 

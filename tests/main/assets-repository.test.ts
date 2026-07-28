@@ -18,6 +18,187 @@ const projectInput = {
 };
 
 describe('assets repository', () => {
+  it('merges active capabilities transactionally and rewrites every live relation', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const target = assets.saveCapability({
+        name: '目标能力',
+        jdFrequency: 5,
+        evidence: '目标证据\n\n共同证据',
+        gaps: '目标差距',
+        mergedIntoId: null,
+      });
+      const source = assets.saveCapability({
+        name: '来源能力',
+        jdFrequency: 3,
+        evidence: '共同证据\n\n来源证据',
+        gaps: '来源差距\n\n目标差距',
+        mergedIntoId: null,
+      });
+      const untouched = assets.saveCapability({
+        name: '其他能力',
+        jdFrequency: 2,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      const child = assets.saveCapability({
+        name: '历史子能力',
+        jdFrequency: 1,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: source.id,
+      });
+      const question = assets.saveQuestion({
+        type: 'interviewer',
+        text: '如何解决复杂问题？',
+        answerDraft: '',
+        projectIds: [],
+        capabilityIds: [untouched.id, source.id, target.id, source.id],
+        occurrenceCount: 1,
+        status: 'active',
+      });
+      const insight = assets.saveInsight({
+        title: '一次复盘',
+        content: '能力关联需要迁移',
+        positionId: null,
+        projectId: null,
+        questionId: question.id,
+        capabilityId: source.id,
+      });
+      db.prepare(`
+        INSERT INTO capability_evidence (
+          id, capability_id, position_id, interview_id, evidence, created_at
+        ) VALUES (?, ?, NULL, NULL, ?, ?)
+      `).run(
+        '99999999-9999-4999-8999-999999999999',
+        source.id,
+        '来源证据',
+        '2026-07-28T00:00:00.000Z',
+      );
+
+      const merged = assets.mergeCapabilities(source.id, target.id);
+
+      expect(merged.source.mergedIntoId).toBe(target.id);
+      expect(merged.target).toMatchObject({
+        id: target.id,
+        jdFrequency: 8,
+        evidence: '目标证据\n\n共同证据\n\n来源证据',
+        gaps: '目标差距\n\n来源差距',
+      });
+      expect(assets.getQuestion(question.id).capabilityIds).toEqual([
+        untouched.id,
+        target.id,
+      ]);
+      expect(assets.getInsight(insight.id).capabilityId).toBe(target.id);
+      expect(assets.getCapability(child.id).mergedIntoId).toBe(target.id);
+      expect(db.prepare('SELECT capability_id FROM capability_evidence WHERE id = ?')
+        .get('99999999-9999-4999-8999-999999999999')).toEqual({
+        capability_id: target.id,
+      });
+      expect(assets.listCapabilities().map(({ id }) => id)).toEqual([
+        target.id,
+        untouched.id,
+      ]);
+      expect(assets.listVersions('capability', source.id)).toHaveLength(1);
+      expect(assets.listVersions('capability', target.id)).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects invalid capability merge targets without changing active records', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const source = assets.saveCapability({
+        name: '来源能力',
+        jdFrequency: 1,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      const target = assets.saveCapability({
+        name: '目标能力',
+        jdFrequency: 2,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      const alreadyMerged = assets.saveCapability({
+        name: '已合并能力',
+        jdFrequency: 3,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: target.id,
+      });
+
+      expect(() => assets.mergeCapabilities(source.id, source.id)).toThrow();
+      expect(() => assets.mergeCapabilities(source.id, alreadyMerged.id)).toThrow();
+      expect(() => assets.mergeCapabilities(alreadyMerged.id, target.id)).toThrow();
+      expect(() => assets.mergeCapabilities(source.id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'))
+        .toThrow();
+      expect(assets.getCapability(source.id).mergedIntoId).toBeNull();
+      expect(assets.getCapability(target.id).jdFrequency).toBe(2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rolls back every capability merge update when a relation rewrite fails', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const source = assets.saveCapability({
+        name: '来源能力',
+        jdFrequency: 1,
+        evidence: '来源',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      const target = assets.saveCapability({
+        name: '目标能力',
+        jdFrequency: 2,
+        evidence: '目标',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      const insight = assets.saveInsight({
+        title: '阻断更新',
+        content: '用于故障注入',
+        positionId: null,
+        projectId: null,
+        questionId: null,
+        capabilityId: source.id,
+      });
+      db.exec(`
+        CREATE TRIGGER fail_capability_merge
+        BEFORE UPDATE OF capability_id ON insights
+        WHEN OLD.capability_id = '${source.id}'
+        BEGIN
+          SELECT RAISE(ABORT, 'injected merge failure');
+        END;
+      `);
+
+      expect(() => assets.mergeCapabilities(source.id, target.id))
+        .toThrow('injected merge failure');
+      expect(assets.getCapability(source.id).mergedIntoId).toBeNull();
+      expect(assets.getCapability(target.id)).toMatchObject({
+        jdFrequency: 2,
+        evidence: '目标',
+      });
+      expect(assets.getInsight(insight.id).capabilityId).toBe(source.id);
+      expect(assets.listVersions('capability', source.id)).toEqual([]);
+      expect(assets.listVersions('capability', target.id)).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
   it('rejects an explicitly supplied invalid asset ID instead of treating it as creation', () => {
     const db = createTestDatabase();
 

@@ -4,6 +4,7 @@ import type {
   AssetVersion,
   Capability,
   CapabilityInput,
+  CapabilityMergeResult,
   Insight,
   InsightInput,
   Project,
@@ -14,6 +15,7 @@ import type {
 } from '../../shared/domain';
 import {
   capabilitySaveSchema,
+  capabilityMergeSchema,
   insightSaveSchema,
   projectSaveSchema,
   proposalTargetSchema,
@@ -176,6 +178,19 @@ function validateQuestionReferences(
   requireExistingIds(db, 'capabilities', capabilityIds);
 }
 
+function mergeParagraphs(primary: string, secondary: string): string {
+  const paragraphs = [primary, secondary]
+    .flatMap((value) => value.split(/\n\s*\n/))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return [...new Set(paragraphs)].join('\n\n');
+}
+
+function replaceCapabilityId(ids: string[], sourceId: string, targetId: string): string[] {
+  const rewritten = ids.map((id) => id === sourceId ? targetId : id);
+  return rewritten.filter((id, index) => rewritten.indexOf(id) === index);
+}
+
 export interface AssetsRepository {
   listProjects(): Project[];
   getProject(id: string): Project;
@@ -186,6 +201,7 @@ export interface AssetsRepository {
   listCapabilities(): Capability[];
   getCapability(id: string): Capability;
   saveCapability(input: SaveInput<CapabilityInput>): Capability;
+  mergeCapabilities(sourceId: string, targetId: string): CapabilityMergeResult;
   listInsights(): Insight[];
   getInsight(id: string): Insight;
   saveInsight(input: SaveInput<InsightInput>): Insight;
@@ -332,7 +348,11 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
     },
 
     listCapabilities() {
-      return db.prepare('SELECT * FROM capabilities ORDER BY updated_at DESC, created_at DESC')
+      return db.prepare(`
+        SELECT * FROM capabilities
+        WHERE merged_into_id IS NULL
+        ORDER BY updated_at DESC, created_at DESC
+      `)
         .all().map(decodeCapability);
     },
     getCapability,
@@ -373,6 +393,75 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
           );
         }
         return getCapability(id);
+      });
+    },
+    mergeCapabilities(sourceId, targetId) {
+      const parsed = capabilityMergeSchema.parse({ sourceId, targetId });
+      return transaction(db, () => {
+        if (parsed.sourceId === parsed.targetId) {
+          throw new RepositoryError(
+            'VALIDATION_ERROR',
+            'A capability cannot be merged into itself',
+          );
+        }
+        const source = getCapability(parsed.sourceId);
+        const target = getCapability(parsed.targetId);
+        if (source.mergedIntoId !== null || target.mergedIntoId !== null) {
+          throw new RepositoryError(
+            'CONFLICT',
+            'Capability merges require two active capabilities',
+          );
+        }
+
+        const now = new Date().toISOString();
+        insertVersion(db, 'capability', source.id, source, now);
+        insertVersion(db, 'capability', target.id, target, now);
+
+        const questionRows = db.prepare(
+          'SELECT id, capability_ids_json FROM questions ORDER BY created_at, id',
+        ).all();
+        for (const value of questionRows) {
+          const data = row(value, 'question capability references');
+          const ids = stringArray(data.capability_ids_json, 'capability_ids_json');
+          if (!ids.includes(source.id)) continue;
+          db.prepare(`
+            UPDATE questions SET capability_ids_json = ?, updated_at = ? WHERE id = ?
+          `).run(
+            JSON.stringify(replaceCapabilityId(ids, source.id, target.id)),
+            now,
+            text(data.id, 'id'),
+          );
+        }
+
+        db.prepare(`
+          UPDATE insights SET capability_id = ?, updated_at = ? WHERE capability_id = ?
+        `).run(target.id, now, source.id);
+        db.prepare(`
+          UPDATE capability_evidence SET capability_id = ? WHERE capability_id = ?
+        `).run(target.id, source.id);
+        db.prepare(`
+          UPDATE capabilities SET merged_into_id = ?, updated_at = ?
+          WHERE merged_into_id = ?
+        `).run(target.id, now, source.id);
+        db.prepare(`
+          UPDATE capabilities
+          SET jd_frequency = ?, evidence = ?, gaps = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+          target.jdFrequency + source.jdFrequency,
+          mergeParagraphs(target.evidence, source.evidence),
+          mergeParagraphs(target.gaps, source.gaps),
+          now,
+          target.id,
+        );
+        db.prepare(`
+          UPDATE capabilities SET merged_into_id = ?, updated_at = ? WHERE id = ?
+        `).run(target.id, now, source.id);
+
+        return {
+          source: getCapability(source.id),
+          target: getCapability(target.id),
+        };
       });
     },
 
@@ -440,4 +529,6 @@ export const assetRepositoryInternals = {
   decodeInsight,
   insertVersion,
   validateQuestionReferences,
+  mergeParagraphs,
+  replaceCapabilityId,
 };

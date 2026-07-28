@@ -5,6 +5,7 @@ import type {
   AssetVersion,
   CanonicalStage,
   Capability,
+  CapabilityMergeResult,
   CapabilityAnalysisPreview,
   CapabilityInput,
   ChangeProposal,
@@ -66,7 +67,12 @@ export const CHANNELS = {
   assets: {
     projects: { list: 'assets:projects:list', get: 'assets:projects:get', save: 'assets:projects:save' },
     questions: { list: 'assets:questions:list', get: 'assets:questions:get', save: 'assets:questions:save' },
-    capabilities: { list: 'assets:capabilities:list', get: 'assets:capabilities:get', save: 'assets:capabilities:save' },
+    capabilities: {
+      list: 'assets:capabilities:list',
+      get: 'assets:capabilities:get',
+      save: 'assets:capabilities:save',
+      merge: 'assets:capabilities:merge',
+    },
     insights: { list: 'assets:insights:list', get: 'assets:insights:get', save: 'assets:insights:save' },
     versions: 'assets:versions:list',
     prompts: { list: 'assets:prompts:list', get: 'assets:prompts:get', save: 'assets:prompts:save' },
@@ -161,6 +167,7 @@ export interface JobSearchApi {
       list(): Promise<Capability[]>;
       get(id: string): Promise<Capability>;
       save(input: CapabilityInput & { id?: string }): Promise<Capability>;
+      merge(sourceId: string, targetId: string): Promise<CapabilityMergeResult>;
     };
     readonly insights: {
       list(): Promise<Insight[]>;

@@ -4,6 +4,7 @@ import {
   useId,
   useRef,
 } from 'react';
+import { lockBodyScroll } from '../../utils/bodyScrollLock';
 
 interface DashboardDrawerProps {
   children: ReactNode;
@@ -22,43 +23,76 @@ export function DashboardDrawer({
 }: DashboardDrawerProps) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
     const previousFocus = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockBodyScroll();
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const nestedDialog = drawerRef.current?.querySelector<HTMLDialogElement>('dialog[open]');
+      if (nestedDialog) return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = [...(drawerRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [])].filter((element) => {
+        const dialog = element.closest('dialog');
+        return dialog === null || dialog.hasAttribute('open');
+      });
+      if (focusable.length === 0) {
+        event.preventDefault();
+        closeRef.current?.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!drawerRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = previousOverflow;
+      unlockScroll();
       previousFocus?.focus();
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div className="dashboard-drawer-layer">
-      <button
-        aria-label="关闭抽屉"
+      <div
+        aria-hidden="true"
         className="dashboard-drawer__backdrop"
         onClick={onClose}
-        type="button"
       />
       <aside
         aria-labelledby={titleId}
         aria-modal="true"
         className="dashboard-drawer"
+        ref={drawerRef}
         role="dialog"
       >
         <header className="dashboard-drawer__header">

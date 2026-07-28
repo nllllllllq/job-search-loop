@@ -497,6 +497,19 @@ export const projectSaveSchema = z.preprocess(
 );
 export const questionSaveSchema = questionPayloadSchema.extend({ id: idSchema.optional() });
 export const capabilitySaveSchema = capabilityPayloadSchema.extend({ id: idSchema.optional() });
+export const capabilityMergeSchema = z.object({
+  sourceId: idSchema,
+  targetId: idSchema,
+}).strict();
+const capabilityRecordSchema = capabilityPayloadSchema.extend({
+  id: idSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+export const capabilityMergeResultSchema = z.object({
+  source: capabilityRecordSchema,
+  target: capabilityRecordSchema,
+}).strict();
 export const insightSaveSchema = insightPayloadSchema.extend({ id: idSchema.optional() });
 
 export const questionListSchema = z.object({

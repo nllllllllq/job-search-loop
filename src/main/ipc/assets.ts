@@ -1,6 +1,7 @@
 import { CHANNELS } from '../../shared/ipc';
 import {
   assetReferenceSchema,
+  capabilityMergeSchema,
   capabilitySaveSchema,
   idSchema,
   insightSaveSchema,
@@ -52,6 +53,10 @@ export function registerAssetHandlers(
   ipcMain.handle(CHANNELS.assets.capabilities.save, safeIpcHandler((_event, payload) => (
     assets.saveCapability(capabilitySaveSchema.parse(payload))
   )));
+  ipcMain.handle(CHANNELS.assets.capabilities.merge, safeIpcHandler((_event, payload) => {
+    const parsed = capabilityMergeSchema.parse(payload);
+    return assets.mergeCapabilities(parsed.sourceId, parsed.targetId);
+  }));
 
   ipcMain.handle(CHANNELS.assets.insights.list, safeIpcHandler((_event, payload) => {
     noPayloadSchema.parse(payload);

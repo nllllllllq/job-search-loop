@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Capability,
   ChangeProposal,
@@ -70,8 +70,10 @@ export function ReviewDrawer({ onClose, open, onChanged }: ReviewDrawerProps) {
   const [options, setOptions] = useState<ProposalAssetOptions>(emptyOptions);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const requestGeneration = useRef(0);
 
   const load = async () => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
     setError('');
     try {
@@ -83,6 +85,7 @@ export function ReviewDrawer({ onClose, open, onChanged }: ReviewDrawerProps) {
           window.jobSearch.assets.questions.list(),
           window.jobSearch.assets.capabilities.list(),
         ]);
+      if (generation !== requestGeneration.current) return;
       setItems(proposalResult.items);
       setCorruptItems(proposalResult.corruptItems);
       setOptions({
@@ -92,16 +95,24 @@ export function ReviewDrawer({ onClose, open, onChanged }: ReviewDrawerProps) {
         capabilities: capabilities as Capability[],
       });
     } catch {
+      if (generation !== requestGeneration.current) return;
       setError('待确认清单读取失败，请稍后重试。');
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      requestGeneration.current += 1;
+      setLoading(false);
+      return;
+    }
     setTab('pending');
     void load();
+    return () => {
+      requestGeneration.current += 1;
+    };
   }, [open]);
 
   const pending = useMemo(

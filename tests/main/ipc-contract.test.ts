@@ -7,9 +7,56 @@ import { registerPositionHandlers } from '../../src/main/ipc/positions';
 import { registerIpcHandlers } from '../../src/main/ipc/register';
 import { registerReviewHandlers } from '../../src/main/ipc/reviews';
 import { registerSystemHandlers } from '../../src/main/ipc/system';
+import { registerAssetHandlers } from '../../src/main/ipc/assets';
+import { createAssetsRepository } from '../../src/main/repositories/assets';
+import { createTestDatabase } from '../helpers/database';
 import { RepositoryError } from '../../src/main/repositories/common';
 
 describe('typed IPC contract', () => {
+  it('exposes a narrow validated capability merge handler backed by the repository transaction', async () => {
+    const db = createTestDatabase();
+    try {
+      const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+      const ipcMain = {
+        handle: (channel: string, handler: (event: unknown, payload: unknown) => unknown) => {
+          handlers.set(channel, handler);
+        },
+      };
+      const assets = createAssetsRepository(db);
+      const source = assets.saveCapability({
+        name: '来源能力',
+        jdFrequency: 1,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      const target = assets.saveCapability({
+        name: '目标能力',
+        jdFrequency: 2,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      registerAssetHandlers(ipcMain, assets, {
+        list: vi.fn(),
+        get: vi.fn(),
+        save: vi.fn(),
+      });
+
+      const merge = handlers.get(CHANNELS.assets.capabilities.merge);
+      expect(merge).toBeDefined();
+      await expect(merge!({}, { sourceId: 'not-an-id', targetId: target.id }))
+        .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+      await expect(merge!({}, { sourceId: source.id, targetId: target.id }))
+        .resolves.toMatchObject({
+          source: { id: source.id, mergedIntoId: target.id },
+          target: { id: target.id, jdFrequency: 3 },
+        });
+    } finally {
+      db.close();
+    }
+  });
+
   it('publishes explicit nested methods without a generic invoke or send escape hatch', () => {
     expectTypeOf<JobSearchApi>().toHaveProperty('positions');
     expectTypeOf<JobSearchApi>().toHaveProperty('ai');
@@ -127,6 +174,7 @@ describe('typed IPC contract', () => {
         listCapabilities: vi.fn(),
         getCapability: vi.fn(),
         saveCapability: vi.fn(),
+        mergeCapabilities: vi.fn(),
         listInsights: vi.fn(),
         getInsight: vi.fn(),
         saveInsight: vi.fn(),

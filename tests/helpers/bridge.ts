@@ -57,6 +57,7 @@ export interface JobSearchApiFake {
       list: ApiMock<JobSearchApi['assets']['capabilities']['list']>;
       get: ApiMock<JobSearchApi['assets']['capabilities']['get']>;
       save: ApiMock<JobSearchApi['assets']['capabilities']['save']>;
+      merge: ApiMock<JobSearchApi['assets']['capabilities']['merge']>;
     };
     readonly insights: {
       list: ApiMock<JobSearchApi['assets']['insights']['list']>;
@@ -187,6 +188,7 @@ export function createJobSearchFake(): JobSearchApiFake {
         list: vi.fn<JobSearchApi['assets']['capabilities']['list']>().mockResolvedValue([] as Capability[]),
         get: vi.fn<JobSearchApi['assets']['capabilities']['get']>().mockRejectedValue(new Error('未设置能力')),
         save: vi.fn<JobSearchApi['assets']['capabilities']['save']>().mockRejectedValue(new Error('未设置能力')),
+        merge: vi.fn<JobSearchApi['assets']['capabilities']['merge']>().mockRejectedValue(new Error('未设置能力合并')),
       },
       insights: {
         list: vi.fn<JobSearchApi['assets']['insights']['list']>().mockResolvedValue([] as Insight[]),

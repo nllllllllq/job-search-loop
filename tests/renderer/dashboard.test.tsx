@@ -194,7 +194,7 @@ describe('dashboard page', () => {
     expect(within(drawer).queryByText('值得沉淀')).not.toBeInTheDocument();
   });
 
-  it('opens the capability drawer and creates, edits, and safely marks a merge', async () => {
+  it('opens the capability drawer and creates, edits, and transactionally merges', async () => {
     const target: Capability = {
       ...capability,
       id: '66666666-6666-4666-8666-666666666666',
@@ -207,6 +207,10 @@ describe('dashboard page', () => {
       ...input,
       id: input.id ?? '77777777-7777-4777-8777-777777777777',
     }));
+    fake.assets.capabilities.merge.mockResolvedValue({
+      source: { ...capability, mergedIntoId: target.id },
+      target: { ...target, jdFrequency: target.jdFrequency + capability.jdFrequency },
+    });
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/?drawer=capabilities']}>
@@ -234,16 +238,14 @@ describe('dashboard page', () => {
     }));
 
     await user.click(within(drawer).getByRole('button', { name: '合并 问题拆解' }));
+    expect(screen.getByLabelText(/能力名称/)).toBeDisabled();
     await user.selectOptions(screen.getByLabelText(/合并到/), target.id);
-    expect(screen.getByText('原能力记录和既有关联会保留。')).toBeInTheDocument();
+    expect(screen.getByText('原能力记录保留用于审计；现有关联会迁移到目标能力。'))
+      .toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '确认合并' }));
-    await waitFor(() => expect(fake.assets.capabilities.save).toHaveBeenCalledWith({
-      id: capability.id,
-      name: capability.name,
-      jdFrequency: capability.jdFrequency,
-      evidence: capability.evidence,
-      gaps: capability.gaps,
-      mergedIntoId: target.id,
-    }));
+    await waitFor(() => expect(fake.assets.capabilities.merge).toHaveBeenCalledWith(
+      capability.id,
+      target.id,
+    ));
   });
 });

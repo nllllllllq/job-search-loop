@@ -294,6 +294,11 @@ export interface Capability extends CapabilityInput {
   updatedAt: string;
 }
 
+export interface CapabilityMergeResult {
+  source: Capability;
+  target: Capability;
+}
+
 export interface CapabilityEvidence {
   id: string;
   capabilityId: string;

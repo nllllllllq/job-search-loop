@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type {
   CapabilityAnalysisPreview,
@@ -212,40 +212,46 @@ export function DashboardPage() {
     () => window.jobSearch.system.getDashboardSummary(),
     [],
   );
-  const data = summary.data;
+  const data = summary.data ?? {
+    totalPositions: 0,
+    stageDistribution: [],
+    positionsWithInterviews: 0,
+    completedReviews: 0,
+    pendingProposals: 0,
+    processEvents: [],
+    capabilityFrequency: [],
+    recentPositions: [],
+  };
   const recent = useMemo(() => data?.recentPositions ?? [], [data]);
   const drawer = searchParams.get('drawer');
-  const openDrawer = (value: 'reviews' | 'capabilities') => {
+  const openDrawer = useCallback((value: 'reviews' | 'capabilities') => {
     const next = new URLSearchParams(searchParams);
     next.set('drawer', value);
     setSearchParams(next);
-  };
-  const closeDrawer = () => {
+  }, [searchParams, setSearchParams]);
+  const closeDrawer = useCallback(() => {
     const next = new URLSearchParams(searchParams);
     next.delete('drawer');
     setSearchParams(next, { replace: true });
-  };
-
-  if (summary.loading) {
-    return <div className="resource-state" role="status">正在整理求职进度…</div>;
-  }
-  if (summary.error || !data) {
-    return (
-      <EmptyState
-        action={(
-          <button className="button button--quiet" onClick={() => void summary.reload()} type="button">
-            重试
-          </button>
-        )}
-        body="本地进度统计暂时无法读取，岗位与复盘记录没有被修改。"
-        icon="!"
-        title="总览加载失败"
-      />
-    );
-  }
+  }, [searchParams, setSearchParams]);
 
   return (
     <div className="dashboard-page">
+      {summary.loading ? (
+        <div className="resource-state" role="status">正在整理求职进度…</div>
+      ) : summary.error || !summary.data ? (
+        <EmptyState
+          action={(
+            <button className="button button--quiet" onClick={() => void summary.reload()} type="button">
+              重试
+            </button>
+          )}
+          body="本地进度统计暂时无法读取，岗位与复盘记录没有被修改。"
+          icon="!"
+          title="总览加载失败"
+        />
+      ) : (
+        <>
       <header className="page-heading dashboard-heading">
         <div>
           <p className="section-label">LOOP OVERVIEW / 求职进度</p>
@@ -356,6 +362,8 @@ export function DashboardPage() {
               ))}
             </ul>
           </section>
+        </>
+      )}
         </>
       )}
 

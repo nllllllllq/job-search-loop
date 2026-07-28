@@ -138,10 +138,13 @@ function RelationCheckboxes({
   selected: string[];
   onToggle: (id: string) => void;
 }) {
+  const optionIds = new Set(options.map(({ id }) => id));
+  const unavailable = selected.filter((id) => !optionIds.has(id));
+  const historicalLabel = legend.replace(/^关联/, '历史');
   return (
     <fieldset className="proposal-relation-picker">
       <legend>{legend}</legend>
-      {options.length === 0 ? <p>暂无可关联条目</p> : options.map((item) => (
+      {options.length === 0 && unavailable.length === 0 ? <p>暂无可关联条目</p> : options.map((item) => (
         <label key={item.id}>
           <input
             checked={selected.includes(item.id)}
@@ -149,6 +152,12 @@ function RelationCheckboxes({
             type="checkbox"
           />
           <span>{item.label}</span>
+        </label>
+      ))}
+      {unavailable.map((id) => (
+        <label key={id}>
+          <input checked disabled readOnly type="checkbox" />
+          <span>{historicalLabel}（已合并或不可用） {id}</span>
         </label>
       ))}
     </fieldset>
@@ -166,10 +175,14 @@ function OptionalSelect({
   options: Array<{ id: string; label: string }>;
   onChange: (value: string | null) => void;
 }) {
+  const unavailable = value !== null && !options.some((item) => item.id === value);
   return (
     <Field label={label}>
       <select onChange={(event) => onChange(event.target.value || null)} value={value ?? ''}>
         <option value="">不关联</option>
+        {unavailable ? (
+          <option disabled value={value ?? ''}>历史关联（已合并或不可用） {value}</option>
+        ) : null}
         {options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
       </select>
     </Field>

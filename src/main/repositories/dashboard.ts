@@ -71,7 +71,9 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
       const capabilityFrequency = db.prepare(`
         SELECT c.id, c.name, c.jd_frequency,
           (SELECT COUNT(*) FROM capability_evidence e WHERE e.capability_id = c.id) AS evidence_count
-        FROM capabilities c ORDER BY c.jd_frequency DESC, c.name
+        FROM capabilities c
+        WHERE c.merged_into_id IS NULL
+        ORDER BY c.jd_frequency DESC, c.name
       `).all().map((value) => {
         const data = row(value, 'capability frequency');
         return {

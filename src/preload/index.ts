@@ -6,6 +6,8 @@ import {
   aiSettingsSaveSchema,
   backupActionResultSchema,
   capabilityAnalysisPreviewSchema,
+  capabilityMergeResultSchema,
+  capabilityMergeSchema,
   capabilityAnalysisSelectionSchema,
   changeProposalArraySchema,
   changeProposalListSchema,
@@ -150,6 +152,12 @@ const api = frozen<JobSearchApi>({
       list: () => invoke(CHANNELS.assets.capabilities.list),
       get: (id) => invoke(CHANNELS.assets.capabilities.get, id),
       save: (input) => invoke(CHANNELS.assets.capabilities.save, input),
+      merge: async (sourceId, targetId) => capabilityMergeResultSchema.parse(
+        await invoke(
+          CHANNELS.assets.capabilities.merge,
+          capabilityMergeSchema.parse({ sourceId, targetId }),
+        ),
+      ),
     }),
     insights: frozen<JobSearchApi['assets']['insights']>({
       list: () => invoke(CHANNELS.assets.insights.list),

@@ -524,11 +524,19 @@ describe('interview and review UI', () => {
     await user.click(editButtons[0]);
     expect(screen.getByLabelText(/项目名称/)).toHaveValue('求职闭环');
     expect(screen.getByLabelText('待整理内容')).toHaveValue('待整理片段');
+    await user.clear(screen.getByLabelText(/项目名称/));
+    await user.click(screen.getByRole('button', { name: '确认写入' }));
+    expect(screen.getByLabelText(/项目名称/)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(/项目名称/).getAttribute('aria-describedby')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: '取消' }));
 
     await user.click(editButtons[1]);
     expect(screen.getByLabelText(/能力名称/)).toHaveValue('问题拆解');
     expect(screen.getByText(`合并目标：${capabilityProposal.targetId}`)).toBeInTheDocument();
+    await user.clear(screen.getByLabelText(/能力名称/));
+    await user.click(screen.getByRole('button', { name: '确认写入' }));
+    expect(screen.getByLabelText(/能力名称/)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(/能力名称/).getAttribute('aria-describedby')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: '取消' }));
 
     await user.click(editButtons[2]);
@@ -537,10 +545,42 @@ describe('interview and review UI', () => {
     expect(screen.getByLabelText('关联项目（可选）')).toBeInTheDocument();
     expect(screen.getByLabelText('关联问题（可选）')).toBeInTheDocument();
     expect(screen.getByLabelText('关联能力（可选）')).toBeInTheDocument();
+    await user.clear(screen.getByLabelText(/心得标题/));
+    await user.click(screen.getByRole('button', { name: '确认写入' }));
+    expect(screen.getByLabelText(/心得标题/)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(/心得标题/).getAttribute('aria-describedby')).toBeTruthy();
     expect(fake.positions.list).toHaveBeenCalledTimes(1);
     expect(fake.assets.projects.list).toHaveBeenCalledTimes(1);
     expect(fake.assets.questions.list).toHaveBeenCalledTimes(1);
     expect(fake.assets.capabilities.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows merged historical capability references as read-only without dropping ids', async () => {
+    window.location.hash = '#/reviews';
+    const historicalCapabilityId = '88888888-8888-4888-8888-888888888888';
+    const historicalProposal: ChangeProposalListItem = {
+      ...proposal,
+      payload: {
+        ...(proposal.payload as Record<string, unknown>),
+        capabilityIds: [historicalCapabilityId],
+      },
+    };
+    const fake = resetJobSearchFake();
+    fake.reviews.proposals.list.mockResolvedValue({
+      items: [historicalProposal],
+      corruptItems: [],
+      corruptCount: 0,
+    });
+    fake.assets.capabilities.list.mockResolvedValue([]);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '编辑后接受' }));
+    const historical = screen.getByRole('checkbox', {
+      name: `历史能力（已合并或不可用） ${historicalCapabilityId}`,
+    });
+    expect(historical).toBeChecked();
+    expect(historical).toBeDisabled();
   });
 
   it('prevents duplicate mutations and keeps corrupt proposals read-only without raw JSON', async () => {

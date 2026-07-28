@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { Capability, CapabilityInput } from '../../../shared/domain';
 import { capabilityPayloadSchema } from '../../../shared/schemas';
 import { Field } from '../../components/Field';
@@ -50,23 +50,35 @@ export function CapabilityDrawer({
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
+  const requestGeneration = useRef(0);
 
   const load = async () => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
     setLoadError('');
     try {
-      setCapabilities(await window.jobSearch.assets.capabilities.list());
+      const result = await window.jobSearch.assets.capabilities.list();
+      if (generation !== requestGeneration.current) return;
+      setCapabilities(result);
     } catch {
+      if (generation !== requestGeneration.current) return;
       setLoadError('能力主题读取失败，请稍后重试。');
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      requestGeneration.current += 1;
+      setLoading(false);
+      return;
+    }
     setEditor(null);
     void load();
+    return () => {
+      requestGeneration.current += 1;
+    };
   }, [open]);
 
   const activeCapabilities = useMemo(
@@ -123,11 +135,18 @@ export function CapabilityDrawer({
     setSaving(true);
     setSaveError('');
     try {
-      await window.jobSearch.assets.capabilities.save({
-        ...parsed.data,
-        ...(editor.mode === 'create' ? {} : { id: editor.capability.id }),
-      });
-      toast.success(editor.mode === 'merge' ? '能力已标记合并。' : '能力主题已保存。');
+      if (editor.mode === 'merge') {
+        await window.jobSearch.assets.capabilities.merge(
+          editor.capability.id,
+          parsed.data.mergedIntoId!,
+        );
+      } else {
+        await window.jobSearch.assets.capabilities.save({
+          ...parsed.data,
+          ...(editor.mode === 'create' ? {} : { id: editor.capability.id }),
+        });
+      }
+      toast.success(editor.mode === 'merge' ? '能力及其关联已合并。' : '能力主题已保存。');
       setEditor(null);
       await load();
       onChanged?.();
@@ -228,6 +247,7 @@ export function CapabilityDrawer({
         <form className="editor-form" id="capability-drawer-editor" noValidate onSubmit={submit}>
           <Field error={errors.name} label="能力名称" required>
             <input
+              disabled={editor?.mode === 'merge'}
               maxLength={200}
               onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
               value={draft.name}
@@ -235,6 +255,7 @@ export function CapabilityDrawer({
           </Field>
           <Field error={errors.frequency} label="JD 频次" required>
             <input
+              disabled={editor?.mode === 'merge'}
               min={0}
               onChange={(event) => setDraft((current) => ({ ...current, frequency: event.target.value }))}
               step={1}
@@ -244,6 +265,7 @@ export function CapabilityDrawer({
           </Field>
           <Field label="已有证据">
             <textarea
+              disabled={editor?.mode === 'merge'}
               maxLength={40_000}
               onChange={(event) => setDraft((current) => ({ ...current, evidence: event.target.value }))}
               rows={5}
@@ -252,6 +274,7 @@ export function CapabilityDrawer({
           </Field>
           <Field label="差距">
             <textarea
+              disabled={editor?.mode === 'merge'}
               maxLength={40_000}
               onChange={(event) => setDraft((current) => ({ ...current, gaps: event.target.value }))}
               rows={5}
@@ -262,7 +285,7 @@ export function CapabilityDrawer({
             <>
               <Field
                 error={errors.mergedIntoId}
-                hint="原能力记录和既有关联会保留。"
+                hint="原能力记录保留用于审计；现有关联会迁移到目标能力。"
                 label="合并到"
                 required
               >

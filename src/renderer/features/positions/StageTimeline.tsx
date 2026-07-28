@@ -53,35 +53,74 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
     <section className="process-panel" aria-labelledby="process-title">
       <header className="process-panel__header">
         <div>
-          <p className="section-label">流程轨迹 / PROCESS LOG</p>
           <h3 id="process-title">推进记录</h3>
-          <p>日期仅用于记录流程，不会创建提醒</p>
+          <p>点击阶段即可记录实际日期、预计日期、反馈和备注；不会创建提醒。</p>
         </div>
-        <button className="button button--quiet" onClick={() => setEditing('new')} type="button">新增阶段</button>
       </header>
 
       {sortedStages.length === 0 ? (
-        <p className="inline-empty">还没有流程阶段，可以先新增一条。</p>
+        <p className="inline-empty">还没有流程阶段，可在更多流程设置中新增。</p>
       ) : (
-        <ol className="stage-timeline">
+        <ol className="stage-timeline" data-layout="wrapped-horizontal">
           {sortedStages.map((stage, index) => (
             <li className="stage-card" key={stage.id}>
-              <div className="stage-card__rail" aria-hidden="true">
-                <span>{String(index + 1).padStart(2, '0')}</span>
-              </div>
-              <div className="stage-card__content">
-                <div className="stage-card__title">
-                  <div>
-                    <h4 className="stage-card__name">{stage.name}</h4>
-                    <StatusBadge stage={stage.canonicalStage} />
-                  </div>
-                  <div className="stage-card__actions">
+              <button
+                aria-label={`编辑流程阶段：${stage.name}`}
+                className="stage-card__content"
+                onClick={() => setEditing(stage)}
+                type="button"
+              >
+                <span className="stage-card__step" aria-hidden="true">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <span className="stage-card__title">
+                  <strong className="stage-card__name">{stage.name}</strong>
+                  <StatusBadge stage={stage.canonicalStage} />
+                </span>
+                <span className="stage-card__dates">
+                  {stage.actualDate ? (
+                    <span className="stage-date stage-date--actual">实际日期：{stage.actualDate}</span>
+                  ) : null}
+                  {stage.expectedDate ? (
+                    <span className="stage-date stage-date--expected">预计日期：{stage.expectedDate}</span>
+                  ) : null}
+                  {!stage.actualDate && !stage.expectedDate ? (
+                    <span className="stage-date">日期未记录</span>
+                  ) : null}
+                </span>
+                {stage.feedback ? (
+                  <span className="stage-card__note"><strong>反馈</strong>{stage.feedback}</span>
+                ) : null}
+                {stage.notes ? (
+                  <span className="stage-card__note"><strong>备注</strong>{stage.notes}</span>
+                ) : null}
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <details className="process-settings">
+        <summary>更多流程设置</summary>
+        <div className="process-settings__body">
+          <button
+            className="button button--quiet"
+            onClick={() => setEditing('new')}
+            type="button"
+          >
+            新增自定义阶段
+          </button>
+          {sortedStages.length > 1 ? (
+            <ol className="process-settings__list">
+              {sortedStages.map((stage, index) => (
+                <li key={stage.id}>
+                  <span>{stage.name}</span>
+                  <span className="process-settings__actions">
                     <button
                       aria-label={`上移 ${stage.name}`}
                       className="icon-button"
                       disabled={index === 0 || reordering}
                       onClick={() => void move(index, -1)}
-                      title="上移"
                       type="button"
                     >
                       ↑
@@ -91,41 +130,17 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
                       className="icon-button"
                       disabled={index === sortedStages.length - 1 || reordering}
                       onClick={() => void move(index, 1)}
-                      title="下移"
                       type="button"
                     >
                       ↓
                     </button>
-                    <button
-                      aria-label={`编辑 ${stage.name}`}
-                      className="text-button"
-                      onClick={() => setEditing(stage)}
-                      type="button"
-                    >
-                      编辑
-                    </button>
-                  </div>
-                </div>
-                <div className="stage-card__dates">
-                  {stage.actualDate ? (
-                    <span className="stage-date stage-date--actual">实际日期：{stage.actualDate}</span>
-                  ) : null}
-                  {stage.expectedDate ? (
-                    <span className="stage-date stage-date--expected">预计日期：{stage.expectedDate}</span>
-                  ) : null}
-                  {!stage.actualDate && !stage.expectedDate ? <span className="stage-date">日期：—</span> : null}
-                </div>
-                {stage.feedback ? (
-                  <p><strong>反馈</strong>{stage.feedback}</p>
-                ) : null}
-                {stage.notes ? (
-                  <p><strong>备注</strong>{stage.notes}</p>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </div>
+      </details>
 
       <StageEditor
         initialValue={editing && editing !== 'new' ? editing : undefined}

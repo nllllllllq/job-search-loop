@@ -178,57 +178,25 @@ describe('positions flow', () => {
     });
   });
 
-  it('shows exact detail tabs and renders raw JD as safe text with line breaks', async () => {
+  it('renders raw JD directly as safe text with line breaks', async () => {
     renderAt(`#/positions/${positionId}`);
 
     expect(await screen.findByRole('heading', { name: '远山科技' })).toBeInTheDocument();
-    for (const tab of ['概况', '原始 JD', '流程', '准备材料', '面试记录']) {
-      expect(screen.getByRole('tab', { name: tab })).toBeInTheDocument();
-    }
-
-    await userEvent.click(screen.getByRole('tab', { name: '原始 JD' }));
     const rawJd = screen.getByTestId('raw-jd');
     expect(rawJd).toHaveTextContent('负责产品规划 与用户研究 <script>alert(1)</script>');
     expect(rawJd).toHaveStyle({ whiteSpace: 'pre-wrap' });
     expect(document.querySelector('.raw-jd script')).toBeNull();
-  });
-
-  it('supports roving focus and standard keyboard navigation across detail tabs', async () => {
-    const { user } = renderAt(`#/positions/${positionId}`);
-    const overview = await screen.findByRole('tab', { name: '概况' });
-    const rawJd = screen.getByRole('tab', { name: '原始 JD' });
-    const interviews = screen.getByRole('tab', { name: '面试记录' });
-
-    expect(overview).toHaveAttribute('tabindex', '0');
-    expect(rawJd).toHaveAttribute('tabindex', '-1');
-    overview.focus();
-
-    await user.keyboard('{ArrowRight}');
-    expect(rawJd).toHaveFocus();
-    expect(rawJd).toHaveAttribute('aria-selected', 'true');
-
-    await user.keyboard('{End}');
-    expect(interviews).toHaveFocus();
-    expect(interviews).toHaveAttribute('aria-selected', 'true');
-
-    await user.keyboard('{ArrowRight}');
-    expect(overview).toHaveFocus();
-    await user.keyboard('{ArrowLeft}');
-    expect(interviews).toHaveFocus();
-    await user.keyboard('{Home}');
-    expect(overview).toHaveFocus();
-    expect(overview).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
   it('labels expected and actual dates explicitly and saves an edited interview stage', async () => {
     const { fake, user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('tab', { name: '流程' }));
 
-    expect(screen.getByText('实际日期：2026-07-27')).toBeInTheDocument();
+    expect(await screen.findByText('实际日期：2026-07-27')).toBeInTheDocument();
     expect(screen.getByText('预计日期：2026-08-01')).toBeInTheDocument();
-    expect(screen.getByText('日期仅用于记录流程，不会创建提醒')).toBeInTheDocument();
+    expect(screen.getByText(/不会创建提醒/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '编辑 面试' }));
+    await user.click(screen.getByRole('button', { name: '编辑流程阶段：面试' }));
     const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
     await user.clear(within(editor).getByLabelText('预计日期'));
     await user.type(within(editor).getByLabelText('预计日期'), '2026-08-01');
@@ -252,8 +220,7 @@ describe('positions flow', () => {
 
   it('rejects an empty stage order without silently moving it to the first position', async () => {
     const { fake, user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('tab', { name: '流程' }));
-    await user.click(screen.getByRole('button', { name: '编辑 面试' }));
+    await user.click(await screen.findByRole('button', { name: '编辑流程阶段：面试' }));
     const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
     const order = within(editor).getByRole('spinbutton', { name: /顺序/ });
 
@@ -266,18 +233,17 @@ describe('positions flow', () => {
     expect(fake.positions.saveStage).not.toHaveBeenCalled();
   });
 
-  it('uses a fixed visible edit label instead of repeating the stage name', async () => {
-    const { user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('tab', { name: '流程' }));
+  it('uses the whole stage card as the edit trigger', async () => {
+    renderAt(`#/positions/${positionId}`);
 
-    expect(screen.getByRole('button', { name: '编辑 面试' })).toHaveTextContent(/^编辑$/);
+    expect(await screen.findByRole('button', { name: '编辑流程阶段：面试' }))
+      .toHaveClass('stage-card__content');
   });
 
   it('adds stages, reorders existing stages, and refreshes detail after each mutation', async () => {
     const { fake, user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('tab', { name: '流程' }));
-
-    await user.click(screen.getByRole('button', { name: '新增阶段' }));
+    await user.click(await screen.findByText('更多流程设置'));
+    await user.click(screen.getByRole('button', { name: '新增自定义阶段' }));
     const editor = screen.getByRole('dialog', { name: '新增流程阶段' });
     await user.type(within(editor).getByRole('textbox', { name: /阶段名称/ }), '业务复试');
     await user.selectOptions(within(editor).getByRole('combobox', { name: /标准阶段/ }), 'interview');
@@ -349,5 +315,45 @@ describe('positions flow', () => {
     });
     expect(await screen.findByRole('heading', { name: '岗位详情载入失败' })).toBeInTheDocument();
     expect(screen.queryByText(/SQL secret/)).not.toBeInTheDocument();
+  });
+
+  it('captures and displays a position location on the main path', async () => {
+    const locatedDetail = { ...detail, location: '上海 · 混合办公' };
+    const locatedItem = { ...listItem, location: locatedDetail.location };
+    const { fake, user } = renderAt('#/positions', (api) => {
+      api.positions.list.mockResolvedValue([locatedItem]);
+      api.positions.create.mockResolvedValue(locatedDetail);
+      api.positions.get.mockResolvedValue(locatedDetail);
+    });
+
+    expect(await screen.findByText('上海 · 混合办公')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '录入岗位' }));
+    const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    await user.type(within(dialog).getByRole('textbox', { name: /公司/ }), '远山科技');
+    await user.type(within(dialog).getByRole('textbox', { name: /岗位名称/ }), '产品经理');
+    await user.type(within(dialog).getByRole('textbox', { name: /位置/ }), '上海');
+    await user.type(within(dialog).getByRole('textbox', { name: /原始 JD/ }), '负责产品规划');
+    await user.click(within(dialog).getByRole('button', { name: '保存岗位' }));
+
+    await waitFor(() => expect(fake.positions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ location: '上海' }),
+    ));
+  });
+
+  it('opens a compact single-page workspace with JD, process, preparation and interviews', async () => {
+    renderAt(`#/positions/${positionId}`);
+
+    expect(await screen.findByTestId('raw-jd')).toHaveTextContent('负责产品规划');
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '推进记录' })).toBeInTheDocument();
+    expect(screen.getByText('准备材料')).toBeInTheDocument();
+    expect(screen.getByText('面试记录')).toBeInTheDocument();
+  });
+
+  it('opens stage editing by clicking a stage card', async () => {
+    const { user } = renderAt(`#/positions/${positionId}`);
+
+    await user.click(await screen.findByRole('button', { name: /编辑流程阶段：面试/ }));
+    expect(screen.getByRole('dialog', { name: '编辑流程阶段' })).toBeInTheDocument();
   });
 });

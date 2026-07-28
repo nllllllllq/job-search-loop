@@ -82,7 +82,7 @@ export function PositionsPage() {
             aria-label="搜索岗位"
             maxLength={500}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="公司、岗位或 JD 关键词"
+            placeholder="公司、岗位、位置或 JD 关键词"
             type="search"
             value={query}
           />
@@ -133,7 +133,7 @@ export function PositionsPage() {
           <table className="position-table">
             <thead>
               <tr>
-                <th scope="col">公司 / 岗位</th>
+                <th scope="col">公司 / 岗位 / 位置</th>
                 <th scope="col">兴趣度</th>
                 <th scope="col">当前阶段</th>
                 <th scope="col">最近流程日期</th>
@@ -147,6 +147,9 @@ export function PositionsPage() {
                     <Link to={`/positions/${position.id}`}>
                       <strong>{position.company}</strong>
                       <span>{position.title}</span>
+                      {position.location ? (
+                        <small className="position-location">{position.location}</small>
+                      ) : null}
                     </Link>
                   </th>
                   <td><span className="interest-score">{position.interest}<small>/5</small></span></td>

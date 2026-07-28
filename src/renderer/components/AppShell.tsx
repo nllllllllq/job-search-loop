@@ -56,13 +56,9 @@ export function AppShell({ children }: AppShellProps) {
             <small>FIELD NOTES</small>
           </span>
         </NavLink>
-        <div className="sidebar__rule" aria-hidden="true">
-          <span>07</span>
-          <span>2026</span>
-        </div>
         <nav aria-label="工作区">
           <ul className="navigation-list">
-            {navigation.map(({ code, label, shortLabel, to }, index) => (
+            {navigation.map(({ label, shortLabel, to }) => (
               <li key={to}>
                 <NavLink
                   aria-label={label}
@@ -72,18 +68,12 @@ export function AppShell({ children }: AppShellProps) {
                   end={to === '/'}
                   to={to}
                 >
-                  <span className="navigation-index" aria-hidden="true">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
                   <span className="navigation-label">{label}</span>
                   <span
                     className="navigation-short-label"
                     aria-hidden="true"
                   >
                     {shortLabel}
-                  </span>
-                  <span className="navigation-code" aria-hidden="true">
-                    {code}
                   </span>
                 </NavLink>
               </li>

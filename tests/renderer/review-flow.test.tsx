@@ -154,7 +154,7 @@ describe('interview and review UI', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByRole('tab', { name: '面试记录' }));
+    await screen.findByRole('heading', { level: 4, name: '终面' });
     expect(screen.getAllByRole('heading', { level: 4 }).map((item) => item.textContent))
       .toEqual(['终面', '业务一面']);
     expect(screen.getByText('当前版本仅支持手动输入文字；录音转写将在后续阶段提供。'))
@@ -203,7 +203,7 @@ describe('interview and review UI', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByRole('tab', { name: '面试记录' }));
+    await screen.findByRole('button', { name: '开始 AI 复盘' });
     expect(fake.reviews.review.preview).not.toHaveBeenCalled();
     expect(fake.reviews.review.confirm).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: '开始 AI 复盘' }));
@@ -257,7 +257,7 @@ describe('interview and review UI', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByRole('tab', { name: '面试记录' }));
+    await screen.findByRole('button', { name: '开始 AI 复盘' });
     await user.click(screen.getByRole('button', { name: '开始 AI 复盘' }));
     expect(await screen.findByRole('heading', { name: '选择复盘参考资产' })).toBeInTheDocument();
     const projectCheckbox = screen.getByRole('checkbox', { name: projectAsset.name });
@@ -307,7 +307,7 @@ describe('interview and review UI', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByRole('tab', { name: '面试记录' }));
+    await screen.findByRole('button', { name: '开始 AI 复盘' });
     await user.click(screen.getByRole('button', { name: '开始 AI 复盘' }));
     await user.click(await screen.findByRole('button', { name: '预览发送内容' }));
     await close(user);
@@ -328,7 +328,7 @@ describe('interview and review UI', () => {
     const user = userEvent.setup();
     const view = render(<App />);
 
-    await user.click(await screen.findByRole('tab', { name: '面试记录' }));
+    await screen.findByRole('button', { name: '开始 AI 复盘' });
     await user.click(screen.getByRole('button', { name: '开始 AI 复盘' }));
     await user.click(await screen.findByRole('button', { name: '预览发送内容' }));
     view.unmount();

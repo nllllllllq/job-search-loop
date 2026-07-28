@@ -361,7 +361,17 @@ export function PreparationPanel({
       ) : null}
       {!resource.loading && !resource.error && history.length > 0 ? (
         <div className="preparation-history">
-          {history.map((item) => <PreparationVersion item={item} key={item.id} />)}
+          <PreparationVersion item={history[0]} key={history[0].id} />
+          {history.length > 1 ? (
+            <details className="position-history">
+              <summary>历史准备材料（{history.length - 1}）</summary>
+              <div className="position-history__list">
+                {history.slice(1).map((item) => (
+                  <PreparationVersion item={item} key={item.id} />
+                ))}
+              </div>
+            </details>
+          ) : null}
         </div>
       ) : null}
 

@@ -228,8 +228,13 @@ export function InterviewPanel({ positionId }: InterviewPanelProps) {
         />
       ) : null}
       <div className="interview-list">
-        {interviews.map((item) => (
-          <article className="interview-card" key={item.id}>
+        {interviews.map((item, index) => (
+          <details className="position-history" key={item.id} open={index === 0}>
+            <summary>
+              {index === 0 ? '最新记录' : '历史记录'} · {item.roundName}
+              {item.interviewDate ? ` · ${item.interviewDate}` : ''}
+            </summary>
+            <article className="interview-card">
             <header>
               <div>
                 <p>{item.interviewDate ?? '日期未记录'}</p>
@@ -267,7 +272,8 @@ export function InterviewPanel({ positionId }: InterviewPanelProps) {
             {item.feedbackResult ? (
               <section><h5>后续结果 / 反馈</h5><p className="user-text">{item.feedbackResult}</p></section>
             ) : null}
-          </article>
+            </article>
+          </details>
         ))}
       </div>
 

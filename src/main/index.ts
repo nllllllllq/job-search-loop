@@ -31,8 +31,8 @@ function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 980,
-    minHeight: 680,
+    minWidth: 1024,
+    minHeight: 700,
     backgroundColor: '#f7f4ed',
     title: '求职闭环',
     webPreferences: {

@@ -158,8 +158,8 @@ function renderPreparation(
   return { fake, user: userEvent.setup(), ...render(<App />) };
 }
 
-async function openPreparationTab(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole('tab', { name: '准备材料' }));
+async function openPreparationTab(_user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByRole('heading', { name: '准备材料' });
 }
 
 describe('preparation flow', () => {
@@ -168,7 +168,7 @@ describe('preparation flow', () => {
     expect(fake.preparations.list).not.toHaveBeenCalled();
     await openPreparationTab(user);
     expect(fake.preparations.generate).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: '生成准备材料' }));
+    await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
     const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
     expect(within(dialog).getByRole('checkbox', { name: /项目：增长实验/ }))
       .not.toBeChecked();
@@ -186,7 +186,7 @@ describe('preparation flow', () => {
         .mockResolvedValueOnce([preparation]);
     });
     await openPreparationTab(user);
-    await user.click(screen.getByRole('button', { name: '生成准备材料' }));
+    await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
     const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
     await user.click(within(dialog).getByRole('checkbox', { name: /项目：增长实验/ }));
     await user.click(within(dialog).getByRole('checkbox', { name: /问题：如何设计用户研究/ }));
@@ -266,7 +266,7 @@ describe('preparation flow', () => {
       api.preparations.preview.mockReturnValue(pending);
     });
     await openPreparationTab(user);
-    await user.click(screen.getByRole('button', { name: '生成准备材料' }));
+    await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
     const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
     const projectCheckbox = within(dialog).getByRole('checkbox', { name: /项目：增长实验/ });
     await user.click(projectCheckbox);
@@ -286,7 +286,7 @@ describe('preparation flow', () => {
       api.preparations.generate.mockResolvedValue(preparation);
     });
     await openPreparationTab(user);
-    await user.click(screen.getByRole('button', { name: '生成准备材料' }));
+    await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
     const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
     const projectCheckbox = within(dialog).getByRole('checkbox', { name: /项目：增长实验/ });
     const questionCheckbox = within(dialog).getByRole('checkbox', { name: /问题：如何设计用户研究/ });
@@ -325,7 +325,7 @@ describe('preparation flow', () => {
       });
     });
     await openPreparationTab(user);
-    await user.click(screen.getByRole('button', { name: '生成准备材料' }));
+    await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
     const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
 
     expect(within(dialog).getByText(/外部 AI 配置尚未完成/)).toBeInTheDocument();
@@ -349,7 +349,7 @@ describe('preparation flow', () => {
         .mockResolvedValueOnce([preparation]);
     });
     await openPreparationTab(user);
-    await user.click(screen.getByRole('button', { name: '生成准备材料' }));
+    await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
     const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
     await user.click(within(dialog).getByRole('checkbox', { name: /项目：增长实验/ }));
     await user.click(within(dialog).getByRole('button', { name: '查看发送摘要' }));

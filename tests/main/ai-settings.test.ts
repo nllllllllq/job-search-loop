@@ -1,0 +1,346 @@
+// @vitest-environment node
+
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CHANNELS } from '../../src/shared/ipc';
+import {
+  createAiSettingsStore,
+  type AiSettingsDependencies,
+  type AiSettingsStore,
+} from '../../src/main/services/ai-settings';
+import { registerAiHandlers } from '../../src/main/ipc/ai';
+
+const temporaryDirectories: string[] = [];
+
+function settingsFixture(
+  overrides: Partial<Pick<AiSettingsDependencies, 'decrypt' | 'encrypt'>> = {},
+): {
+  directory: string;
+  settingsPath: string;
+  store: AiSettingsStore;
+} {
+  const directory = mkdtempSync(join(tmpdir(), 'job-loop-ai-settings-'));
+  temporaryDirectories.push(directory);
+  const settingsPath = join(directory, 'ai-settings.json');
+  const store = createAiSettingsStore({
+    encrypt: overrides.encrypt
+      ?? (async (value) => Buffer.from(`cipher:${Buffer.from(value).toString('base64')}`)),
+    decrypt: overrides.decrypt ?? (async (value) => Buffer.from(
+      value.toString().replace('cipher:', ''),
+      'base64',
+    ).toString()),
+    settingsPath,
+  });
+  return { directory, settingsPath, store };
+}
+
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+describe('encrypted AI settings', () => {
+  it('stores only encrypted key bytes and never returns the key publicly', async () => {
+    const { settingsPath, store } = settingsFixture();
+
+    await store.save({
+      baseUrl: 'https://api.example.com/v1/',
+      model: 'model-a',
+      apiKey: 'sk-plain-secret',
+    });
+
+    const stored = readFileSync(settingsPath, 'utf8');
+    expect(stored).not.toContain('sk-plain-secret');
+    expect(JSON.parse(stored)).toMatchObject({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+    });
+    expect(JSON.parse(stored).encryptedApiKey).toEqual(expect.any(String));
+    expect(await store.getPublic()).toEqual({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      hasApiKey: true,
+    });
+    expect(await store.getPublic()).not.toHaveProperty('apiKey');
+  });
+
+  it('replaces a key when provided and keeps it when replacement is blank', async () => {
+    const { store } = settingsFixture();
+    await store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      apiKey: 'first-key',
+    });
+    await store.save({
+      baseUrl: 'https://api.example.com/v2/',
+      model: 'model-b',
+      apiKey: '',
+    });
+    expect(await store.getPrivate()).toEqual({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-b',
+      apiKey: 'first-key',
+    });
+
+    await store.save({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-b',
+      apiKey: 'second-key',
+    });
+    expect((await store.getPrivate()).apiKey).toBe('second-key');
+  });
+
+  it('keeps the old key only when the normalized provider origin is unchanged', async () => {
+    const { store } = settingsFixture();
+    await store.save({
+      baseUrl: 'https://API.EXAMPLE.com:443/v1',
+      model: 'model-a',
+      apiKey: 'origin-key',
+    });
+
+    await store.save({
+      baseUrl: 'https://api.example.COM/v2/',
+      model: 'model-b',
+      apiKey: '',
+    });
+    expect(await store.getPrivate()).toEqual({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-b',
+      apiKey: 'origin-key',
+    });
+  });
+
+  it.each([
+    'https://other.example.com/v1',
+    'https://api.example.com:8443/v1',
+    'http://localhost:3000/v1',
+  ])('requires a replacement key when provider origin changes to %s', async (baseUrl) => {
+    const { store } = settingsFixture();
+    await store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      apiKey: 'old-origin-key',
+    });
+
+    await expect(store.save({
+      baseUrl,
+      model: 'model-b',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_NOT_CONFIGURED' });
+    expect(await store.getPrivate()).toEqual({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      apiKey: 'old-origin-key',
+    });
+  });
+
+  it('requires a replacement key when only the provider protocol changes', async () => {
+    const { store } = settingsFixture();
+    await store.save({
+      baseUrl: 'http://localhost:3000/v1',
+      model: 'model-a',
+      apiKey: 'http-origin-key',
+    });
+
+    await expect(store.save({
+      baseUrl: 'https://localhost:3000/v1',
+      model: 'model-b',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_NOT_CONFIGURED' });
+    expect(await store.getPrivate()).toEqual({
+      baseUrl: 'http://localhost:3000/v1',
+      model: 'model-a',
+      apiKey: 'http-origin-key',
+    });
+  });
+
+  it('reports an unconfigured state without creating a settings file', async () => {
+    const { store } = settingsFixture();
+    expect(await store.getPublic()).toEqual({
+      baseUrl: '',
+      model: '',
+      hasApiKey: false,
+    });
+    await expect(store.getPrivate()).rejects.toMatchObject({
+      code: 'AI_NOT_CONFIGURED',
+    });
+  });
+
+  it.each([
+    'not-a-url',
+    'ftp://api.example.com/v1',
+    'file:///tmp/provider',
+    'https://api.example.com/v1?token=secret',
+    'https://user:pass@api.example.com/v1',
+  ])('rejects unsupported endpoint %s', async (baseUrl) => {
+    const { store } = settingsFixture();
+    await expect(store.save({
+      baseUrl,
+      model: 'model-a',
+      apiKey: 'secret',
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
+  it('rejects blank models and a first save without a key', async () => {
+    const { store } = settingsFixture();
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: '   ',
+      apiKey: 'secret',
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_NOT_CONFIGURED' });
+  });
+
+  it('fails closed with a stable error when the settings file is damaged', async () => {
+    const { settingsPath, store } = settingsFixture();
+    writeFileSync(settingsPath, '{"baseUrl":"https://api.example.com"');
+
+    await expect(store.getPublic()).rejects.toMatchObject({
+      code: 'AI_SETTINGS_CORRUPT',
+    });
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_SETTINGS_CORRUPT' });
+
+    writeFileSync(settingsPath, JSON.stringify({
+      version: 1,
+      baseUrl: 'javascript:alert(1)',
+      model: 'model-a',
+      encryptedApiKey: 'Y2lwaGVy',
+    }));
+    await expect(store.getPublic()).rejects.toMatchObject({
+      code: 'AI_SETTINGS_CORRUPT',
+    });
+  });
+
+  it('recovers a damaged settings file only with a complete new configuration and key', async () => {
+    const { settingsPath, store } = settingsFixture();
+    const damaged = '{"encryptedApiKey":"untrusted-secret"';
+    writeFileSync(settingsPath, damaged);
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_SETTINGS_CORRUPT' });
+    expect(readFileSync(settingsPath, 'utf8')).toBe(damaged);
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      apiKey: 'brand-new-key',
+    })).resolves.toEqual({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      hasApiKey: true,
+    });
+    expect(readFileSync(settingsPath, 'utf8')).not.toContain('brand-new-key');
+    expect(readFileSync(settingsPath, 'utf8')).not.toContain('untrusted-secret');
+    expect(await store.getPrivate()).toEqual({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      apiKey: 'brand-new-key',
+    });
+  });
+
+  it('never reuses stored key bytes that cannot be decrypted', async () => {
+    const decrypt = vi.fn(async () => {
+      throw new Error('keychain entry is unavailable');
+    });
+    const { settingsPath, store } = settingsFixture({ decrypt });
+    writeFileSync(settingsPath, JSON.stringify({
+      version: 1,
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-old',
+      encryptedApiKey: Buffer.from('unreadable-ciphertext').toString('base64'),
+    }));
+    const damaged = readFileSync(settingsPath, 'utf8');
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-new',
+      apiKey: '',
+    })).rejects.toMatchObject({ code: 'AI_SETTINGS_UNAVAILABLE' });
+    expect(decrypt).toHaveBeenCalledOnce();
+    expect(readFileSync(settingsPath, 'utf8')).toBe(damaged);
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-new',
+      apiKey: 'replacement-key',
+    })).resolves.toMatchObject({
+      baseUrl: 'https://api.example.com/v2',
+      model: 'model-new',
+      hasApiKey: true,
+    });
+  });
+
+  it('does not treat filesystem read failures as recoverable content damage', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'job-loop-ai-settings-read-error-'));
+    temporaryDirectories.push(directory);
+    const settingsPath = join(directory, 'settings-directory');
+    mkdirSync(settingsPath);
+    const encrypt = vi.fn(async (value: string) => Buffer.from(value));
+    const store = createAiSettingsStore({
+      encrypt,
+      decrypt: async (value) => value.toString(),
+      settingsPath,
+    });
+
+    await expect(store.save({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-new',
+      apiKey: 'replacement-key',
+    })).rejects.toMatchObject({ code: 'AI_SETTINGS_UNAVAILABLE' });
+    expect(encrypt).not.toHaveBeenCalled();
+    expect(statSync(settingsPath).isDirectory()).toBe(true);
+  });
+
+  it('validates AI IPC requests before calling services', async () => {
+    const handlers = new Map<
+      string,
+      (event: unknown, payload?: unknown) => unknown | Promise<unknown>
+    >();
+    const settings = {
+      getPublic: vi.fn(),
+      save: vi.fn(),
+      getPrivate: vi.fn(),
+    };
+    const client = { testConnection: vi.fn() };
+    registerAiHandlers(
+      { handle: (channel, handler) => handlers.set(channel, handler) },
+      settings,
+      client,
+    );
+
+    await expect(
+      handlers.get(CHANNELS.ai.settings.save)!({}, {
+        baseUrl: 'javascript:alert(1)',
+        model: '',
+        apiKey: 4,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(settings.save).not.toHaveBeenCalled();
+
+    await expect(
+      handlers.get(CHANNELS.ai.testConnection)!({}, { url: 'https://evil.example' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(client.testConnection).not.toHaveBeenCalled();
+  });
+});

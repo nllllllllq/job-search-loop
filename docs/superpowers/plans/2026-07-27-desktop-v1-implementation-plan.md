@@ -922,6 +922,24 @@ git commit -m "feat: add encrypted external AI configuration"
 
 ## Task 8: Generate versioned preparation materials on demand
 
+### 用户确认补充：四层岗位准备框架（2026-07-27）
+
+本补充不改变既有任务状态，只扩展 Task 8 的输出契约与兼容要求。
+
+- 默认“岗位准备” Prompt 加入 `Map Competencies`、`Company Map`、`Dream Candidate Avatar`、`Action Guide` 四层框架；分析使用中文并保留 English terms。
+- `competencyMap` 必须是按关键词频率、位置和强调程度排序的 Top 5，rank 唯一且依次为 1—5。
+- `companyMap.stage` 严格限制为 `Startup | Turnaround | Realignment | Sustaining Success | Crisis`。
+- `dreamCandidateAvatar` 包含 `Typical Day` 时间线、`Superpower`、`Success Story`、`Quote`、`Pain Profile`。
+- `Typical Day` 是任务时间线；`Superpower` 用简单语言说明如何解决 JD 最大痛点；`Success Story` 是使用该能力的成功故事；`Quote` 体现信念体系；`Pain Profile` 说明岗位为何存在及候选人如何解决。
+- `actionGuide` 包含自我介绍 tagline、文化匹配表达和恰好 3 个定制收尾问题。
+- 新 AI 结果必须保留原六字段并完整包含四组新字段；旧六字段快照作为 legacy 继续可读并明确标注。
+- 更新后的默认 Prompt 只应用于新安装或缺失默认值的初始化；绝不覆盖用户已经保存的自定义 Prompt。
+- 生成确认页仍明确展示“当前岗位准备 Prompt 的完整内容将发送”；主进程在确认后读取最新 Prompt，并将同一份原文写入不可变快照。
+- 单条损坏历史记录必须被隔离；岗位详情、列表和其他有效版本继续可用。
+- 发送确认使用 main 提供的只读 preview IPC：按与生成服务相同的装配和 canonical 序列化路径返回 exact Prompt、完整岗位/JD、完整所选项目/问题及实际岗位数据 JSON。共享严格 schema 规范对象 key order，保留数组顺序和 Unicode，并拒绝篡改 JSON。preview 不调用 AI、不落库，renderer 不能传入 Prompt；内容默认折叠并以安全文本显示。preview pending 时锁定选择，最终 generate 使用 preview 时捕获的 ID 快照；返回修改选择会丢弃旧 preview。生成时仍重读当前数据，UI 明确提示变更后需重新预览。
+
+RED 记录：先增加默认 Prompt、严格输出约束、服务请求契约、四组 UI、legacy 兼容、隐私确认与损坏快照隔离测试；初次运行因实现尚无新字段与新界面而按预期失败，再进入实现。
+
 **Files:**
 - Create: `src/main/services/preparation.ts`
 - Modify: `src/main/repositories/preparations.ts`
@@ -968,8 +986,33 @@ The output schema must contain:
   likelyQuestions: Array<{ question: string; answerOutline: string }>;
   candidateQuestions: string[];
   riskNotes: string[];
+  competencyMap: Array<{
+    rank: 1 | 2 | 3 | 4 | 5;
+    name: string;
+    evidence: string;
+  }>; // exactly five, ordered 1..5
+  companyMap: {
+    stage: 'Startup' | 'Turnaround' | 'Realignment' | 'Sustaining Success' | 'Crisis';
+    summary: string;
+    priorities: string[];
+    culture: string[];
+  };
+  dreamCandidateAvatar: {
+    typicalDay: Array<{ time: string; activity: string; purpose: string }>;
+    superpower: string;
+    successStory: string;
+    quote: string;
+    painProfile: string;
+  };
+  actionGuide: {
+    selfIntroTagline: string;
+    cultureFitPhrase: string;
+    questions: [string, string, string];
+  };
 }
 ```
+
+Historical reads additionally accept the original strict six-field shape as a labeled legacy version. New generation and persistence accept only the complete shape above.
 
 - [ ] **Step 3: Implement prompt assembly and immutable persistence**
 

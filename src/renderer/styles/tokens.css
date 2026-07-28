@@ -1,0 +1,43 @@
+:root {
+  color-scheme: light;
+
+  --ink: #172238;
+  --ink-strong: #0d172b;
+  --muted: #5c6270;
+  --surface: #fffdf7;
+  --surface-raised: #fffaf0;
+  --canvas: #f2eee4;
+  --line: #cfc8b9;
+  --line-strong: #9e9a91;
+  --primary: #2457a5;
+  --primary-hover: #173f7f;
+  --primary-soft: #e1e9f6;
+  --accent: #bd4935;
+  --accent-soft: #f3ded8;
+  --success: #287355;
+  --success-soft: #deeee6;
+  --warning: #704600;
+  --warning-soft: #f4e8cb;
+  --danger: #a73931;
+  --danger-soft: #f5ddda;
+
+  --radius: 3px;
+  --radius-large: 7px;
+  --shadow: 0 18px 45px rgba(13, 23, 43, 0.1);
+  --focus-ring: 0 0 0 3px rgba(36, 87, 165, 0.32);
+  --focus-on-dark: #f6d27f;
+
+  --font-display: "Songti SC", "STSong", "Noto Serif CJK SC", SimSun, serif;
+  --font-body: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC",
+    sans-serif;
+  --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+}

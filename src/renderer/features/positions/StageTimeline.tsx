@@ -62,10 +62,15 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
         {sortedStages.map((stage, index) => {
           const state = getNodeState(stage);
           const date = stage.actualDate ?? stage.expectedDate;
+          const accessibleStatus = stage.actualDate
+            ? `已记录实际日期 ${stage.actualDate}`
+            : stage.expectedDate
+              ? `仅预计日期 ${stage.expectedDate}`
+              : '未记录日期';
           return (
             <li className="stage-flow__item" key={stage.id}>
               <button
-                aria-label={`编辑流程阶段：${stage.name}`}
+                aria-label={`编辑流程阶段：${stage.name}，${accessibleStatus}`}
                 className={`stage-node stage-node--${state}`}
                 data-state={state}
                 onClick={() => setEditing({ ...stage, orderIndex: index })}

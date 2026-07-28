@@ -146,6 +146,7 @@ export function StageEditor({
 
   return (
     <Modal
+      closeDisabled={busy}
       footer={
         confirmingDelete ? (
           <>

@@ -204,11 +204,15 @@ describe('positions flow', () => {
       api.positions.get.mockResolvedValue({ ...detail, stages: [...stages, emptyStage] });
     });
 
-    const actualNode = await screen.findByRole('button', { name: '编辑流程阶段：已投递' });
-    const expectedNode = screen.getByRole('button', { name: '编辑流程阶段：面试' });
+    const actualNode = await screen.findByRole('button', {
+      name: '编辑流程阶段：已投递，已记录实际日期 2026-07-27',
+    });
+    const expectedNode = screen.getByRole('button', {
+      name: '编辑流程阶段：面试，仅预计日期 2026-08-01',
+    });
     expect(actualNode).toHaveAttribute('data-state', 'actual');
     expect(expectedNode).toHaveAttribute('data-state', 'expected');
-    expect(screen.getByRole('button', { name: '编辑流程阶段：终面' }))
+    expect(screen.getByRole('button', { name: '编辑流程阶段：终面，未记录日期' }))
       .toHaveAttribute('data-state', 'empty');
     expect(screen.getByRole('button', { name: '新增流程阶段' })).toHaveAttribute('data-state', 'add');
     expect(screen.queryByText('已确认收到')).not.toBeInTheDocument();
@@ -240,7 +244,7 @@ describe('positions flow', () => {
 
   it('rejects an empty display order without silently moving it to the first position', async () => {
     const { fake, user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('button', { name: '编辑流程阶段：面试' }));
+    await user.click(await screen.findByRole('button', { name: /编辑流程阶段：面试/ }));
     const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
     const order = within(editor).getByRole('spinbutton', { name: /显示顺序/ });
 
@@ -256,7 +260,7 @@ describe('positions flow', () => {
   it('uses the whole stage node as the edit trigger', async () => {
     renderAt(`#/positions/${positionId}`);
 
-    expect(await screen.findByRole('button', { name: '编辑流程阶段：面试' }))
+    expect(await screen.findByRole('button', { name: /编辑流程阶段：面试/ }))
       .toHaveClass('stage-node');
   });
 
@@ -283,8 +287,13 @@ describe('positions flow', () => {
   });
 
   it('requires inline confirmation before permanently deleting a stage', async () => {
-    const { fake, user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('button', { name: '编辑流程阶段：面试' }));
+    let resolveRemoval: (value: ProcessStage[]) => void = () => undefined;
+    const { fake, user } = renderAt(`#/positions/${positionId}`, (api) => {
+      api.positions.removeStage.mockImplementation(() => new Promise((resolve) => {
+        resolveRemoval = resolve;
+      }));
+    });
+    await user.click(await screen.findByRole('button', { name: /编辑流程阶段：面试/ }));
     const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
 
     await user.click(within(editor).getByRole('button', { name: '删除节点' }));
@@ -297,7 +306,9 @@ describe('positions flow', () => {
       positionId,
       interviewStageId,
     ));
-    expect(fake.positions.get).toHaveBeenCalledTimes(2);
+    expect(within(editor).getByRole('button', { name: '关闭对话框' })).toBeDisabled();
+    resolveRemoval([]);
+    await waitFor(() => expect(fake.positions.get).toHaveBeenCalledTimes(2));
   });
 
   it('shows only the add node when a position has no stages', async () => {

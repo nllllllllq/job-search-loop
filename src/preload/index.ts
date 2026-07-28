@@ -128,6 +128,10 @@ const api = frozen<JobSearchApi>({
       CHANNELS.positions.reorderStages,
       { positionId, orderedIds },
     ),
+    removeStage: (positionId, stageId) => invoke(
+      CHANNELS.positions.removeStage,
+      { positionId, stageId },
+    ),
   }),
   preparations: frozen<JobSearchApi['preparations']>({
     list: async (positionId) => preparationMaterialListSchema.parse(

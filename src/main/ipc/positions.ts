@@ -7,6 +7,7 @@ import {
   positionUpdateSchema,
   processStageSaveSchema,
   reorderStagesSchema,
+  removeStageSchema,
   preparationMaterialListSchema,
   preparationOutboundPreviewSchema,
   preparationReadableMaterialSchema,
@@ -42,6 +43,10 @@ export function registerPositionHandlers(
   ipcMain.handle(CHANNELS.positions.reorderStages, safeIpcHandler((_event, payload) => {
     const parsed = reorderStagesSchema.parse(payload);
     return positions.reorderStages(parsed.positionId, parsed.orderedIds);
+  }));
+  ipcMain.handle(CHANNELS.positions.removeStage, safeIpcHandler((_event, payload) => {
+    const parsed = removeStageSchema.parse(payload);
+    return positions.removeStage(parsed.positionId, parsed.stageId);
   }));
 }
 

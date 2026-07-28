@@ -182,24 +182,44 @@ describe('positions flow', () => {
     renderAt(`#/positions/${positionId}`);
 
     expect(await screen.findByRole('heading', { name: '远山科技' })).toBeInTheDocument();
+    const process = screen.getByRole('region', { name: '岗位流程' });
     const rawJd = screen.getByTestId('raw-jd');
+    expect(process.compareDocumentPosition(rawJd) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(rawJd).toHaveTextContent('负责产品规划 与用户研究 <script>alert(1)</script>');
     expect(rawJd).toHaveStyle({ whiteSpace: 'pre-wrap' });
     expect(document.querySelector('.raw-jd script')).toBeNull();
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
-  it('labels expected and actual dates explicitly and saves an edited interview stage', async () => {
-    const { fake, user } = renderAt(`#/positions/${positionId}`);
+  it('shows the three compact node states and saves an edited interview stage', async () => {
+    const emptyStage: ProcessStage = {
+      ...stages[0],
+      id: '41281f0a-7d48-4c25-a41c-f3a765a7cb58',
+      name: '终面',
+      actualDate: null,
+      expectedDate: null,
+      orderIndex: 3,
+    };
+    const { fake, user } = renderAt(`#/positions/${positionId}`, (api) => {
+      api.positions.get.mockResolvedValue({ ...detail, stages: [...stages, emptyStage] });
+    });
 
-    expect(await screen.findByText('实际日期：2026-07-27')).toBeInTheDocument();
-    expect(screen.getByText('预计日期：2026-08-01')).toBeInTheDocument();
-    expect(screen.getByText(/不会创建提醒/)).toBeInTheDocument();
+    const actualNode = await screen.findByRole('button', { name: '编辑流程阶段：已投递' });
+    const expectedNode = screen.getByRole('button', { name: '编辑流程阶段：面试' });
+    expect(actualNode).toHaveAttribute('data-state', 'actual');
+    expect(expectedNode).toHaveAttribute('data-state', 'expected');
+    expect(screen.getByRole('button', { name: '编辑流程阶段：终面' }))
+      .toHaveAttribute('data-state', 'empty');
+    expect(screen.getByRole('button', { name: '新增流程阶段' })).toHaveAttribute('data-state', 'add');
+    expect(screen.queryByText('已确认收到')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '编辑流程阶段：面试' }));
+    await user.click(expectedNode);
     const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
     await user.clear(within(editor).getByLabelText('预计日期'));
     await user.type(within(editor).getByLabelText('预计日期'), '2026-08-01');
+    const order = within(editor).getByRole('spinbutton', { name: /显示顺序/ });
+    await user.clear(order);
+    await user.type(order, '1');
     await user.click(within(editor).getByRole('button', { name: '保存阶段' }));
 
     await waitFor(() => {
@@ -212,38 +232,37 @@ describe('positions flow', () => {
         expectedDate: '2026-08-01',
         feedback: '',
         notes: '',
-        orderIndex: 2,
+        orderIndex: 0,
       });
     });
     expect(fake.positions.get).toHaveBeenCalledTimes(2);
   });
 
-  it('rejects an empty stage order without silently moving it to the first position', async () => {
+  it('rejects an empty display order without silently moving it to the first position', async () => {
     const { fake, user } = renderAt(`#/positions/${positionId}`);
     await user.click(await screen.findByRole('button', { name: '编辑流程阶段：面试' }));
     const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
-    const order = within(editor).getByRole('spinbutton', { name: /顺序/ });
+    const order = within(editor).getByRole('spinbutton', { name: /显示顺序/ });
 
     expect(order).toBeRequired();
     await user.clear(order);
     await user.click(within(editor).getByRole('button', { name: '保存阶段' }));
 
-    expect(await within(editor).findByText('请输入非负整数')).toBeInTheDocument();
+    expect(await within(editor).findByText('请输入有效的显示顺序')).toBeInTheDocument();
     expect(order).toHaveValue(null);
     expect(fake.positions.saveStage).not.toHaveBeenCalled();
   });
 
-  it('uses the whole stage card as the edit trigger', async () => {
+  it('uses the whole stage node as the edit trigger', async () => {
     renderAt(`#/positions/${positionId}`);
 
     expect(await screen.findByRole('button', { name: '编辑流程阶段：面试' }))
-      .toHaveClass('stage-card__content');
+      .toHaveClass('stage-node');
   });
 
-  it('adds stages, reorders existing stages, and refreshes detail after each mutation', async () => {
+  it('adds stages from the plus node and uses a 1-based display order', async () => {
     const { fake, user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByText('更多流程设置'));
-    await user.click(screen.getByRole('button', { name: '新增自定义阶段' }));
+    await user.click(await screen.findByRole('button', { name: '新增流程阶段' }));
     const editor = screen.getByRole('dialog', { name: '新增流程阶段' });
     await user.type(within(editor).getByRole('textbox', { name: /阶段名称/ }), '业务复试');
     await user.selectOptions(within(editor).getByRole('combobox', { name: /标准阶段/ }), 'interview');
@@ -257,15 +276,37 @@ describe('positions flow', () => {
       expectedDate: null,
       feedback: '',
       notes: '',
-      orderIndex: 3,
+      orderIndex: 2,
+    });
+    expect(screen.queryByText('更多流程设置')).not.toBeInTheDocument();
+    await waitFor(() => expect(fake.positions.get).toHaveBeenCalledTimes(2));
+  });
+
+  it('requires inline confirmation before permanently deleting a stage', async () => {
+    const { fake, user } = renderAt(`#/positions/${positionId}`);
+    await user.click(await screen.findByRole('button', { name: '编辑流程阶段：面试' }));
+    const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
+
+    await user.click(within(editor).getByRole('button', { name: '删除节点' }));
+    expect(fake.positions.removeStage).not.toHaveBeenCalled();
+    expect(within(editor).getByText(/日期、反馈和备注/)).toBeInTheDocument();
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    await user.click(within(editor).getByRole('button', { name: '永久删除节点' }));
+
+    await waitFor(() => expect(fake.positions.removeStage).toHaveBeenCalledWith(
+      positionId,
+      interviewStageId,
+    ));
+    expect(fake.positions.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows only the add node when a position has no stages', async () => {
+    renderAt(`#/positions/${positionId}`, (api) => {
+      api.positions.get.mockResolvedValue({ ...detail, currentStage: null, stages: [] });
     });
 
-    await user.click(screen.getByRole('button', { name: '上移 面试' }));
-    expect(fake.positions.reorderStages).toHaveBeenCalledWith(positionId, [
-      interviewStageId,
-      appliedStageId,
-    ]);
-    await waitFor(() => expect(fake.positions.get).toHaveBeenCalledTimes(3));
+    expect(await screen.findByRole('button', { name: '新增流程阶段' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /编辑流程阶段/ })).not.toBeInTheDocument();
   });
 
   it('edits a position without losing values when the API fails', async () => {

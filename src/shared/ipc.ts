@@ -62,6 +62,7 @@ export const CHANNELS = {
     remove: 'positions:remove',
     saveStage: 'positions:save-stage',
     reorderStages: 'positions:reorder-stages',
+    removeStage: 'positions:remove-stage',
   },
   preparations: {
     list: 'preparations:list',
@@ -179,6 +180,7 @@ export interface JobSearchApi {
     remove(id: string): Promise<void>;
     saveStage(input: ProcessStageInput & { id?: string }): Promise<ProcessStage>;
     reorderStages(positionId: string, orderedIds: string[]): Promise<ProcessStage[]>;
+    removeStage(positionId: string, stageId: string): Promise<ProcessStage[]>;
   };
   readonly preparations: {
     list(positionId: string): Promise<PreparationMaterial[]>;

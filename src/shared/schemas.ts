@@ -274,6 +274,11 @@ export const reorderStagesSchema = z.object({
   orderedIds: z.array(idSchema),
 });
 
+export const removeStageSchema = z.object({
+  positionId: idSchema,
+  stageId: idSchema,
+}).strict();
+
 const preparationStoredFieldsSchema = z.object({
   positionId: idSchema,
   rawJdSnapshot: z.string().max(100_000),

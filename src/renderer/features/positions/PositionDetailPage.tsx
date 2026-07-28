@@ -130,6 +130,14 @@ export function PositionDetailPage() {
         </div>
       </header>
 
+      <section className="position-workspace-section" aria-label="岗位流程">
+        <StageTimeline
+          onRefresh={resource.reload}
+          positionId={position.id}
+          stages={position.stages}
+        />
+      </section>
+
       <section className="position-workspace-section position-workspace-section--jd" aria-labelledby="jd-title">
         <header className="position-workspace-section__header">
           <h3 id="jd-title">JD</h3>
@@ -138,14 +146,6 @@ export function PositionDetailPage() {
         <article className="raw-jd" data-testid="raw-jd" style={{ whiteSpace: 'pre-wrap' }}>
           {position.rawJd}
         </article>
-      </section>
-
-      <section className="position-workspace-section" aria-label="岗位流程">
-        <StageTimeline
-          onRefresh={resource.reload}
-          positionId={position.id}
-          stages={position.stages}
-        />
       </section>
 
       <section className="position-workspace-section" aria-labelledby="preparation-title">

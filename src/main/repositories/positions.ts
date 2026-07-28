@@ -82,6 +82,7 @@ export interface PositionsRepository {
   listStages(positionId: string): ProcessStage[];
   upsertStage(input: ProcessStageInput & { id?: string }): ProcessStage;
   reorderStages(positionId: string, orderedIds: string[]): ProcessStage[];
+  removeStage(positionId: string, stageId: string): ProcessStage[];
 }
 
 export function createPositionsRepository(db: DatabaseSync): PositionsRepository {
@@ -326,6 +327,28 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
         orderedIds,
         new Date().toISOString(),
       ));
+    },
+
+    removeStage(positionId, stageId) {
+      return transaction(db, () => {
+        get(positionId);
+        const existing = db.prepare(`
+          SELECT id FROM process_stages WHERE id = ? AND position_id = ?
+        `).get(stageId, positionId);
+        if (existing === undefined) notFound('Process stage', stageId);
+
+        db.prepare('DELETE FROM process_stages WHERE id = ? AND position_id = ?')
+          .run(stageId, positionId);
+        const orderedIds = db.prepare(`
+          SELECT id FROM process_stages
+          WHERE position_id = ? ORDER BY order_index, created_at, id
+        `).all(positionId).map((value) => text(row(value, 'process stage').id, 'id'));
+        return reorderInsideTransaction(
+          positionId,
+          orderedIds,
+          new Date().toISOString(),
+        );
+      });
     },
   };
 }

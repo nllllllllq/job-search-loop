@@ -70,4 +70,40 @@ describe('positions repository', () => {
       db.close();
     }
   });
+
+  it('removes a stage, compacts the order, refreshes the current stage, and allows an empty flow', () => {
+    const db = createTestDatabase();
+
+    try {
+      const positions = createPositionsRepository(db);
+      const created = positions.create({
+        company: '远山科技',
+        title: '产品经理',
+        interest: 5,
+        rawJd: '负责产品规划',
+      });
+      const original = positions.listStages(created.id);
+      const applied = original.find((stage) => stage.canonicalStage === 'applied');
+      if (!applied) throw new Error('missing applied stage');
+
+      positions.upsertStage({
+        ...applied,
+        actualDate: '2026-07-27',
+      });
+      expect(positions.get(created.id).currentStage).toBe('applied');
+
+      const remaining = positions.removeStage(created.id, applied.id);
+      expect(remaining.map((stage) => stage.orderIndex)).toEqual([0, 1, 2, 3]);
+      expect(remaining.some((stage) => stage.id === applied.id)).toBe(false);
+      expect(positions.get(created.id).currentStage).toBe('interested');
+
+      for (const stage of remaining) {
+        positions.removeStage(created.id, stage.id);
+      }
+      expect(positions.listStages(created.id)).toEqual([]);
+      expect(positions.get(created.id).currentStage).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
 });

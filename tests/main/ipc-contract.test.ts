@@ -96,6 +96,7 @@ describe('typed IPC contract', () => {
       listStages: vi.fn(),
       upsertStage: vi.fn(),
       reorderStages: vi.fn(),
+      removeStage: vi.fn(),
     };
     registerPositionHandlers(ipcMain, positions);
 
@@ -155,6 +156,7 @@ describe('typed IPC contract', () => {
       listStages: vi.fn(),
       upsertStage: vi.fn(),
       reorderStages: vi.fn(),
+      removeStage: vi.fn(),
     };
     const repositories = {
       positions,
@@ -234,6 +236,7 @@ describe('typed IPC contract', () => {
       reorderStages: vi.fn(() => {
         throw new RepositoryError('VALIDATION_ERROR', '流程阶段顺序无效');
       }),
+      removeStage: vi.fn(),
     };
     registerPositionHandlers(ipcMain, positions);
     const interviews = {
@@ -281,5 +284,39 @@ describe('typed IPC contract', () => {
         && error.message.includes('建议已处理')
       ),
     );
+  });
+
+  it('validates and forwards the narrow stage removal payload', async () => {
+    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+    const ipcMain = {
+      handle: (channel: string, handler: (event: unknown, payload: unknown) => unknown) => {
+        handlers.set(channel, handler);
+      },
+    };
+    const positions = {
+      create: vi.fn(),
+      update: vi.fn(),
+      get: vi.fn(),
+      getDetail: vi.fn(),
+      list: vi.fn(),
+      remove: vi.fn(),
+      listStages: vi.fn(),
+      upsertStage: vi.fn(),
+      reorderStages: vi.fn(),
+      removeStage: vi.fn().mockReturnValue([]),
+    };
+    registerPositionHandlers(ipcMain, positions);
+    const positionId = '4c10d827-2684-4bf0-9131-dd18b7ce8075';
+    const stageId = '516b2bb0-2a31-4a1f-8dc7-b4f3e049f1d0';
+
+    await expect(handlers.get(CHANNELS.positions.removeStage)!({}, {
+      positionId,
+      stageId,
+    })).resolves.toEqual([]);
+    expect(positions.removeStage).toHaveBeenCalledWith(positionId, stageId);
+    await expect(handlers.get(CHANNELS.positions.removeStage)!({}, {
+      positionId: 'not-an-id',
+      stageId,
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });
 });

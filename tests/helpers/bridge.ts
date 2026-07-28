@@ -35,6 +35,7 @@ export interface JobSearchApiFake {
     remove: ApiMock<JobSearchApi['positions']['remove']>;
     saveStage: ApiMock<JobSearchApi['positions']['saveStage']>;
     reorderStages: ApiMock<JobSearchApi['positions']['reorderStages']>;
+    removeStage: ApiMock<JobSearchApi['positions']['removeStage']>;
   };
   readonly preparations: {
     list: ApiMock<JobSearchApi['preparations']['list']>;
@@ -178,6 +179,7 @@ export function createJobSearchFake(): JobSearchApiFake {
         updatedAt: emptyPosition.updatedAt,
       } as ProcessStage),
       reorderStages: vi.fn<JobSearchApi['positions']['reorderStages']>().mockResolvedValue([]),
+      removeStage: vi.fn<JobSearchApi['positions']['removeStage']>().mockResolvedValue([]),
     },
     preparations: {
       list: vi.fn<JobSearchApi['preparations']['list']>().mockResolvedValue([] as PreparationMaterial[]),

@@ -89,6 +89,14 @@ export interface JobSearchApiFake {
       ignore: ApiMock<JobSearchApi['reviews']['proposals']['ignore']>;
     };
   };
+  readonly imports: {
+    previewPositionFromText: ApiMock<JobSearchApi['imports']['previewPositionFromText']>;
+    previewPositionFromImages: ApiMock<JobSearchApi['imports']['previewPositionFromImages']>;
+    previewProjectsFromDocument: ApiMock<JobSearchApi['imports']['previewProjectsFromDocument']>;
+    updateProjectSegments: ApiMock<JobSearchApi['imports']['updateProjectSegments']>;
+    previewPositionFromUrl: ApiMock<JobSearchApi['imports']['previewPositionFromUrl']>;
+    cancel: ApiMock<JobSearchApi['imports']['cancel']>;
+  };
   readonly system: {
     getDashboardSummary: ApiMock<JobSearchApi['system']['getDashboardSummary']>;
     previewCapabilityAnalysis: ApiMock<JobSearchApi['system']['previewCapabilityAnalysis']>;
@@ -228,6 +236,19 @@ export function createJobSearchFake(): JobSearchApiFake {
         accept: vi.fn<JobSearchApi['reviews']['proposals']['accept']>().mockRejectedValue(new Error('未设置建议')),
         ignore: vi.fn<JobSearchApi['reviews']['proposals']['ignore']>().mockRejectedValue(new Error('未设置建议')),
       },
+    },
+    imports: {
+      previewPositionFromText: vi.fn<JobSearchApi['imports']['previewPositionFromText']>()
+        .mockRejectedValue(new Error('未配置文本导入')),
+      previewPositionFromImages: vi.fn<JobSearchApi['imports']['previewPositionFromImages']>()
+        .mockRejectedValue(new Error('未配置截图导入')),
+      previewProjectsFromDocument: vi.fn<JobSearchApi['imports']['previewProjectsFromDocument']>()
+        .mockRejectedValue(new Error('未配置文档导入')),
+      updateProjectSegments: vi.fn<JobSearchApi['imports']['updateProjectSegments']>()
+        .mockRejectedValue(new Error('未配置分段调整')),
+      previewPositionFromUrl: vi.fn<JobSearchApi['imports']['previewPositionFromUrl']>()
+        .mockRejectedValue(new Error('公开链接导入尚未启用')),
+      cancel: vi.fn<JobSearchApi['imports']['cancel']>().mockResolvedValue(undefined),
     },
     system: {
       getDashboardSummary: vi.fn<JobSearchApi['system']['getDashboardSummary']>().mockResolvedValue(dashboardSummary),

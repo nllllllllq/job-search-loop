@@ -17,9 +17,14 @@ import type {
   InterviewReviewPreview,
   InterviewReviewPreviewInput,
   InterviewReviewResult,
+  ImportedFileInput,
+  ImportedImageInput,
   Position,
   PositionDetail,
   PositionInput,
+  PositionImportPreview,
+  ProjectImportPreview,
+  ProjectSegmentUpdate,
   PreparationGenerateInput,
   PreparationOutboundPreview,
   PositionListItem,
@@ -106,6 +111,14 @@ export const CHANNELS = {
     listRollbacks: 'system:backup:rollbacks:list',
     checkRollback: 'system:backup:rollbacks:check',
     deleteRollback: 'system:backup:rollbacks:delete',
+  },
+  imports: {
+    previewPositionFromText: 'imports:position:text',
+    previewPositionFromImages: 'imports:position:images',
+    previewProjectsFromDocument: 'imports:projects:document',
+    updateProjectSegments: 'imports:projects:update-segments',
+    previewPositionFromUrl: 'imports:position:url',
+    cancel: 'imports:cancel',
   },
 } as const;
 
@@ -220,6 +233,17 @@ export interface JobSearchApi {
       accept(id: string, editedPayload?: unknown): Promise<ChangeProposal>;
       ignore(id: string): Promise<ChangeProposal>;
     };
+  };
+  readonly imports: {
+    previewPositionFromText(text: string): Promise<PositionImportPreview>;
+    previewPositionFromImages(images: ImportedImageInput[]): Promise<PositionImportPreview>;
+    previewProjectsFromDocument(file: ImportedFileInput): Promise<ProjectImportPreview>;
+    updateProjectSegments(
+      sessionId: string,
+      operation: ProjectSegmentUpdate,
+    ): Promise<ProjectImportPreview>;
+    previewPositionFromUrl(url: string): Promise<PositionImportPreview>;
+    cancel(sessionId: string): Promise<void>;
   };
   readonly system: {
     getDashboardSummary(): Promise<DashboardSummary>;

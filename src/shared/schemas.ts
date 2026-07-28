@@ -701,6 +701,61 @@ export const changeProposalSchema = z.object({
   }
 });
 
+export const importedFileSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  type: z.string().max(200),
+  bytes: z.instanceof(Uint8Array),
+}).strict();
+
+export const importedImageSchema = importedFileSchema.extend({
+  width: z.number().int().positive().max(100_000),
+  height: z.number().int().positive().max(100_000),
+}).strict();
+
+export const positionImportTextSchema = z.object({
+  text: z.string().trim().min(1).max(100_000),
+}).strict();
+
+export const positionImportImagesSchema = z.object({
+  images: z.array(importedImageSchema).min(1).max(10),
+}).strict();
+
+export const projectImportDocumentSchema = z.object({
+  file: importedFileSchema,
+}).strict();
+
+export const projectSegmentUpdateSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('rename'),
+    tempId: z.string().uuid(),
+    name: z.string().trim().min(1).max(200),
+  }).strict(),
+  z.object({ type: z.literal('merge-next'), tempId: z.string().uuid() }).strict(),
+  z.object({
+    type: z.literal('split'),
+    tempId: z.string().uuid(),
+    marker: z.string().trim().min(1).max(20_000),
+  }).strict(),
+  z.object({
+    type: z.literal('reorder'),
+    orderedIds: z.array(z.string().uuid()).min(1).max(30),
+  }).strict(),
+  z.object({ type: z.literal('remove'), tempId: z.string().uuid() }).strict(),
+]);
+
+export const projectSegmentsUpdateSchema = z.object({
+  sessionId: z.string().uuid(),
+  operation: projectSegmentUpdateSchema,
+}).strict();
+
+export const importCancelSchema = z.object({
+  sessionId: z.string().uuid(),
+}).strict();
+
+export const positionImportUrlSchema = z.object({
+  url: z.string().url().max(2_000),
+}).strict();
+
 export const changeProposalArraySchema = z.array(changeProposalSchema);
 
 const changeProposalContextSchema = z.object({

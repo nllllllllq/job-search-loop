@@ -21,6 +21,54 @@ export interface PositionInput {
   rawJd: string;
 }
 
+export type ImportSessionId = string;
+
+export interface PositionImportPreview {
+  sessionId: ImportSessionId;
+  sourceSummary: string;
+  suggested: PositionInput;
+  confidence: {
+    company: number;
+    title: number;
+    location: number;
+    rawJd: number;
+  };
+  warnings: string[];
+}
+
+export interface ProjectSegmentPreview {
+  tempId: string;
+  name: string;
+  sourceText: string;
+  suggested: ProjectInput;
+  warnings: string[];
+}
+
+export interface ProjectImportPreview {
+  sessionId: ImportSessionId;
+  sourceSummary: string;
+  segments: ProjectSegmentPreview[];
+  warnings: string[];
+}
+
+export interface ImportedFileInput {
+  name: string;
+  type: string;
+  bytes: Uint8Array;
+}
+
+export interface ImportedImageInput extends ImportedFileInput {
+  width: number;
+  height: number;
+}
+
+export type ProjectSegmentUpdate =
+  | { type: 'rename'; tempId: string; name: string }
+  | { type: 'merge-next'; tempId: string }
+  | { type: 'split'; tempId: string; marker: string }
+  | { type: 'reorder'; orderedIds: string[] }
+  | { type: 'remove'; tempId: string };
+
 export interface ProcessStageInput {
   positionId: string;
   name: string;

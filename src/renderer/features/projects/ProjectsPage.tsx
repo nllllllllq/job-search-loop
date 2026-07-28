@@ -6,6 +6,7 @@ import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useToast } from '../../hooks/useToast';
 import { ResourceView } from '../assets/ResourceView';
 import { ProjectEditor } from './ProjectEditor';
+import { ProjectImportWizard } from './ProjectImportWizard';
 
 function versionProject(version: AssetVersion): ProjectInput | null {
   try {
@@ -25,6 +26,7 @@ export function ProjectsPage() {
   const [versions, setVersions] = useState<AssetVersion[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionsError, setVersionsError] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const versionsRequestId = useRef(0);
 
   useEffect(() => () => {
@@ -88,7 +90,12 @@ export function ProjectsPage() {
           <h2>把经历整理成可靠证据</h2>
           <p>这里只维护项目事实与表达底稿，不修改简历；每次实际内容变化都会留下上一版。</p>
         </div>
-        {addButton}
+        <span className="button-cluster">
+          <button className="button button--quiet" onClick={() => setImportOpen(true)} type="button">
+            从文件导入
+          </button>
+          {addButton}
+        </span>
       </header>
 
       <ResourceView
@@ -153,6 +160,12 @@ export function ProjectsPage() {
                     <h4 id="storytelling-versions-title">讲述版本（附加叙事）</h4>
                     <p className="user-text">{selected.storytellingVersions}</p>
                   </section>
+                ) : null}
+                {selected.unclassifiedNotes ? (
+                  <details className="supplemental-narrative">
+                    <summary>待整理内容</summary>
+                    <p className="user-text">{selected.unclassifiedNotes}</p>
+                  </details>
                 ) : null}
                 <section className="version-history" aria-label="只读历史">
                   <div className="version-history__heading">
@@ -226,6 +239,14 @@ export function ProjectsPage() {
         onClose={() => setEditing(undefined)}
         onSave={save}
         open={editing !== undefined}
+      />
+      <ProjectImportWizard
+        onClose={() => setImportOpen(false)}
+        onCompleted={async () => {
+          await projects.reload();
+          toast.success('项目文件已导入');
+        }}
+        open={importOpen}
       />
     </div>
   );

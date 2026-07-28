@@ -24,6 +24,12 @@ import {
   interviewReviewResultSchema,
   interviewSchema,
   interviewUpdateSchema,
+  importCancelSchema,
+  positionImportImagesSchema,
+  positionImportTextSchema,
+  positionImportUrlSchema,
+  projectImportDocumentSchema,
+  projectSegmentsUpdateSchema,
   preparationGenerateSchema,
   preparationMaterialListSchema,
   preparationOutboundPreviewSchema,
@@ -238,6 +244,34 @@ const api = frozen<JobSearchApi>({
         idSchema.parse(id),
       )),
     }),
+  }),
+  imports: frozen<JobSearchApi['imports']>({
+    previewPositionFromText: (text) => invoke(
+      CHANNELS.imports.previewPositionFromText,
+      positionImportTextSchema.parse({ text }),
+    ),
+    previewPositionFromImages: (images) => invoke(
+      CHANNELS.imports.previewPositionFromImages,
+      positionImportImagesSchema.parse({ images }),
+    ),
+    previewProjectsFromDocument: (file) => invoke(
+      CHANNELS.imports.previewProjectsFromDocument,
+      projectImportDocumentSchema.parse({ file }),
+    ),
+    updateProjectSegments: (sessionId, operation) => invoke(
+      CHANNELS.imports.updateProjectSegments,
+      projectSegmentsUpdateSchema.parse({ sessionId, operation }),
+    ),
+    previewPositionFromUrl: (url) => invoke(
+      CHANNELS.imports.previewPositionFromUrl,
+      positionImportUrlSchema.parse({ url }),
+    ),
+    cancel: async (sessionId) => {
+      await invoke(
+        CHANNELS.imports.cancel,
+        importCancelSchema.parse({ sessionId }),
+      );
+    },
   }),
   system: frozen<JobSearchApi['system']>({
     getDashboardSummary: async () => dashboardSummarySchema.parse(

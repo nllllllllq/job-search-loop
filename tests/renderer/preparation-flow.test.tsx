@@ -474,7 +474,7 @@ describe('preparation flow', () => {
       api.preparations.list.mockReturnValue(never);
     });
     await openPreparationTab(loading.user);
-    expect(screen.getByRole('status')).toHaveTextContent('正在读取准备材料');
+    expect(screen.getByText('正在读取准备材料…')).toBeInTheDocument();
     loading.unmount();
 
     const failed = renderPreparation((api) => {

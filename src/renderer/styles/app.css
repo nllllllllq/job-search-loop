@@ -1230,6 +1230,138 @@ a {
   border-bottom: 1px solid var(--line);
 }
 
+.button-cluster,
+.import-tabs,
+.segment-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.import-tabs {
+  padding: 0.25rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.import-tabs button,
+.segment-actions button,
+.import-file-list button {
+  border: 0;
+  border-radius: 0.45rem;
+  padding: 0.55rem 0.75rem;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.import-tabs button.is-active {
+  color: var(--surface);
+  background: var(--ink);
+}
+
+.import-source,
+.segment-review,
+.project-import-editors {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.import-source > .button {
+  justify-self: start;
+}
+
+.import-callout,
+.import-preview-meta,
+.segment-card {
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--surface);
+}
+
+.import-callout,
+.import-preview-meta {
+  padding: 0.85rem 1rem;
+}
+
+.import-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem 0.9rem;
+}
+
+.import-preview-meta span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.import-review-form {
+  margin-top: 1rem;
+}
+
+.import-file-list {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.import-file-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.segment-card {
+  padding: 0.8rem;
+}
+
+.segment-card > input {
+  width: min(100%, 32rem);
+  font-weight: 700;
+}
+
+.segment-card p {
+  margin: 0.65rem 0;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.segment-actions button,
+.import-file-list button {
+  padding: 0.35rem 0.55rem;
+  background: var(--surface-raised);
+}
+
+.project-import-editors details {
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--surface);
+}
+
+.project-import-editors summary {
+  padding: 0.8rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.project-import-editors details .editor-form {
+  padding: 0 1rem 1rem;
+}
+
+.import-error {
+  margin: 0.8rem 0 0;
+  color: var(--danger);
+}
+
 .position-detail-header__identity {
   display: flex;
   min-width: 0;

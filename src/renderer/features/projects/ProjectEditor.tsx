@@ -23,6 +23,7 @@ const emptyProject: ProjectInput = {
   evidence: '',
   reflections: '',
   storytellingVersions: '',
+  unclassifiedNotes: '',
 };
 
 const fields: Array<{
@@ -135,6 +136,17 @@ export function ProjectEditor({
             onChange={(event) => change('storytellingVersions', event.target.value)}
             rows={6}
             value={value.storytellingVersions}
+          />
+        </Field>
+        <Field
+          hint="无法可靠归类的原文会保留在这里，之后可再整理。"
+          label="待整理内容"
+        >
+          <textarea
+            maxLength={100_000}
+            onChange={(event) => change('unclassifiedNotes', event.target.value)}
+            rows={5}
+            value={value.unclassifiedNotes ?? ''}
           />
         </Field>
       </form>

@@ -63,11 +63,13 @@ describe('typed IPC contract', () => {
     expectTypeOf<JobSearchApi>().toHaveProperty('preparations');
     expectTypeOf<JobSearchApi>().toHaveProperty('assets');
     expectTypeOf<JobSearchApi>().toHaveProperty('reviews');
+    expectTypeOf<JobSearchApi>().toHaveProperty('imports');
     expectTypeOf<JobSearchApi>().toHaveProperty('system');
 
     expect(Object.keys(CHANNELS).sort()).toEqual([
       'ai',
       'assets',
+      'imports',
       'positions',
       'preparations',
       'reviews',

@@ -32,6 +32,7 @@ import { registerAiHandlers } from './ai';
 import { registerPositionHandlers, registerPreparationHandlers } from './positions';
 import { registerReviewHandlers } from './reviews';
 import { registerSystemHandlers } from './system';
+import { registerImportHandlers, type ImportRuntime } from './imports';
 import { SafeIpcError, type IpcMainRegistrar } from './common';
 import type { AiClient } from '../services/ai-client';
 import type { AiSettingsStore } from '../services/ai-settings';
@@ -59,6 +60,7 @@ export interface AiRuntime {
 
 export interface MainRuntime {
   system?: SystemRuntime;
+  imports?: ImportRuntime;
   isBlocked?: () => boolean;
 }
 
@@ -145,5 +147,6 @@ export function registerIpcHandlers(
     capabilityAnalysisService,
     runtime?.system,
   );
+  registerImportHandlers(guardedIpcMain, runtime?.imports);
   if (ai) registerAiHandlers(guardedIpcMain, ai.settings, ai.client);
 }

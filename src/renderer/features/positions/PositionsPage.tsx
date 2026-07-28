@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useToast } from '../../hooks/useToast';
-import { PositionEditor } from './PositionEditor';
+import { PositionIntakePanel } from './PositionIntakePanel';
 
 const stageOptions: Array<{ label: string; value: CanonicalStage }> = [
   { label: '感兴趣', value: 'interested' },
@@ -163,7 +163,7 @@ export function PositionsPage() {
         </div>
       ) : null}
 
-      <PositionEditor
+      <PositionIntakePanel
         onClose={() => setEditorOpen(false)}
         onSave={createPosition}
         open={editorOpen}

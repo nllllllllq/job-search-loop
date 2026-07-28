@@ -752,10 +752,6 @@ export const importCancelSchema = z.object({
   sessionId: z.string().uuid(),
 }).strict();
 
-export const positionImportUrlSchema = z.object({
-  url: z.string().url().max(2_000),
-}).strict();
-
 export const changeProposalArraySchema = z.array(changeProposalSchema);
 
 const changeProposalContextSchema = z.object({

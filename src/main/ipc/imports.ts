@@ -5,7 +5,6 @@ import {
   importCancelSchema,
   positionImportImagesSchema,
   positionImportTextSchema,
-  positionImportUrlSchema,
   projectImportDocumentSchema,
   projectSegmentsUpdateSchema,
 } from '../../shared/schemas';
@@ -151,11 +150,6 @@ export function registerImportHandlers(
     } catch (error) {
       return userFacing(error);
     }
-  }));
-
-  ipcMain.handle(CHANNELS.imports.previewPositionFromUrl, safeIpcHandler((_event, payload) => {
-    positionImportUrlSchema.parse(payload);
-    throw new SafeIpcError('CONFLICT', '公开链接导入将在 V1.2 启用，请先使用粘贴或截图');
   }));
 
   ipcMain.handle(CHANNELS.imports.cancel, safeIpcHandler((_event, payload) => {

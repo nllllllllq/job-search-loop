@@ -8,7 +8,7 @@ import { positionInputSchema } from '../../../shared/schemas';
 import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
 
-type Tab = 'manual' | 'text' | 'images' | 'url';
+type Tab = 'manual' | 'text' | 'images';
 
 const emptyPosition: PositionInput = {
   company: '',
@@ -179,7 +179,6 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
           ['manual', '手动录入'],
           ['text', '粘贴文本'],
           ['images', '截图识别'],
-          ['url', '公开链接'],
         ] as const).map(([key, label]) => (
           <button
             aria-selected={tab === key}
@@ -230,13 +229,6 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
           <button className="button button--primary" disabled={busy || !images.length} onClick={() => void parseImages()} type="button">
             {busy ? '本地识别中…' : '开始识别'}
           </button>
-        </section>
-      ) : null}
-
-      {tab === 'url' ? (
-        <section className="import-callout">
-          <strong>公开链接导入将在 V1.2 启用</strong>
-          <p>当前请使用“粘贴文本”或“截图识别”，链接不会作为岗位字段保存。</p>
         </section>
       ) : null}
 

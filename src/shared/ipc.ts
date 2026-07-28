@@ -117,7 +117,6 @@ export const CHANNELS = {
     previewPositionFromImages: 'imports:position:images',
     previewProjectsFromDocument: 'imports:projects:document',
     updateProjectSegments: 'imports:projects:update-segments',
-    previewPositionFromUrl: 'imports:position:url',
     cancel: 'imports:cancel',
   },
 } as const;
@@ -242,7 +241,6 @@ export interface JobSearchApi {
       sessionId: string,
       operation: ProjectSegmentUpdate,
     ): Promise<ProjectImportPreview>;
-    previewPositionFromUrl(url: string): Promise<PositionImportPreview>;
     cancel(sessionId: string): Promise<void>;
   };
   readonly system: {

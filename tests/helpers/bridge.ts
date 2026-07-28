@@ -94,7 +94,6 @@ export interface JobSearchApiFake {
     previewPositionFromImages: ApiMock<JobSearchApi['imports']['previewPositionFromImages']>;
     previewProjectsFromDocument: ApiMock<JobSearchApi['imports']['previewProjectsFromDocument']>;
     updateProjectSegments: ApiMock<JobSearchApi['imports']['updateProjectSegments']>;
-    previewPositionFromUrl: ApiMock<JobSearchApi['imports']['previewPositionFromUrl']>;
     cancel: ApiMock<JobSearchApi['imports']['cancel']>;
   };
   readonly system: {
@@ -246,8 +245,6 @@ export function createJobSearchFake(): JobSearchApiFake {
         .mockRejectedValue(new Error('未配置文档导入')),
       updateProjectSegments: vi.fn<JobSearchApi['imports']['updateProjectSegments']>()
         .mockRejectedValue(new Error('未配置分段调整')),
-      previewPositionFromUrl: vi.fn<JobSearchApi['imports']['previewPositionFromUrl']>()
-        .mockRejectedValue(new Error('公开链接导入尚未启用')),
       cancel: vi.fn<JobSearchApi['imports']['cancel']>().mockResolvedValue(undefined),
     },
     system: {

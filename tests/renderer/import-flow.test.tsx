@@ -24,6 +24,17 @@ const project = (tempId: string, name: string) => ({
 });
 
 describe('local import UI', () => {
+  it('offers only manual, pasted text and screenshot position intake', () => {
+    installJobSearchFake();
+    render(<PositionIntakePanel onClose={vi.fn()} onSave={vi.fn()} open />);
+
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      '手动录入',
+      '粘贴文本',
+      '截图识别',
+    ]);
+  });
+
   it('previews pasted JD text and saves only after user confirmation', async () => {
     const fake = installJobSearchFake();
     fake.imports.previewPositionFromText.mockResolvedValue({

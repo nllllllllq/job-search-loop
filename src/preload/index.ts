@@ -27,7 +27,6 @@ import {
   importCancelSchema,
   positionImportImagesSchema,
   positionImportTextSchema,
-  positionImportUrlSchema,
   projectImportDocumentSchema,
   projectSegmentsUpdateSchema,
   preparationGenerateSchema,
@@ -261,10 +260,6 @@ const api = frozen<JobSearchApi>({
     updateProjectSegments: (sessionId, operation) => invoke(
       CHANNELS.imports.updateProjectSegments,
       projectSegmentsUpdateSchema.parse({ sessionId, operation }),
-    ),
-    previewPositionFromUrl: (url) => invoke(
-      CHANNELS.imports.previewPositionFromUrl,
-      positionImportUrlSchema.parse({ url }),
     ),
     cancel: async (sessionId) => {
       await invoke(

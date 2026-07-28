@@ -125,6 +125,30 @@ function seedClosedLoop(db: DatabaseSync): void {
   );
 }
 
+function createLegacyBackup(path: string, version: 1 | 4): void {
+  const db = openDatabase(path);
+  try {
+    seedClosedLoop(db);
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      ALTER TABLE change_proposals DROP COLUMN analysis_run_id;
+      DROP TABLE capability_analysis_runs;
+      ALTER TABLE positions DROP COLUMN location;
+      ALTER TABLE projects DROP COLUMN unclassified_notes;
+    `);
+    if (version === 1) {
+      db.exec(`
+        ALTER TABLE projects DROP COLUMN outcome;
+        ALTER TABLE projects DROP COLUMN evidence;
+        ALTER TABLE interviews DROP COLUMN review_snapshot_json;
+      `);
+    }
+    db.exec(`PRAGMA user_version = ${version};`);
+  } finally {
+    db.close();
+  }
+}
+
 afterEach(async () => {
   for (const controller of openControllers.splice(0)) {
     try {
@@ -175,6 +199,47 @@ describe('local database backup', () => {
       '{"encryptedKey":"never-in-backup-secret"}',
     );
     expect(existsSync(restored.rollbackPath)).toBe(true);
+  });
+
+  it.each([1, 4] as const)(
+    'restores a complete V%i backup and migrates it to the current schema',
+    async (version) => {
+      const app = await fixture();
+      const backupPath = join(app.directory, `legacy-v${version}.jobloop`);
+      createLegacyBackup(backupPath, version);
+
+      await expect(app.service.restoreFrom(backupPath)).resolves.toEqual({
+        rollbackPath: expect.any(String),
+      });
+      expect(app.database().prepare('PRAGMA user_version').get())
+        .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
+      expect(app.database().prepare(`
+        SELECT location FROM positions
+        WHERE id = '11111111-1111-4111-8111-111111111111'
+      `).get()).toEqual({ location: '' });
+      expect(app.database().prepare(`
+        SELECT unclassified_notes FROM projects
+        WHERE id = '44444444-4444-4444-8444-444444444444'
+      `).get()).toEqual({ unclassified_notes: '' });
+      expect(app.database().prepare(`
+        SELECT COUNT(*) AS count FROM capability_analysis_runs
+      `).get()).toEqual({ count: 0 });
+    },
+  );
+
+  it('rejects a V4 backup missing a table required by that schema version', async () => {
+    const app = await fixture();
+    const backupPath = join(app.directory, 'legacy-v4-missing-table.jobloop');
+    createLegacyBackup(backupPath, 4);
+    const legacy = new DatabaseSync(backupPath);
+    legacy.exec('DROP TABLE questions;');
+    legacy.close();
+
+    await expect(app.service.restoreFrom(backupPath)).rejects.toMatchObject({
+      code: 'BACKUP_INVALID',
+    });
+    expect(app.database().prepare('PRAGMA user_version').get())
+      .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
   });
 
   it('rejects invalid and future-schema files without changing the live database', async () => {

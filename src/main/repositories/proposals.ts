@@ -16,9 +16,12 @@ import type {
 import {
   capabilityPayloadSchema,
   changeProposalInputSchema,
+  changeProposalSchema,
+  corruptChangeProposalSchema,
   insightPayloadSchema,
   interviewReviewSnapshotSchema,
   interviewSummarySchema,
+  isoDateSchema,
   projectPayloadSchema,
   proposalOperationSchema,
   proposalStatusSchema,
@@ -271,12 +274,47 @@ function decodeContext(value: unknown): ChangeProposalContext {
   };
 }
 
+function decodeSafeCorruptContext(value: unknown): ChangeProposalContext {
+  const data = row(value, 'proposal context');
+  const company = typeof data.context_position_company === 'string'
+    && data.context_position_company.length <= 120
+    ? data.context_position_company
+    : null;
+  const title = typeof data.context_position_title === 'string'
+    && data.context_position_title.length <= 120
+    ? data.context_position_title
+    : null;
+  const roundName = typeof data.context_interview_round === 'string'
+    && data.context_interview_round.length <= 120
+    ? data.context_interview_round
+    : null;
+  const interviewDate = isoDateSchema.safeParse(data.context_interview_date);
+  return {
+    position: company === null || title === null ? null : { company, title },
+    interview: roundName === null
+      ? null
+      : {
+        roundName,
+        interviewDate: interviewDate.success ? interviewDate.data : null,
+      },
+  };
+}
+
+function safeCorruptTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    return new Date(value).toISOString() === value ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createProposalsRepository(db: DatabaseSync): ProposalsRepository {
   const get = (id: string): ChangeProposal => {
     const value = db.prepare('SELECT * FROM change_proposals WHERE id = ?').get(id);
     if (value === undefined) notFound('Proposal', id);
     try {
-      return decodeProposal(value);
+      return changeProposalSchema.parse(decodeProposal(value)) as ChangeProposal;
     } catch {
       throw new RepositoryError(
         'VALIDATION_ERROR',
@@ -339,23 +377,22 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
       const corruptItems: CorruptChangeProposal[] = [];
       for (const value of values) {
         try {
-          items.push({ ...decodeProposal(value), context: decodeContext(value) });
+          items.push(changeProposalSchema.parse({
+            ...decodeProposal(value),
+            context: decodeContext(value),
+          }) as ChangeProposalListItem);
         } catch {
           const data = row(value, 'proposal');
           const parsedStatus = proposalStatusSchema.safeParse(data.status);
-          const createdAt = typeof data.created_at === 'string'
-            && !Number.isNaN(Date.parse(data.created_at))
-            ? data.created_at
-            : null;
-          corruptItems.push({
-            id: typeof data.id === 'string' ? data.id : 'unknown',
+          corruptItems.push(corruptChangeProposalSchema.parse({
+            id: typeof data.id === 'string' ? data.id.slice(0, 500) : 'unknown',
             status: parsedStatus.success ? parsedStatus.data : null,
-            createdAt,
+            createdAt: safeCorruptTimestamp(data.created_at),
             code: 'CORRUPT_PROPOSAL',
             message: '该建议的数据已损坏，只能只读查看。',
             readOnly: true,
-            context: decodeContext(value),
-          });
+            context: decodeSafeCorruptContext(value),
+          }));
         }
       }
       return { items, corruptItems, corruptCount: corruptItems.length };

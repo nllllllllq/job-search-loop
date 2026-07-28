@@ -1,10 +1,12 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest';
+import { registerReviewHandlers } from '../../src/main/ipc/reviews';
 import { createAssetsRepository } from '../../src/main/repositories/assets';
 import { createInterviewsRepository } from '../../src/main/repositories/interviews';
 import { createPositionsRepository } from '../../src/main/repositories/positions';
 import { createProposalsRepository } from '../../src/main/repositories/proposals';
+import { CHANNELS } from '../../src/shared/ipc';
 import { createTestDatabase } from '../helpers/database';
 
 const originalProject = {
@@ -21,7 +23,7 @@ const originalProject = {
 };
 
 describe('proposals repository', () => {
-  it('isolates corrupt rows while keeping valid proposals listable and safe', () => {
+  it('isolates every invalid final DTO row and keeps the real list IPC usable', async () => {
     const db = createTestDatabase();
 
     try {
@@ -50,12 +52,92 @@ describe('proposals repository', () => {
         interviewId: interview.id,
       });
       const now = '2026-07-28T00:00:00.000Z';
-      db.prepare(`
+      const insertRaw = db.prepare(`
         INSERT INTO change_proposals (
           id, target_type, target_id, operation, payload_json, accepted_payload_json,
           rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
-        ) VALUES (?, 'project', NULL, 'create', ?, NULL, ?, NULL, NULL, 'pending', ?, ?, NULL)
-      `).run('corrupt-proposal', '{"apiKey":"must-not-leak"', '损坏建议', now, now);
+        ) VALUES (?, 'project', NULL, 'create', ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+      `);
+      insertRaw.run(
+        'corrupt-proposal',
+        '{"apiKey":"must-not-leak"',
+        null,
+        '损坏建议',
+        null,
+        'pending',
+        now,
+        now,
+        null,
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666661',
+        JSON.stringify(originalProject),
+        null,
+        '损坏创建时间',
+        null,
+        'pending',
+        'not-a-timestamp',
+        now,
+        null,
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666662',
+        JSON.stringify(originalProject),
+        null,
+        '损坏更新时间',
+        null,
+        'pending',
+        now,
+        'not-a-timestamp',
+        null,
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666663',
+        JSON.stringify(originalProject),
+        JSON.stringify(originalProject),
+        '损坏处理时间',
+        null,
+        'accepted',
+        now,
+        now,
+        'not-a-timestamp',
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666664',
+        JSON.stringify(originalProject),
+        null,
+        '',
+        null,
+        'pending',
+        now,
+        now,
+        null,
+      );
+      const invalidContextInterviewId = '77777777-7777-4777-8777-777777777777';
+      db.prepare(`
+        INSERT INTO interviews (
+          id, position_id, round_name, interview_date, transcript, personal_notes,
+          summary, feedback_result, review_snapshot_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, '', '', NULL, NULL, NULL, ?, ?)
+      `).run(
+        invalidContextInterviewId,
+        position.id,
+        '二面',
+        '2026-99-99',
+        now,
+        now,
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666665',
+        JSON.stringify(originalProject),
+        null,
+        '损坏上下文日期',
+        invalidContextInterviewId,
+        'pending',
+        now,
+        now,
+        null,
+      );
 
       const result = proposals.list();
       expect(result.items).toEqual([{
@@ -65,14 +147,29 @@ describe('proposals repository', () => {
           interview: { roundName: '业务面', interviewDate: '2026-07-28' },
         },
       }]);
-      expect(result.corruptCount).toBe(1);
-      expect(result.corruptItems).toEqual([
+      expect(result.corruptCount).toBe(6);
+      expect(result.corruptItems.map((item) => item.id)).toEqual(expect.arrayContaining([
+        'corrupt-proposal',
+        '66666666-6666-4666-8666-666666666661',
+        '66666666-6666-4666-8666-666666666662',
+        '66666666-6666-4666-8666-666666666663',
+        '66666666-6666-4666-8666-666666666664',
+        '66666666-6666-4666-8666-666666666665',
+      ]));
+      expect(result.corruptItems).toEqual(expect.arrayContaining([
         expect.objectContaining({
           id: 'corrupt-proposal',
           code: 'CORRUPT_PROPOSAL',
           readOnly: true,
         }),
-      ]);
+        expect.objectContaining({
+          id: '66666666-6666-4666-8666-666666666665',
+          context: {
+            position: null,
+            interview: { roundName: '二面', interviewDate: null },
+          },
+        }),
+      ]));
       expect(JSON.stringify(result)).not.toContain('must-not-leak');
       expect(JSON.stringify(result)).not.toContain('敏感 JD');
       expect(JSON.stringify(result)).not.toContain('面试原文');
@@ -84,6 +181,23 @@ describe('proposals repository', () => {
       ]) {
         expect(operation).toThrow(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
       }
+
+      const handlers = new Map<string, (event: unknown, payload?: unknown) => unknown>();
+      registerReviewHandlers(
+        {
+          handle(channel, handler) {
+            handlers.set(channel, handler);
+          },
+        },
+        createInterviewsRepository(db),
+        proposals,
+      );
+      await expect(
+        handlers.get(CHANNELS.reviews.proposals.list)!({}, undefined),
+      ).resolves.toMatchObject({
+        items: [{ id: valid.id }],
+        corruptCount: 6,
+      });
     } finally {
       db.close();
     }

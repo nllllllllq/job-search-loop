@@ -511,7 +511,7 @@ describe('database migrations', () => {
           reflections, storytelling_versions, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        'legacy-project',
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         '旧项目',
         '旧背景',
         '旧目标',
@@ -541,9 +541,9 @@ describe('database migrations', () => {
         INSERT INTO change_proposals (
           id, target_type, target_id, operation, payload_json, accepted_payload_json,
           rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
-        ) VALUES (?, 'project', 'legacy-project', 'update', ?, NULL, ?, NULL, NULL, 'pending', ?, ?, NULL)
+        ) VALUES (?, 'project', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'update', ?, NULL, ?, NULL, NULL, 'pending', ?, ?, NULL)
       `).run(
-        'legacy-pending-proposal',
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         JSON.stringify(legacyPendingPayload),
         '迁移后仍应可接受',
         now,
@@ -553,9 +553,9 @@ describe('database migrations', () => {
         INSERT INTO change_proposals (
           id, target_type, target_id, operation, payload_json, accepted_payload_json,
           rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
-        ) VALUES (?, 'project', 'legacy-project', 'update', ?, ?, ?, NULL, NULL, 'accepted', ?, ?, ?)
+        ) VALUES (?, 'project', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'update', ?, ?, ?, NULL, NULL, 'accepted', ?, ?, ?)
       `).run(
-        'legacy-accepted-proposal',
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         JSON.stringify(legacyPendingPayload),
         JSON.stringify(legacyAcceptedPayload),
         '已接受的旧提案',
@@ -566,11 +566,11 @@ describe('database migrations', () => {
       db.prepare(`
         INSERT INTO asset_versions (
           id, asset_type, asset_id, version, snapshot_json, created_at
-        ) VALUES (?, 'project', 'legacy-project', 1, ?, ?)
+        ) VALUES (?, 'project', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 1, ?, ?)
       `).run(
-        'legacy-project-version',
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
         JSON.stringify({
-          id: 'legacy-project',
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           ...legacyPendingPayload,
           outcomesAndEvidence: '历史版本的旧结果与证据',
           createdAt: now,
@@ -583,13 +583,13 @@ describe('database migrations', () => {
 
       expect(db.prepare(
         'SELECT outcome, evidence FROM projects WHERE id = ?',
-      ).get('legacy-project')).toEqual({
+      ).get('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).toEqual({
         outcome: '结果与证据原文',
         evidence: '',
       });
       const pendingJson = JSON.parse(String(db.prepare(
         'SELECT payload_json FROM change_proposals WHERE id = ?',
-      ).get('legacy-pending-proposal')?.payload_json));
+      ).get('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')?.payload_json));
       expect(pendingJson).toMatchObject({
         outcome: '提案里的旧结果与证据',
         evidence: '',
@@ -600,7 +600,7 @@ describe('database migrations', () => {
       expect(pendingJson).not.toHaveProperty('storytelling_versions');
       const acceptedJson = JSON.parse(String(db.prepare(
         'SELECT accepted_payload_json FROM change_proposals WHERE id = ?',
-      ).get('legacy-accepted-proposal')?.accepted_payload_json));
+      ).get('cccccccc-cccc-4ccc-8ccc-cccccccccccc')?.accepted_payload_json));
       expect(acceptedJson).toMatchObject({
         outcome: '已接受提案的旧结果与证据',
         evidence: '',
@@ -609,7 +609,7 @@ describe('database migrations', () => {
       });
       const versionJson = JSON.parse(String(db.prepare(
         'SELECT snapshot_json FROM asset_versions WHERE id = ?',
-      ).get('legacy-project-version')?.snapshot_json));
+      ).get('dddddddd-dddd-4ddd-8ddd-dddddddddddd')?.snapshot_json));
       expect(versionJson).toMatchObject({
         outcome: '历史版本的旧结果与证据',
         evidence: '',
@@ -619,30 +619,30 @@ describe('database migrations', () => {
 
       const proposals = createProposalsRepository(db);
       const assets = createAssetsRepository(db);
-      expect(assets.getProject('legacy-project').storytellingVersions)
+      expect(assets.getProject('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa').storytellingVersions)
         .toBe('旧讲述版本');
-      const pending = proposals.get('legacy-pending-proposal');
+      const pending = proposals.get('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
       expect(pending.payload).toMatchObject({
         outcome: '提案里的旧结果与证据',
         evidence: '',
       });
-      proposals.accept('legacy-pending-proposal', pending.payload);
-      expect(assets.getProject('legacy-project')).toMatchObject({
+      proposals.accept('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', pending.payload);
+      expect(assets.getProject('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).toMatchObject({
         outcome: '提案里的旧结果与证据',
         evidence: '',
         storytellingVersions: '提案旧讲述版本',
       });
-      expect(proposals.get('legacy-accepted-proposal').acceptedPayload).toMatchObject({
+      expect(proposals.get('cccccccc-cccc-4ccc-8ccc-cccccccccccc').acceptedPayload).toMatchObject({
         outcome: '已接受提案的旧结果与证据',
         evidence: '',
       });
       const migratedAcceptedJson = db.prepare(
         'SELECT accepted_payload_json FROM change_proposals WHERE id = ?',
-      ).get('legacy-accepted-proposal')?.accepted_payload_json;
+      ).get('cccccccc-cccc-4ccc-8ccc-cccccccccccc')?.accepted_payload_json;
       migrate(db);
       expect(db.prepare(
         'SELECT accepted_payload_json FROM change_proposals WHERE id = ?',
-      ).get('legacy-accepted-proposal')?.accepted_payload_json)
+      ).get('cccccccc-cccc-4ccc-8ccc-cccccccccccc')?.accepted_payload_json)
         .toBe(migratedAcceptedJson);
       expect(db.prepare('PRAGMA user_version').get())
         .toMatchObject({ user_version: CURRENT_SCHEMA_VERSION });
@@ -651,7 +651,7 @@ describe('database migrations', () => {
     }
   });
 
-  it('rolls back every project JSON rewrite when one legacy payload is corrupt', () => {
+  it('migrates readable V4 project JSON rows while preserving corrupt audit rows byte-for-byte', () => {
     const db = new DatabaseSync(':memory:');
     const now = '2026-07-27T00:00:00.000Z';
     const validPayload = JSON.stringify({
@@ -661,7 +661,7 @@ describe('database migrations', () => {
 
     try {
       db.exec(`
-        PRAGMA user_version = 2;
+        PRAGMA user_version = 4;
         CREATE TABLE change_proposals (
           id TEXT PRIMARY KEY,
           target_type TEXT NOT NULL,
@@ -695,16 +695,54 @@ describe('database migrations', () => {
       `);
       insert.run('valid-first', validPayload, now, now);
       insert.run('corrupt-second', '{not-json', now, now);
+      db.prepare(`
+        INSERT INTO change_proposals (
+          id, target_type, target_id, operation, payload_json, accepted_payload_json,
+          rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
+        ) VALUES (?, 'project', NULL, 'create', ?, ?, '迁移测试', NULL, NULL, 'accepted', ?, ?, ?)
+      `).run('corrupt-accepted-third', validPayload, '{accepted-not-json', now, now, now);
+      db.prepare(`
+        INSERT INTO asset_versions (
+          id, asset_type, asset_id, version, snapshot_json, created_at
+        ) VALUES (?, 'project', ?, 1, ?, ?)
+      `).run('valid-version', 'valid-project', validPayload, now);
+      db.prepare(`
+        INSERT INTO asset_versions (
+          id, asset_type, asset_id, version, snapshot_json, created_at
+        ) VALUES (?, 'project', ?, 1, ?, ?)
+      `).run('corrupt-version', 'corrupt-project', '{also-not-json', now);
 
-      expect(() => migrate(db)).toThrow('Invalid legacy project JSON field');
+      expect(() => migrate(db)).not.toThrow();
 
-      expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 });
-      expect(db.prepare(
+      expect(db.prepare('PRAGMA user_version').get())
+        .toMatchObject({ user_version: CURRENT_SCHEMA_VERSION });
+      expect(JSON.parse(String(db.prepare(
         'SELECT payload_json FROM change_proposals WHERE id = ?',
-      ).get('valid-first')).toMatchObject({ payload_json: validPayload });
+      ).get('valid-first')?.payload_json))).toMatchObject({
+        outcome: '完整旧文本',
+        evidence: '',
+        unclassifiedNotes: '',
+      });
       expect(db.prepare(
         'SELECT payload_json FROM change_proposals WHERE id = ?',
       ).get('corrupt-second')).toMatchObject({ payload_json: '{not-json' });
+      expect(db.prepare(`
+        SELECT payload_json, accepted_payload_json
+        FROM change_proposals WHERE id = ?
+      `).get('corrupt-accepted-third')).toEqual({
+        payload_json: validPayload,
+        accepted_payload_json: '{accepted-not-json',
+      });
+      expect(JSON.parse(String(db.prepare(
+        'SELECT snapshot_json FROM asset_versions WHERE id = ?',
+      ).get('valid-version')?.snapshot_json))).toMatchObject({
+        outcome: '完整旧文本',
+        evidence: '',
+        unclassifiedNotes: '',
+      });
+      expect(db.prepare(
+        'SELECT snapshot_json FROM asset_versions WHERE id = ?',
+      ).get('corrupt-version')).toMatchObject({ snapshot_json: '{also-not-json' });
     } finally {
       db.close();
     }

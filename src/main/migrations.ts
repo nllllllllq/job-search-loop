@@ -199,17 +199,25 @@ function migrateLegacyProjectJson(db: DatabaseSync): void {
     FROM change_proposals WHERE target_type = 'project'
   `).all();
   for (const proposal of proposals) {
-    const accepted = proposal.accepted_payload_json === null
-      ? null
-      : migrateProjectJson(
-        proposal.accepted_payload_json,
-        'change_proposals.accepted_payload_json',
+    let payload: string;
+    let accepted: string | null;
+    try {
+      accepted = proposal.accepted_payload_json === null
+        ? null
+        : migrateProjectJson(
+          proposal.accepted_payload_json,
+          'change_proposals.accepted_payload_json',
+        );
+      payload = migrateProjectJson(
+        proposal.payload_json,
+        'change_proposals.payload_json',
       );
-    updateProposal.run(
-      migrateProjectJson(proposal.payload_json, 'change_proposals.payload_json'),
-      accepted,
-      proposal.id,
-    );
+    } catch {
+      // Audit history is immutable evidence. Preserve an unreadable row
+      // byte-for-byte while continuing to migrate independent readable rows.
+      continue;
+    }
+    updateProposal.run(payload, accepted, proposal.id);
   }
 
   const updateVersion = db.prepare(`
@@ -219,10 +227,17 @@ function migrateLegacyProjectJson(db: DatabaseSync): void {
     SELECT id, snapshot_json FROM asset_versions WHERE asset_type = 'project'
   `).all();
   for (const version of versions) {
-    updateVersion.run(
-      migrateProjectJson(version.snapshot_json, 'asset_versions.snapshot_json'),
-      version.id,
-    );
+    let snapshot: string;
+    try {
+      snapshot = migrateProjectJson(
+        version.snapshot_json,
+        'asset_versions.snapshot_json',
+      );
+    } catch {
+      // A corrupt historical version must not block unrelated asset history.
+      continue;
+    }
+    updateVersion.run(snapshot, version.id);
   }
 }
 

@@ -11,10 +11,9 @@ import {
 } from 'node:sqlite';
 import { CURRENT_SCHEMA_VERSION } from '../migrations';
 
-const REQUIRED_TABLES = [
+const REQUIRED_TABLES_V1_TO_V4 = [
   'asset_versions',
   'capabilities',
-  'capability_analysis_runs',
   'capability_evidence',
   'change_proposals',
   'insights',
@@ -26,6 +25,15 @@ const REQUIRED_TABLES = [
   'prompt_templates',
   'questions',
 ] as const;
+
+const REQUIRED_TABLES_V5 = [
+  ...REQUIRED_TABLES_V1_TO_V4,
+  'capability_analysis_runs',
+].sort();
+
+function requiredTablesForVersion(version: number): readonly string[] {
+  return version >= 5 ? REQUIRED_TABLES_V5 : REQUIRED_TABLES_V1_TO_V4;
+}
 
 export type BackupServiceErrorCode = 'BACKUP_INVALID' | 'BACKUP_FAILED';
 
@@ -113,9 +121,10 @@ export function validateBackupFile(path: string): void {
         ? row.name
         : ''
     ));
+    const requiredTables = requiredTablesForVersion(version);
     if (
-      tables.length !== REQUIRED_TABLES.length
-      || REQUIRED_TABLES.some((table, index) => tables[index] !== table)
+      tables.length !== requiredTables.length
+      || requiredTables.some((table, index) => tables[index] !== table)
     ) {
       throw new BackupServiceError(
         'BACKUP_INVALID',

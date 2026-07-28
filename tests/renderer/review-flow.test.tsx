@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../src/renderer/App';
 import type {
   ChangeProposal,
+  ChangeProposalListItem,
   Interview,
   InterviewReviewPreview,
   PositionDetail,
@@ -79,7 +80,7 @@ const preview: InterviewReviewPreview = {
   dataTypes: ['面试文字记录', '个人感受与补充', '岗位信息与原始 JD', '面试复盘 Prompt'],
 };
 
-const proposal: ChangeProposal = {
+const proposal: ChangeProposalListItem = {
   id: proposalId,
   targetType: 'question',
   targetId: null,
@@ -102,6 +103,10 @@ const proposal: ChangeProposal = {
   createdAt: '2026-07-27T10:00:00.000Z',
   updatedAt: '2026-07-27T10:00:00.000Z',
   resolvedAt: null,
+  context: {
+    position: { company: position.company, title: position.title },
+    interview: { roundName: interview.roundName, interviewDate: interview.interviewDate },
+  },
 };
 
 const projectAsset: Project = {
@@ -333,7 +338,7 @@ describe('interview and review UI', () => {
       .toHaveBeenCalledWith(preview.token));
   });
 
-  it('shows proposal context/history and supports accept, edit-accept validation, and ignore', async () => {
+  it('shows proposal context from the list DTO and never fetches it per card', async () => {
     window.location.hash = '#/reviews';
     const fake = resetJobSearchFake();
     fake.reviews.proposals.list.mockResolvedValue({
@@ -344,100 +349,264 @@ describe('interview and review UI', () => {
       corruptItems: [],
       corruptCount: 0,
     });
-    fake.positions.get.mockResolvedValue(position);
-    fake.reviews.interviews.get.mockResolvedValue(interview);
-    fake.reviews.proposals.accept.mockResolvedValue({ ...proposal, status: 'accepted' });
-    fake.reviews.proposals.ignore.mockResolvedValue({ ...proposal, status: 'ignored' });
     const user = userEvent.setup();
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: '待确认变更' })).toBeInTheDocument();
+    const drawer = await screen.findByRole('dialog', { name: '待确认清单' });
     expect((await screen.findAllByText('远山科技 · AI 产品经理')).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText('业务一面')).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: '接受' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '编辑后接受' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '忽略' })).toBeInTheDocument();
-    expect(screen.getByText('已忽略')).toBeInTheDocument();
+    expect((await screen.findAllByText('业务一面 · 2026-07-27')).length).toBeGreaterThan(0);
+    expect(fake.positions.get).not.toHaveBeenCalled();
+    expect(fake.reviews.interviews.get).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: '编辑后接受' }));
-    const dialog = screen.getByRole('dialog');
-    const editor = within(dialog).getByLabelText('建议内容 JSON');
-    fireEvent.change(editor, { target: { value: '{"type":"interviewer","text":""}' } });
-    expect(within(dialog).getByRole('button', { name: '确认写入' })).toBeDisabled();
-    fireEvent.change(editor, {
-      target: {
-        value: JSON.stringify({ ...proposal.payload as object, unexpected: true }),
-      },
-    });
-    expect(within(dialog).getByRole('button', { name: '确认写入' })).toBeDisabled();
-    fireEvent.change(editor, { target: { value: JSON.stringify(proposal.payload) } });
-    await user.click(within(dialog).getByRole('button', { name: '确认写入' }));
-    await waitFor(() => expect(fake.reviews.proposals.accept)
-      .toHaveBeenCalledWith(proposal.id, proposal.payload));
-    expect(await screen.findByText('修改后的建议已接受并写入资产。')).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: '历史 1' }));
+    expect(within(drawer).getByText('已忽略')).toBeInTheDocument();
   });
 
-  it('retains proposal editor content after mutation failure', async () => {
+  it('edits a question with fields and relation selectors, validates integers, resets cancel, and retains failure input', async () => {
     window.location.hash = '#/reviews';
     const fake = installJobSearchFake(resetJobSearchFake());
+    const capabilityAsset = {
+      id: '88888888-8888-4888-8888-888888888888',
+      name: '问题拆解',
+      jdFrequency: 3,
+      evidence: '',
+      gaps: '',
+      mergedIntoId: null,
+      createdAt: '2026-07-27T08:00:00.000Z',
+      updatedAt: '2026-07-27T08:00:00.000Z',
+    };
     fake.reviews.proposals.list.mockResolvedValue({
       items: [proposal],
       corruptItems: [],
       corruptCount: 0,
     });
-    fake.positions.get.mockResolvedValue(position);
-    fake.reviews.interviews.get.mockResolvedValue(interview);
+    fake.assets.projects.list.mockResolvedValue([projectAsset]);
+    fake.assets.capabilities.list.mockResolvedValue([capabilityAsset]);
     fake.reviews.proposals.accept.mockRejectedValue(new Error('write failed'));
     const user = userEvent.setup();
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: '编辑后接受' }));
-    const editor = screen.getByLabelText('建议内容 JSON');
-    const edited = { ...proposal.payload as Record<string, unknown>, text: '用户确认后的问题' };
-    fireEvent.change(editor, { target: { value: JSON.stringify(edited) } });
+    expect(screen.getAllByText('高级 JSON 视图')).toHaveLength(2);
+    expect(screen.getByLabelText(/问题类型/)).toHaveValue('interviewer');
+    expect(screen.getByRole('checkbox', { name: projectAsset.name })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: capabilityAsset.name })).not.toBeChecked();
+
+    await user.clear(screen.getByLabelText(/问题文本/));
+    await user.type(screen.getByLabelText(/问题文本/), '用户确认后的问题');
+    await user.click(screen.getByRole('checkbox', { name: projectAsset.name }));
+    fireEvent.change(screen.getByLabelText(/出现次数/), { target: { value: '' } });
+    await user.click(screen.getByRole('button', { name: '确认写入' }));
+    expect(screen.getByText('请输入非负整数')).toBeInTheDocument();
+    expect(fake.reviews.proposals.accept).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText(/出现次数/), { target: { value: '1.5' } });
+    await user.click(screen.getByRole('button', { name: '确认写入' }));
+    const countInput = screen.getByLabelText(/出现次数/);
+    expect(countInput).toHaveAttribute('aria-invalid', 'true');
+    expect(countInput.getAttribute('aria-describedby')).toBeTruthy();
+    expect(screen.getByText('请输入非负整数')).toBeInTheDocument();
+    expect(fake.reviews.proposals.accept).not.toHaveBeenCalled();
+
+    fireEvent.change(countInput, { target: { value: '2' } });
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    await user.click(screen.getByRole('button', { name: '编辑后接受' }));
+    expect(screen.getByLabelText(/问题文本/)).toHaveValue(
+      (proposal.payload as { text: string }).text,
+    );
+
+    await user.clear(screen.getByLabelText(/问题文本/));
+    await user.type(screen.getByLabelText(/问题文本/), '用户确认后的问题');
     await user.click(screen.getByRole('button', { name: '确认写入' }));
     expect(await screen.findByText('写入失败，已保留你的修改。')).toBeInTheDocument();
     expect(screen.getByText('写入失败，请检查内容后重试。')).toBeInTheDocument();
-    expect(screen.getByLabelText('建议内容 JSON')).toHaveValue(JSON.stringify(edited));
+    expect(screen.getByLabelText(/问题文本/)).toHaveValue('用户确认后的问题');
+    expect(fake.assets.projects.list).toHaveBeenCalledTimes(1);
+    expect(fake.assets.capabilities.list).toHaveBeenCalledTimes(1);
   });
 
-  it('wires direct accept and ignore as separate pending actions', async () => {
+  it('renders project, capability, and insight proposal editors as typed forms', async () => {
     window.location.hash = '#/reviews';
-    const second = {
+    const projectProposal: ChangeProposalListItem = {
       ...proposal,
       id: '66666666-6666-4666-8666-666666666666',
-      rationale: '不采用的建议',
+      targetType: 'project',
+      payload: {
+        name: '求职闭环',
+        background: '信息分散',
+        goal: '建立闭环',
+        role: '产品经理',
+        keyDecisions: '本地优先',
+        outcome: '完成 MVP',
+        evidence: '可运行版本',
+        reflections: '保持紧凑',
+        storytellingVersions: 'STAR 版本',
+        unclassifiedNotes: '待整理片段',
+      },
+      rationale: '补充项目',
+    };
+    const capabilityProposal: ChangeProposalListItem = {
+      ...proposal,
+      id: '77777777-7777-4777-8777-777777777777',
+      targetType: 'capability',
+      targetId: '88888888-8888-4888-8888-888888888888',
+      operation: 'merge',
+      payload: {
+        name: '问题拆解',
+        jdFrequency: 4,
+        evidence: '面试证据',
+        gaps: '',
+        mergedIntoId: null,
+      },
+      rationale: '合并能力',
+    };
+    const insightProposal: ChangeProposalListItem = {
+      ...proposal,
+      id: '99999999-9999-4999-8999-999999999999',
+      targetType: 'insight',
+      payload: {
+        title: '表达顺序',
+        content: '先给结论',
+        positionId: null,
+        projectId: null,
+        questionId: null,
+        capabilityId: null,
+      },
+      rationale: '沉淀心得',
     };
     const fake = resetJobSearchFake();
     fake.reviews.proposals.list.mockResolvedValue({
-      items: [proposal, second],
+      items: [projectProposal, capabilityProposal, insightProposal],
       corruptItems: [],
       corruptCount: 0,
     });
-    fake.positions.get.mockResolvedValue(position);
-    fake.reviews.interviews.get.mockResolvedValue(interview);
-    fake.reviews.proposals.accept.mockImplementation(async (id) => ({
-      ...(id === proposal.id ? proposal : second),
+    fake.assets.projects.list.mockResolvedValue([projectAsset]);
+    fake.assets.questions.list.mockResolvedValue([{
+      ...(proposal.payload as {
+        type: 'interviewer';
+        text: string;
+        answerDraft: string;
+        projectIds: string[];
+        capabilityIds: string[];
+        occurrenceCount: number;
+        status: string;
+      }),
+      id: proposal.id,
+      createdAt: proposal.createdAt,
+      updatedAt: proposal.updatedAt,
+    }]);
+    fake.assets.capabilities.list.mockResolvedValue([{
+      ...(capabilityProposal.payload as {
+        name: string;
+        jdFrequency: number;
+        evidence: string;
+        gaps: string;
+        mergedIntoId: string | null;
+      }),
+      id: capabilityProposal.targetId!,
+      createdAt: proposal.createdAt,
+      updatedAt: proposal.updatedAt,
+    }]);
+    fake.positions.list.mockResolvedValue([{
+      id: position.id,
+      company: position.company,
+      title: position.title,
+      location: '',
+      interest: 5,
+      currentStage: 'interview',
+      finalResult: null,
+      updatedAt: position.updatedAt,
+    }]);
+    const user = userEvent.setup();
+    render(<App />);
+
+    const editButtons = await screen.findAllByRole('button', { name: '编辑后接受' });
+    await user.click(editButtons[0]);
+    expect(screen.getByLabelText(/项目名称/)).toHaveValue('求职闭环');
+    expect(screen.getByLabelText('待整理内容')).toHaveValue('待整理片段');
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    await user.click(editButtons[1]);
+    expect(screen.getByLabelText(/能力名称/)).toHaveValue('问题拆解');
+    expect(screen.getByText(`合并目标：${capabilityProposal.targetId}`)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    await user.click(editButtons[2]);
+    expect(screen.getByLabelText(/心得标题/)).toHaveValue('表达顺序');
+    expect(screen.getByLabelText('关联岗位（可选）')).toBeInTheDocument();
+    expect(screen.getByLabelText('关联项目（可选）')).toBeInTheDocument();
+    expect(screen.getByLabelText('关联问题（可选）')).toBeInTheDocument();
+    expect(screen.getByLabelText('关联能力（可选）')).toBeInTheDocument();
+    expect(fake.positions.list).toHaveBeenCalledTimes(1);
+    expect(fake.assets.projects.list).toHaveBeenCalledTimes(1);
+    expect(fake.assets.questions.list).toHaveBeenCalledTimes(1);
+    expect(fake.assets.capabilities.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('prevents duplicate mutations and keeps corrupt proposals read-only without raw JSON', async () => {
+    window.location.hash = '#/reviews';
+    const pendingAccept = deferred<ChangeProposal>();
+    const fake = resetJobSearchFake();
+    fake.reviews.proposals.list.mockResolvedValue({
+      items: [proposal],
+      corruptItems: [{
+        id: 'corrupt-row',
+        status: 'pending',
+        createdAt: null,
+        code: 'CORRUPT_PROPOSAL',
+        message: '该建议的数据已损坏，只能只读查看。',
+        readOnly: true,
+        context: proposal.context,
+      }],
+      corruptCount: 1,
+    });
+    fake.reviews.proposals.accept.mockReturnValue(pendingAccept.promise);
+    const user = userEvent.setup();
+    render(<App />);
+
+    const accept = await screen.findByRole('button', { name: '接受' });
+    await user.dblClick(accept);
+    expect(fake.reviews.proposals.accept).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('建议数据不可用')).toBeInTheDocument();
+    const corruptCard = screen.getByText('建议数据不可用').closest('article');
+    expect(corruptCard).not.toBeNull();
+    expect(within(corruptCard!).queryByRole('button', { name: '接受' })).not.toBeInTheDocument();
+    expect(within(corruptCard!).queryByRole('button', { name: '忽略' })).not.toBeInTheDocument();
+    expect(within(corruptCard!).queryByText(/payload_json/i)).not.toBeInTheDocument();
+    pendingAccept.resolve({ ...proposal, status: 'accepted' });
+  });
+
+  it('shows success toasts and keeps inline plus toast errors for proposal actions', async () => {
+    window.location.hash = '#/reviews';
+    const ignoredCandidate: ChangeProposalListItem = {
+      ...proposal,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      rationale: '准备忽略的建议',
+    };
+    const fake = resetJobSearchFake();
+    fake.reviews.proposals.list.mockResolvedValue({
+      items: [proposal, ignoredCandidate],
+      corruptItems: [],
+      corruptCount: 0,
+    });
+    fake.reviews.proposals.accept.mockResolvedValue({
+      ...proposal,
       status: 'accepted',
-      resolvedAt: '2026-07-27T12:00:00.000Z',
-    }));
-    fake.reviews.proposals.ignore.mockImplementation(async (id) => ({
-      ...(id === proposal.id ? proposal : second),
-      status: 'ignored',
-      resolvedAt: '2026-07-27T12:00:00.000Z',
-    }));
+      resolvedAt: '2026-07-28T12:00:00.000Z',
+    });
+    fake.reviews.proposals.ignore.mockRejectedValue(new Error('disk full'));
     const user = userEvent.setup();
     render(<App />);
 
     const acceptButtons = await screen.findAllByRole('button', { name: '接受' });
     await user.click(acceptButtons[0]);
-    await waitFor(() => expect(fake.reviews.proposals.accept)
-      .toHaveBeenCalledWith(proposal.id));
     expect(await screen.findByText('建议已接受并写入资产。')).toBeInTheDocument();
-    const ignoreButtons = screen.getAllByRole('button', { name: '忽略' });
-    await user.click(ignoreButtons[0]);
-    await waitFor(() => expect(fake.reviews.proposals.ignore)
-      .toHaveBeenCalledWith(second.id));
-    expect(await screen.findByText('建议已忽略，资产没有变化。')).toBeInTheDocument();
+
+    const ignoreButton = screen.getByRole('button', { name: '忽略' });
+    await user.click(ignoreButton);
+    expect(await screen.findByRole('alert')).toHaveTextContent('忽略失败，请稍后重试。');
+    expect(within(screen.getByRole('region', { name: '通知' }))
+      .getByText('忽略失败，请稍后重试。')).toBeInTheDocument();
+    expect(fake.reviews.proposals.ignore).toHaveBeenCalledWith(ignoredCandidate.id);
   });
 });

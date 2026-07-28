@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type {
   CapabilityAnalysisPreview,
   DashboardSummary,
@@ -11,7 +11,9 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useToast } from '../../hooks/useToast';
 import { CapabilityFrequency } from './CapabilityFrequency';
+import { CapabilityDrawer } from './CapabilityDrawer';
 import { ProcessTimeline } from './ProcessTimeline';
+import { ReviewDrawer } from './ReviewDrawer';
 import { StageDistribution } from './StageDistribution';
 
 function readableError(error: unknown): string {
@@ -202,6 +204,7 @@ function SummaryCards({ summary }: { summary: DashboardSummary }) {
 }
 
 export function DashboardPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [positionOptions, setPositionOptions] = useState<PositionListItem[]>([]);
   const toast = useToast();
@@ -211,6 +214,17 @@ export function DashboardPage() {
   );
   const data = summary.data;
   const recent = useMemo(() => data?.recentPositions ?? [], [data]);
+  const drawer = searchParams.get('drawer');
+  const openDrawer = (value: 'reviews' | 'capabilities') => {
+    const next = new URLSearchParams(searchParams);
+    next.set('drawer', value);
+    setSearchParams(next);
+  };
+  const closeDrawer = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('drawer');
+    setSearchParams(next, { replace: true });
+  };
 
   if (summary.loading) {
     return <div className="resource-state" role="status">正在整理求职进度…</div>;
@@ -255,6 +269,27 @@ export function DashboardPage() {
 
       <SummaryCards summary={data} />
 
+      <section aria-label="总览快捷入口" className="dashboard-shortcuts">
+        <button
+          className="dashboard-shortcut"
+          onClick={() => openDrawer('reviews')}
+          type="button"
+        >
+          <span>待确认清单</span>
+          <strong>{data.pendingProposals}</strong>
+          <small>确认后才写入长期资产</small>
+        </button>
+        <button
+          className="dashboard-shortcut"
+          onClick={() => openDrawer('capabilities')}
+          type="button"
+        >
+          <span>能力主题</span>
+          <strong>{data.capabilityFrequency.length}</strong>
+          <small>查看高频能力与证据</small>
+        </button>
+      </section>
+
       {data.totalPositions === 0 ? (
         <EmptyState
           action={<Link className="button-link" to="/positions">记录第一个岗位</Link>}
@@ -280,7 +315,9 @@ export function DashboardPage() {
                   <p className="section-label">CAPABILITY SIGNALS</p>
                   <h3>能力频次</h3>
                 </div>
-                <Link to="/capabilities">查看能力库</Link>
+                <button className="text-button" onClick={() => openDrawer('capabilities')} type="button">
+                  查看能力库
+                </button>
               </header>
               <CapabilityFrequency items={data.capabilityFrequency} />
             </article>
@@ -329,6 +366,16 @@ export function DashboardPage() {
         }}
         open={analysisOpen}
         positions={positionOptions}
+      />
+      <ReviewDrawer
+        onChanged={() => void summary.reload()}
+        onClose={closeDrawer}
+        open={drawer === 'reviews'}
+      />
+      <CapabilityDrawer
+        onChanged={() => void summary.reload()}
+        onClose={closeDrawer}
+        open={drawer === 'capabilities'}
       />
     </div>
   );

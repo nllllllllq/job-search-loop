@@ -338,11 +338,12 @@ describe('reusable assets flow', () => {
   it('shows and edits capability evidence, frequency, and gaps', async () => {
     const { fake, user } = renderAt('#/capabilities');
 
+    const drawer = await screen.findByRole('dialog', { name: '能力主题' });
     expect(await screen.findByRole('heading', { name: '用户研究' })).toBeInTheDocument();
     expect(screen.getByText('JD 频次 3')).toBeInTheDocument();
     expect(screen.getByText('完成 12 次访谈')).toBeInTheDocument();
-    expect(screen.getByText('缺少国际化样本')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '编辑能力 用户研究' }));
+    expect(screen.getByText(/缺少国际化样本/)).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: '编辑 用户研究' }));
     const editor = screen.getByRole('dialog', { name: '编辑能力' });
     await user.clear(within(editor).getByRole('spinbutton', { name: /JD 频次/ }));
     await user.type(within(editor).getByRole('spinbutton', { name: /JD 频次/ }), '4');
@@ -408,13 +409,11 @@ describe('reusable assets flow', () => {
   it.each([
     ['#/projects', 'projects', '项目档案载入失败'],
     ['#/questions', 'questions', '问题库载入失败'],
-    ['#/capabilities', 'capabilities', '能力主题载入失败'],
     ['#/insights', 'insights', '心得载入失败'],
   ] as const)('shows a safe route-isolated error at %s', async (hash, area, heading) => {
     const view = renderAt(hash, (api) => {
       if (area === 'projects') api.assets.projects.list.mockRejectedValue(new Error('SQL secret'));
       if (area === 'questions') api.assets.questions.list.mockRejectedValue(new Error('SQL secret'));
-      if (area === 'capabilities') api.assets.capabilities.list.mockRejectedValue(new Error('SQL secret'));
       if (area === 'insights') api.assets.insights.list.mockRejectedValue(new Error('SQL secret'));
     });
 
@@ -426,14 +425,12 @@ describe('reusable assets flow', () => {
   it.each([
     ['#/projects', 'projects', '正在读取项目档案…'],
     ['#/questions', 'questions', '正在读取问题库…'],
-    ['#/capabilities', 'capabilities', '正在读取能力主题…'],
     ['#/insights', 'insights', '正在读取心得…'],
   ] as const)('announces a route-isolated loading state at %s', (hash, area, label) => {
     const pending = new Promise<never>(() => undefined);
     const view = renderAt(hash, (api) => {
       if (area === 'projects') api.assets.projects.list.mockReturnValue(pending);
       if (area === 'questions') api.assets.questions.list.mockReturnValue(pending);
-      if (area === 'capabilities') api.assets.capabilities.list.mockReturnValue(pending);
       if (area === 'insights') api.assets.insights.list.mockReturnValue(pending);
     });
 
@@ -444,17 +441,42 @@ describe('reusable assets flow', () => {
   it.each([
     ['#/projects', 'projects', '还没有项目档案'],
     ['#/questions', 'questions', '还没有面试官问题'],
-    ['#/capabilities', 'capabilities', '还没有能力主题'],
     ['#/insights', 'insights', '还没有随想与心得'],
   ] as const)('offers a useful empty state at %s', async (hash, area, heading) => {
     const view = renderAt(hash, (api) => {
       if (area === 'projects') api.assets.projects.list.mockResolvedValue([]);
       if (area === 'questions') api.assets.questions.list.mockResolvedValue([]);
-      if (area === 'capabilities') api.assets.capabilities.list.mockResolvedValue([]);
       if (area === 'insights') api.assets.insights.list.mockResolvedValue([]);
     });
 
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
     view.unmount();
+  });
+
+  it('keeps capability loading, error, and empty states inside the dashboard drawer', async () => {
+    const loading = new Promise<never>(() => undefined);
+    const loadingView = renderAt('#/capabilities', (api) => {
+      api.assets.capabilities.list.mockReturnValue(loading);
+    });
+    const loadingDrawer = await screen.findByRole('dialog', { name: '能力主题' });
+    expect(within(loadingDrawer).getByRole('status')).toHaveTextContent('正在读取能力…');
+    loadingView.unmount();
+
+    const errorView = renderAt('#/capabilities', (api) => {
+      api.assets.capabilities.list.mockRejectedValue(new Error('SQL secret'));
+    });
+    const errorDrawer = await screen.findByRole('dialog', { name: '能力主题' });
+    expect(await within(errorDrawer).findByRole('alert')).toHaveTextContent(
+      '能力主题读取失败，请稍后重试。',
+    );
+    expect(screen.queryByText(/SQL secret/)).not.toBeInTheDocument();
+    errorView.unmount();
+
+    const emptyView = renderAt('#/capabilities', (api) => {
+      api.assets.capabilities.list.mockResolvedValue([]);
+    });
+    const emptyDrawer = await screen.findByRole('dialog', { name: '能力主题' });
+    expect(await within(emptyDrawer).findByText('还没有能力主题。')).toBeInTheDocument();
+    emptyView.unmount();
   });
 });

@@ -360,7 +360,7 @@ export interface CorruptChangeProposal {
 }
 
 export interface ChangeProposalListResult {
-  items: ChangeProposal[];
+  items: ChangeProposalListItem[];
   corruptItems: CorruptChangeProposal[];
   corruptCount: number;
 }

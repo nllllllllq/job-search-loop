@@ -663,6 +663,21 @@ export const changeProposalSchema = z.object({
 
 export const changeProposalArraySchema = z.array(changeProposalSchema);
 
+const changeProposalContextSchema = z.object({
+  position: z.object({
+    company: z.string().max(120),
+    title: z.string().max(120),
+  }).strict().nullable(),
+  interview: z.object({
+    roundName: z.string().max(120),
+    interviewDate: isoDateSchema.nullable(),
+  }).strict().nullable(),
+}).strict();
+
+export const changeProposalListItemSchema = changeProposalSchema.and(
+  z.object({ context: changeProposalContextSchema }).loose(),
+);
+
 export const corruptChangeProposalSchema = z.object({
   id: z.string().max(500),
   status: proposalStatusSchema.nullable(),
@@ -670,20 +685,11 @@ export const corruptChangeProposalSchema = z.object({
   code: z.literal('CORRUPT_PROPOSAL'),
   message: z.string().max(500),
   readOnly: z.literal(true),
-  context: z.object({
-    position: z.object({
-      company: z.string().max(120),
-      title: z.string().max(120),
-    }).strict().nullable(),
-    interview: z.object({
-      roundName: z.string().max(120),
-      interviewDate: isoDateSchema.nullable(),
-    }).strict().nullable(),
-  }).strict(),
+  context: changeProposalContextSchema,
 }).strict();
 
 export const changeProposalListSchema = z.object({
-  items: z.array(changeProposalSchema),
+  items: z.array(changeProposalListItemSchema),
   corruptItems: z.array(corruptChangeProposalSchema),
   corruptCount: z.number().int().nonnegative(),
 }).strict().superRefine((result, context) => {

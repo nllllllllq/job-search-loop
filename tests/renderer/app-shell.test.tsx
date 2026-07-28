@@ -21,7 +21,6 @@ describe('App shell', () => {
     for (const label of [
       '总览',
       '岗位',
-      '复盘中心',
       '项目档案',
       '问题库',
       '随想与心得',
@@ -29,6 +28,9 @@ describe('App shell', () => {
     ]) {
       expect(screen.getByRole('link', { name: label })).toBeInTheDocument();
     }
+    expect(screen.getAllByRole('navigation')[0].querySelectorAll('a')).toHaveLength(6);
+    expect(screen.queryByRole('link', { name: '复盘中心' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '能力主题' })).not.toBeInTheDocument();
   });
 
   it('provides a keyboard skip link to the page content', () => {

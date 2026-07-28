@@ -1,7 +1,7 @@
 import { vi, type Mock } from 'vitest';
 import type {
   Capability,
-  ChangeProposal,
+  ChangeProposalListItem,
   DashboardSummary,
   Insight,
   Interview,
@@ -214,7 +214,7 @@ export function createJobSearchFake(): JobSearchApiFake {
       },
       proposals: {
         list: vi.fn<JobSearchApi['reviews']['proposals']['list']>().mockResolvedValue({
-          items: [] as ChangeProposal[],
+          items: [] as ChangeProposalListItem[],
           corruptItems: [],
           corruptCount: 0,
         }),

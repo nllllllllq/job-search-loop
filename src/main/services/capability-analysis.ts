@@ -34,7 +34,7 @@ export interface CapabilityAnalysisService {
 export interface CapabilityAnalysisDependencies {
   positions: Pick<PositionsRepository, 'get'>;
   prompts: Pick<PromptsRepository, 'get'>;
-  proposals: Pick<ProposalsRepository, 'create'>;
+  proposals: Pick<ProposalsRepository, 'commitCapabilityAnalysis'>;
   ai: {
     completeJson(
       request: AiCompletionRequest,
@@ -205,8 +205,9 @@ export function createCapabilityAnalysisService({
         );
       }
 
+      const request = buildRequest(bound);
       const candidate = await ai.completeJson(
-        buildRequest(bound),
+        request,
         capabilityAnalysisOutputSchema,
         settings,
       );
@@ -236,7 +237,15 @@ export function createCapabilityAnalysisService({
 
       // Validate the complete AI result before the first database write.
       proposalInputs.forEach((input) => changeProposalInputSchema.parse(input));
-      return proposalInputs.map((input) => proposals.create(input));
+      return proposals.commitCapabilityAnalysis({
+        selectedPositionIds: sourcePositionIds,
+        promptSnapshot: bound.prompt,
+        providerOrigin: bound.provider,
+        model: bound.model,
+        input: request,
+        output: candidate,
+        createdAt: new Date(nowMs()).toISOString(),
+      }, proposalInputs).proposals;
     },
   };
 }

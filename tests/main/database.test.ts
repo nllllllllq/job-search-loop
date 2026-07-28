@@ -35,6 +35,7 @@ describe('database migrations', () => {
       expect(tables).toEqual([
         'asset_versions',
         'capabilities',
+        'capability_analysis_runs',
         'capability_evidence',
         'change_proposals',
         'insights',
@@ -91,7 +92,7 @@ describe('database migrations', () => {
       const definitions = db.prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
       ).all();
-      expect(definitions).toHaveLength(12);
+      expect(definitions).toHaveLength(13);
       for (const definition of definitions) {
         expect(String(definition.sql).trim()).toMatch(/\) STRICT;?$/);
       }
@@ -206,6 +207,254 @@ describe('database migrations', () => {
         .toMatchObject({ company: '远山科技' });
       expect(db.prepare('SELECT COUNT(*) AS count FROM prompt_templates').get())
         .toMatchObject({ count: 3 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('migrates a V4 database to V5 without losing positions, projects, or proposals', () => {
+    const db = new DatabaseSync(':memory:');
+    const now = '2026-07-27T00:00:00.000Z';
+
+    try {
+      db.exec(`
+        PRAGMA foreign_keys = ON;
+        PRAGMA user_version = 4;
+        CREATE TABLE positions (
+          id TEXT PRIMARY KEY,
+          company TEXT NOT NULL,
+          title TEXT NOT NULL,
+          interest INTEGER NOT NULL,
+          raw_jd TEXT NOT NULL,
+          current_stage TEXT,
+          final_result TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE projects (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          background TEXT NOT NULL DEFAULT '',
+          goal TEXT NOT NULL DEFAULT '',
+          role TEXT NOT NULL DEFAULT '',
+          key_decisions TEXT NOT NULL DEFAULT '',
+          outcomes_and_evidence TEXT NOT NULL DEFAULT '',
+          reflections TEXT NOT NULL DEFAULT '',
+          storytelling_versions TEXT NOT NULL DEFAULT '',
+          outcome TEXT NOT NULL DEFAULT '',
+          evidence TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE change_proposals (
+          id TEXT PRIMARY KEY,
+          target_type TEXT NOT NULL,
+          target_id TEXT,
+          operation TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          accepted_payload_json TEXT,
+          rationale TEXT NOT NULL,
+          position_id TEXT,
+          interview_id TEXT,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          resolved_at TEXT
+        ) STRICT;
+        CREATE TABLE asset_versions (
+          id TEXT PRIMARY KEY,
+          asset_type TEXT NOT NULL,
+          asset_id TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(asset_type, asset_id, version)
+        ) STRICT;
+        CREATE TABLE interviews (
+          id TEXT PRIMARY KEY,
+          position_id TEXT NOT NULL,
+          round_name TEXT NOT NULL,
+          interview_date TEXT,
+          transcript TEXT NOT NULL,
+          personal_notes TEXT NOT NULL DEFAULT '',
+          summary TEXT,
+          feedback_result TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          review_snapshot_json TEXT
+        ) STRICT;
+        CREATE TABLE preparation_materials (
+          id TEXT PRIMARY KEY,
+          position_id TEXT NOT NULL,
+          raw_jd_snapshot TEXT NOT NULL,
+          prompt_snapshot TEXT NOT NULL,
+          assets_snapshot TEXT NOT NULL,
+          model_snapshot TEXT NOT NULL,
+          output_snapshot TEXT NOT NULL,
+          generated_at TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        ) STRICT;
+      `);
+      db.prepare(`
+        INSERT INTO positions (
+          id, company, title, interest, raw_jd, current_stage, final_result,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+      `).run('position-v4', '甲公司', '产品经理', 5, '完整 JD', now, now);
+      db.prepare(`
+        INSERT INTO projects (
+          id, name, background, goal, role, key_decisions, outcomes_and_evidence,
+          reflections, storytelling_versions, outcome, evidence, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'project-v4', '旧项目', '背景', '目标', '角色', '决策', '旧组合字段',
+        '反思', '讲述', '结果', '证据', now, now,
+      );
+      db.prepare(`
+        INSERT INTO change_proposals (
+          id, target_type, target_id, operation, payload_json, accepted_payload_json,
+          rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
+        ) VALUES (?, 'capability', NULL, 'create', ?, NULL, ?, ?, NULL, 'pending', ?, ?, NULL)
+      `).run(
+        'proposal-v4',
+        JSON.stringify({
+          name: '沟通',
+          jdFrequency: 1,
+          evidence: '',
+          gaps: '',
+          mergedIntoId: null,
+        }),
+        '旧建议',
+        'position-v4',
+        now,
+        now,
+      );
+      const legacyProjectSnapshot = {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        name: '快照项目',
+        background: '',
+        goal: '',
+        role: '',
+        keyDecisions: '',
+        outcome: '',
+        evidence: '',
+        reflections: '',
+        storytellingVersions: '',
+        createdAt: now,
+        updatedAt: now,
+      };
+      db.prepare(`
+        INSERT INTO preparation_materials (
+          id, position_id, raw_jd_snapshot, prompt_snapshot, assets_snapshot,
+          model_snapshot, output_snapshot, generated_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'preparation-v4',
+        'position-v4',
+        '完整 JD',
+        'Prompt',
+        JSON.stringify({ projects: [legacyProjectSnapshot], questions: [] }),
+        'model-a',
+        '{}',
+        now,
+        now,
+      );
+      db.prepare(`
+        INSERT INTO preparation_materials (
+          id, position_id, raw_jd_snapshot, prompt_snapshot, assets_snapshot,
+          model_snapshot, output_snapshot, generated_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'corrupt-preparation-v4',
+        'position-v4',
+        '完整 JD',
+        'Prompt',
+        '{"private":"must-stay-isolated"',
+        'model-a',
+        '{}',
+        now,
+        now,
+      );
+      db.prepare(`
+        INSERT INTO interviews (
+          id, position_id, round_name, interview_date, transcript, personal_notes,
+          summary, feedback_result, created_at, updated_at, review_snapshot_json
+        ) VALUES (?, ?, ?, NULL, ?, '', ?, NULL, ?, ?, ?)
+      `).run(
+        'interview-v4',
+        'position-v4',
+        '一面',
+        '记录',
+        '总结',
+        now,
+        now,
+        JSON.stringify({
+          promptSnapshot: 'Prompt',
+          modelSnapshot: 'model-a',
+          inputSnapshot: '{}',
+          output: {
+            summary: '总结',
+            strengths: [],
+            gaps: [],
+            proposals: [{
+              targetType: 'project',
+              targetId: null,
+              operation: 'create',
+              rationale: '新增项目',
+              payload: {
+                name: '快照项目',
+                background: '',
+                goal: '',
+                role: '',
+                keyDecisions: '',
+                outcome: '',
+                evidence: '',
+                reflections: '',
+                storytellingVersions: '',
+              },
+            }],
+          },
+          reviewedAt: now,
+        }),
+      );
+
+      migrate(db);
+
+      expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 });
+      expect(db.prepare('SELECT company, location FROM positions').get()).toEqual({
+        company: '甲公司',
+        location: '',
+      });
+      expect(db.prepare('SELECT name, unclassified_notes FROM projects').get()).toEqual({
+        name: '旧项目',
+        unclassified_notes: '',
+      });
+      expect(db.prepare('SELECT id, analysis_run_id FROM change_proposals').get()).toEqual({
+        id: 'proposal-v4',
+        analysis_run_id: null,
+      });
+      expect(db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'capability_analysis_runs'",
+      ).get()).toEqual({ name: 'capability_analysis_runs' });
+      expect(JSON.parse(String(db.prepare(
+        'SELECT assets_snapshot FROM preparation_materials WHERE id = ?',
+      ).get('preparation-v4')?.assets_snapshot)).projects[0]).toMatchObject({
+        unclassifiedNotes: '',
+      });
+      expect(JSON.parse(String(db.prepare(
+        'SELECT review_snapshot_json FROM interviews WHERE id = ?',
+      ).get('interview-v4')?.review_snapshot_json)).output.proposals[0].payload)
+        .toMatchObject({ unclassifiedNotes: '' });
+      expect(db.prepare(
+        'SELECT assets_snapshot FROM preparation_materials WHERE id = ?',
+      ).get('corrupt-preparation-v4')).toEqual({
+        assets_snapshot: '{"private":"must-stay-isolated"',
+      });
+
+      migrate(db);
+      expect(db.prepare('SELECT COUNT(*) AS count FROM positions').get()).toEqual({ count: 1 });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM projects').get()).toEqual({ count: 1 });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM change_proposals').get()).toEqual({ count: 1 });
     } finally {
       db.close();
     }
@@ -342,28 +591,30 @@ describe('database migrations', () => {
         'SELECT payload_json FROM change_proposals WHERE id = ?',
       ).get('legacy-pending-proposal')?.payload_json));
       expect(pendingJson).toMatchObject({
-        outcomesAndEvidence: '提案里的旧结果与证据',
         outcome: '提案里的旧结果与证据',
         evidence: '',
         storytellingVersions: '提案旧讲述版本',
+        unclassifiedNotes: '',
       });
+      expect(pendingJson).not.toHaveProperty('outcomesAndEvidence');
+      expect(pendingJson).not.toHaveProperty('storytelling_versions');
       const acceptedJson = JSON.parse(String(db.prepare(
         'SELECT accepted_payload_json FROM change_proposals WHERE id = ?',
       ).get('legacy-accepted-proposal')?.accepted_payload_json));
       expect(acceptedJson).toMatchObject({
-        outcomesAndEvidence: '已接受提案的旧结果与证据',
         outcome: '已接受提案的旧结果与证据',
         evidence: '',
         storytellingVersions: '提案旧讲述版本',
+        unclassifiedNotes: '',
       });
       const versionJson = JSON.parse(String(db.prepare(
         'SELECT snapshot_json FROM asset_versions WHERE id = ?',
       ).get('legacy-project-version')?.snapshot_json));
       expect(versionJson).toMatchObject({
-        outcomesAndEvidence: '历史版本的旧结果与证据',
         outcome: '历史版本的旧结果与证据',
         evidence: '',
         storytellingVersions: '提案旧讲述版本',
+        unclassifiedNotes: '',
       });
 
       const proposals = createProposalsRepository(db);

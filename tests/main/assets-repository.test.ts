@@ -14,6 +14,7 @@ const projectInput = {
   evidence: '实验数据与访谈记录',
   reflections: '应更早建立对照组',
   storytellingVersions: '适合业务面试的两分钟讲述',
+  unclassifiedNotes: '导入后尚未归类的补充材料',
 };
 
 describe('assets repository', () => {
@@ -106,6 +107,7 @@ describe('assets repository', () => {
         assets.listVersions('project', created.id)[0].snapshot,
       )).toMatchObject({
         storytellingVersions: '适合业务面试的两分钟讲述',
+        unclassifiedNotes: '导入后尚未归类的补充材料',
       });
     } finally {
       db.close();

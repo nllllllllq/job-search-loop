@@ -7,6 +7,7 @@ import {
   backupActionResultSchema,
   capabilityAnalysisPreviewSchema,
   capabilityAnalysisSelectionSchema,
+  changeProposalArraySchema,
   changeProposalListSchema,
   dashboardSummarySchema,
   changeProposalSchema,
@@ -233,7 +234,7 @@ const api = frozen<JobSearchApi>({
         capabilityAnalysisSelectionSchema.parse(positionIds),
       ),
     ),
-    confirmCapabilityAnalysis: async (token) => changeProposalListSchema.parse(
+    confirmCapabilityAnalysis: async (token) => changeProposalArraySchema.parse(
       await invoke(
         CHANNELS.system.confirmCapabilityAnalysis,
         idSchema.parse(token),

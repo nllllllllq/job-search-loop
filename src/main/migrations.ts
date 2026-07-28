@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
@@ -176,12 +176,15 @@ function migrateProjectJson(raw: unknown, field: string): string {
     payload.outcome = '';
   }
   if (typeof payload.evidence !== 'string') payload.evidence = '';
+  if (typeof payload.unclassifiedNotes !== 'string') payload.unclassifiedNotes = '';
   if (
     typeof payload.storytellingVersions !== 'string'
     && typeof payload.storytelling_versions === 'string'
   ) {
     payload.storytellingVersions = payload.storytelling_versions;
   }
+  delete payload.outcomesAndEvidence;
+  delete payload.storytelling_versions;
   return JSON.stringify(payload);
 }
 
@@ -221,6 +224,99 @@ function migrateLegacyProjectJson(db: DatabaseSync): void {
       version.id,
     );
   }
+}
+
+function migrateNestedProjectSnapshots(db: DatabaseSync): void {
+  if (hasTable(db, 'preparation_materials')) {
+    const update = db.prepare(
+      'UPDATE preparation_materials SET assets_snapshot = ? WHERE id = ?',
+    );
+    for (const item of db.prepare(
+      'SELECT id, assets_snapshot FROM preparation_materials',
+    ).all()) {
+      try {
+        if (typeof item.assets_snapshot !== 'string') continue;
+        const decoded = JSON.parse(item.assets_snapshot) as unknown;
+        if (
+          decoded === null
+          || Array.isArray(decoded)
+          || typeof decoded !== 'object'
+          || !('projects' in decoded)
+          || !Array.isArray(decoded.projects)
+        ) continue;
+        const migrated = {
+          ...(decoded as Record<string, unknown>),
+          projects: decoded.projects.map((project, index) => JSON.parse(
+            migrateProjectJson(
+              JSON.stringify(project),
+              `preparation_materials.assets_snapshot.projects[${index}]`,
+            ),
+          )),
+        };
+        update.run(JSON.stringify(migrated), item.id);
+      } catch {
+        // Preserve unreadable history; readable rows still migrate.
+      }
+    }
+  }
+
+  if (hasTable(db, 'interviews')) {
+    const update = db.prepare(
+      'UPDATE interviews SET review_snapshot_json = ? WHERE id = ?',
+    );
+    for (const item of db.prepare(`
+      SELECT id, review_snapshot_json FROM interviews
+      WHERE review_snapshot_json IS NOT NULL
+    `).all()) {
+      try {
+        if (typeof item.review_snapshot_json !== 'string') continue;
+        const decoded = JSON.parse(item.review_snapshot_json) as unknown;
+        if (
+          decoded === null
+          || Array.isArray(decoded)
+          || typeof decoded !== 'object'
+        ) continue;
+        const snapshot = decoded as Record<string, unknown>;
+        const output = snapshot.output;
+        if (
+          output === null
+          || Array.isArray(output)
+          || typeof output !== 'object'
+          || !('proposals' in output)
+          || !Array.isArray(output.proposals)
+        ) continue;
+        const proposals = output.proposals.map((proposal, index) => {
+          if (
+            proposal === null
+            || Array.isArray(proposal)
+            || typeof proposal !== 'object'
+          ) return proposal;
+          const record = proposal as Record<string, unknown>;
+          if (record.targetType !== 'project') return proposal;
+          return {
+            ...record,
+            payload: JSON.parse(migrateProjectJson(
+              JSON.stringify(record.payload),
+              `interviews.review_snapshot_json.output.proposals[${index}].payload`,
+            )),
+          };
+        });
+        update.run(JSON.stringify({
+          ...snapshot,
+          output: { ...(output as Record<string, unknown>), proposals },
+        }), item.id);
+      } catch {
+        // Preserve corrupt historical snapshots byte-for-byte. Repository
+        // decoding exposes only the typed invalid audit status.
+      }
+    }
+  }
+}
+
+function hasTable(db: DatabaseSync, name: string): boolean {
+  return db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+  ).get(name) !== undefined;
 }
 
 export function migrate(db: DatabaseSync): void {
@@ -263,6 +359,37 @@ export function migrate(db: DatabaseSync): void {
       `).get();
       if (interviewsTable !== undefined) {
         db.exec('ALTER TABLE interviews ADD COLUMN review_snapshot_json TEXT;');
+      }
+    }
+    if (version < 5) {
+      if (hasTable(db, 'positions')) {
+        db.exec("ALTER TABLE positions ADD COLUMN location TEXT NOT NULL DEFAULT '';");
+      }
+      if (hasTable(db, 'projects')) {
+        db.exec("ALTER TABLE projects ADD COLUMN unclassified_notes TEXT NOT NULL DEFAULT '';");
+      }
+      if (hasTable(db, 'change_proposals') && hasTable(db, 'asset_versions')) {
+        migrateLegacyProjectJson(db);
+      }
+      migrateNestedProjectSnapshots(db);
+      db.exec(`
+        CREATE TABLE capability_analysis_runs (
+          id TEXT PRIMARY KEY,
+          selected_position_ids_json TEXT NOT NULL,
+          prompt_snapshot TEXT NOT NULL,
+          provider_origin TEXT NOT NULL,
+          model TEXT NOT NULL,
+          input_json TEXT NOT NULL,
+          output_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        ) STRICT;
+      `);
+      if (hasTable(db, 'change_proposals')) {
+        db.exec(`
+          ALTER TABLE change_proposals
+            ADD COLUMN analysis_run_id TEXT
+            REFERENCES capability_analysis_runs(id) ON DELETE SET NULL;
+        `);
       }
     }
     db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);

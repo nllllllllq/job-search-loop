@@ -12,7 +12,7 @@ import {
 
 describe('shared schemas', () => {
   it('keeps position and process-stage output types aligned with domain contracts', () => {
-    expectTypeOf<z.output<typeof positionInputSchema>>().toEqualTypeOf<PositionInput>();
+    expectTypeOf<z.input<typeof positionInputSchema>>().toEqualTypeOf<PositionInput>();
     expectTypeOf<z.output<typeof processStageInputSchema>>().toEqualTypeOf<ProcessStageInput>();
   });
 
@@ -33,6 +33,7 @@ describe('shared schemas', () => {
     expect(parsed).toEqual({
       company: '远山科技',
       title: '产品经理',
+      location: '',
       interest: 5,
       rawJd: '  第一行\n第二行  ',
     });
@@ -48,7 +49,18 @@ describe('shared schemas', () => {
     const targetId = '7c82c1d8-9f2c-4d69-891c-ea3fcb873210';
     const base = {
       targetType: 'project' as const,
-      payload: { name: '用户研究项目' },
+      payload: {
+        name: '用户研究项目',
+        background: '',
+        goal: '',
+        role: '',
+        keyDecisions: '',
+        outcome: '',
+        evidence: '',
+        reflections: '',
+        storytellingVersions: '',
+        unclassifiedNotes: '',
+      },
       rationale: '来自面试复盘',
       positionId: null,
       interviewId: null,

@@ -42,6 +42,7 @@ const detail: PositionDetail = {
   id: positionId,
   company: '远山科技',
   title: '产品经理',
+  location: '',
   interest: 5,
   rawJd: '负责产品规划\n与用户研究 <script>alert(1)</script>',
   currentStage: 'interview',
@@ -56,6 +57,7 @@ const listItem: PositionListItem = {
   id: positionId,
   company: detail.company,
   title: detail.title,
+  location: detail.location,
   interest: detail.interest,
   currentStage: detail.currentStage,
   finalResult: detail.finalResult,
@@ -106,6 +108,7 @@ describe('positions flow', () => {
       expect(fake.positions.create).toHaveBeenCalledWith({
         company: '远山科技',
         title: '产品经理',
+        location: '',
         interest: 5,
         rawJd: '负责产品规划与用户研究',
       });

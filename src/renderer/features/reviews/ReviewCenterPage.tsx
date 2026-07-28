@@ -12,7 +12,7 @@ export function ReviewCenterPage() {
     () => window.jobSearch.reviews.proposals.list(),
     [],
   );
-  const proposals = resource.data ?? [];
+  const proposals = resource.data?.items ?? [];
   const pending = useMemo(
     () => proposals.filter((item) => item.status === 'pending'),
     [proposals],
@@ -22,9 +22,12 @@ export function ReviewCenterPage() {
     [proposals],
   );
   const resolved = (proposal: ChangeProposal) => {
-    resource.setData((current) => (current ?? []).map(
-      (item) => item.id === proposal.id ? proposal : item,
-    ));
+    resource.setData((current) => current === null ? current : ({
+      ...current,
+      items: current.items.map(
+        (item) => item.id === proposal.id ? proposal : item,
+      ),
+    }));
   };
 
   return (

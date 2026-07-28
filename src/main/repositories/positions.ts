@@ -3,7 +3,6 @@ import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROCESS_STAGES } from '../../shared/defaults';
 import type {
   CanonicalStage,
-  Interview,
   Position,
   PositionDetail,
   PositionInput,
@@ -13,13 +12,11 @@ import type {
 } from '../../shared/domain';
 import {
   canonicalStageSchema,
-  interviewReviewSnapshotSchema,
   positionInputSchema,
   processStageInputSchema,
 } from '../../shared/schemas';
 import {
   integer,
-  json,
   notFound,
   nullableText,
   RepositoryError,
@@ -27,9 +24,10 @@ import {
   text,
   transaction,
 } from './common';
+import { decodeInterviewRow } from './interviews';
 
 const POSITION_COLUMNS = `
-  id, company, title, interest, raw_jd, current_stage, final_result, created_at, updated_at
+  id, company, title, location, interest, raw_jd, current_stage, final_result, created_at, updated_at
 `;
 const STAGE_COLUMNS = `
   id, position_id, name, canonical_stage, actual_date, expected_date,
@@ -45,6 +43,7 @@ function decodePosition(value: unknown): Position {
     id: text(data.id, 'id'),
     company: text(data.company, 'company'),
     title: text(data.title, 'title'),
+    location: text(data.location, 'location'),
     interest: interest as Position['interest'],
     rawJd: text(data.raw_jd, 'raw_jd'),
     currentStage: currentStageValue === null
@@ -68,28 +67,6 @@ function decodeStage(value: unknown): ProcessStage {
     feedback: text(data.feedback, 'feedback'),
     notes: text(data.notes, 'notes'),
     orderIndex: integer(data.order_index, 'order_index'),
-    createdAt: text(data.created_at, 'created_at'),
-    updatedAt: text(data.updated_at, 'updated_at'),
-  };
-}
-
-function decodeInterview(value: unknown): Interview {
-  const data = row(value, 'interview');
-  return {
-    id: text(data.id, 'id'),
-    positionId: text(data.position_id, 'position_id'),
-    roundName: text(data.round_name, 'round_name'),
-    interviewDate: nullableText(data.interview_date, 'interview_date'),
-    transcript: text(data.transcript, 'transcript'),
-    personalNotes: text(data.personal_notes, 'personal_notes'),
-    summary: nullableText(data.summary, 'summary'),
-    reviewSnapshot: data.review_snapshot_json === null
-      ? null
-      : interviewReviewSnapshotSchema.parse(json(
-        data.review_snapshot_json,
-        'review_snapshot_json',
-      )),
-    feedbackResult: nullableText(data.feedback_result, 'feedback_result'),
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),
   };
@@ -182,11 +159,12 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
         const now = new Date().toISOString();
         db.prepare(`
           INSERT INTO positions (${POSITION_COLUMNS})
-          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
         `).run(
           id,
           parsed.company,
           parsed.title,
+          parsed.location,
           parsed.interest,
           parsed.rawJd,
           DEFAULT_PROCESS_STAGES[0]?.canonicalStage ?? null,
@@ -218,9 +196,17 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
       const now = new Date().toISOString();
       db.prepare(`
         UPDATE positions
-        SET company = ?, title = ?, interest = ?, raw_jd = ?, updated_at = ?
+        SET company = ?, title = ?, location = ?, interest = ?, raw_jd = ?, updated_at = ?
         WHERE id = ?
-      `).run(parsed.company, parsed.title, parsed.interest, parsed.rawJd, now, id);
+      `).run(
+        parsed.company,
+        parsed.title,
+        parsed.location,
+        parsed.interest,
+        parsed.rawJd,
+        now,
+        id,
+      );
       return get(id);
     },
 
@@ -232,7 +218,7 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
       const interviews = db.prepare(`
         SELECT * FROM interviews
         WHERE position_id = ? ORDER BY interview_date DESC, created_at DESC
-      `).all(id).map(decodeInterview);
+      `).all(id).map(decodeInterviewRow);
       return { ...position, stages, interviews };
     },
 
@@ -240,9 +226,9 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
       const clauses: string[] = [];
       const parameters: string[] = [];
       if (filter.query?.trim()) {
-        clauses.push("(company LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR raw_jd LIKE ? ESCAPE '\\')");
+        clauses.push("(company LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR location LIKE ? ESCAPE '\\' OR raw_jd LIKE ? ESCAPE '\\')");
         const escaped = filter.query.trim().replace(/[\\%_]/g, '\\$&');
-        parameters.push(`%${escaped}%`, `%${escaped}%`, `%${escaped}%`);
+        parameters.push(`%${escaped}%`, `%${escaped}%`, `%${escaped}%`, `%${escaped}%`);
       }
       if (filter.stage) {
         clauses.push('current_stage = ?');
@@ -258,6 +244,7 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
           id: position.id,
           company: position.company,
           title: position.title,
+          location: position.location,
           interest: position.interest,
           currentStage: position.currentStage,
           finalResult: position.finalResult,

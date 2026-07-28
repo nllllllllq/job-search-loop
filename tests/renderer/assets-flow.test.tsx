@@ -33,6 +33,7 @@ const project: Project = {
   evidence: '实验数据与访谈记录',
   reflections: '应更早建立对照组',
   storytellingVersions: '业务面试两分钟版本',
+  unclassifiedNotes: '',
   createdAt: '2026-07-01T00:00:00.000Z',
   updatedAt: '2026-07-02T00:00:00.000Z',
 };
@@ -75,6 +76,7 @@ const position: PositionListItem = {
   id: positionId,
   company: '远山科技',
   title: '产品经理',
+  location: '',
   interest: 5,
   currentStage: 'interview',
   finalResult: null,

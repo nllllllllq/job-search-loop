@@ -82,7 +82,7 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
         };
       });
       const recentPositions = db.prepare(`
-        SELECT id, company, title, interest, current_stage, final_result, updated_at
+        SELECT id, company, title, location, interest, current_stage, final_result, updated_at
         FROM positions
         ORDER BY updated_at DESC, created_at DESC, id DESC
         LIMIT 8
@@ -96,6 +96,7 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
           id: text(data.id, 'id'),
           company: text(data.company, 'company'),
           title: text(data.title, 'title'),
+          location: text(data.location, 'location'),
           interest: interest as 1 | 2 | 3 | 4 | 5,
           currentStage,
           finalResult: data.final_result === null

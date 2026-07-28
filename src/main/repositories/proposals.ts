@@ -3,6 +3,12 @@ import type { DatabaseSync } from 'node:sqlite';
 import type {
   ChangeProposal,
   ChangeProposalInput,
+  ChangeProposalListResult,
+  ChangeProposalListItem,
+  ChangeProposalContext,
+  CapabilityAnalysisRun,
+  CapabilityAnalysisRunInput,
+  CorruptChangeProposal,
   InterviewReviewSnapshot,
   ProposalStatus,
   ProposalTarget,
@@ -22,6 +28,7 @@ import {
   strictInsightProposalPayloadSchema,
   strictProjectProposalPayloadSchema,
   strictQuestionProposalPayloadSchema,
+  capabilityAnalysisSelectionSchema,
 } from '../../shared/schemas';
 import { assetRepositoryInternals } from './assets';
 import {
@@ -88,10 +95,10 @@ function sameCanonicalPayload(
 function decodeProposal(value: unknown): ChangeProposal {
   const data = row(value, 'proposal');
   const targetType = proposalTargetSchema.parse(text(data.target_type, 'target_type'));
-  const payload = parsePayload(targetType, json(data.payload_json, 'payload_json'));
+  const payload = parseFinalPayload(targetType, json(data.payload_json, 'payload_json'));
   const acceptedValue = data.accepted_payload_json === null
     ? null
-    : parsePayload(targetType, json(data.accepted_payload_json, 'accepted_payload_json'));
+    : parseFinalPayload(targetType, json(data.accepted_payload_json, 'accepted_payload_json'));
   return {
     id: text(data.id, 'id'),
     targetType,
@@ -102,6 +109,7 @@ function decodeProposal(value: unknown): ChangeProposal {
     rationale: text(data.rationale, 'rationale'),
     positionId: nullableText(data.position_id, 'position_id'),
     interviewId: nullableText(data.interview_id, 'interview_id'),
+    analysisRunId: nullableText(data.analysis_run_id, 'analysis_run_id'),
     status: proposalStatusSchema.parse(text(data.status, 'status')),
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),
@@ -137,20 +145,22 @@ function writeTarget(
         db.prepare(`
           INSERT INTO projects (
             id, name, background, goal, role, key_decisions, outcome,
-            evidence, reflections, storytelling_versions, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            evidence, reflections, storytelling_versions, unclassified_notes, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           id, value.name, value.background, value.goal, value.role, value.keyDecisions,
-          value.outcome, value.evidence, value.reflections, value.storytellingVersions, now, now,
+          value.outcome, value.evidence, value.reflections, value.storytellingVersions,
+          value.unclassifiedNotes, now, now,
         );
       } else {
         db.prepare(`
           UPDATE projects SET name = ?, background = ?, goal = ?, role = ?,
             key_decisions = ?, outcome = ?, evidence = ?, reflections = ?,
-            storytelling_versions = ?, updated_at = ? WHERE id = ?
+            storytelling_versions = ?, unclassified_notes = ?, updated_at = ? WHERE id = ?
         `).run(
           value.name, value.background, value.goal, value.role, value.keyDecisions,
-          value.outcome, value.evidence, value.reflections, value.storytellingVersions, now, id,
+          value.outcome, value.evidence, value.reflections, value.storytellingVersions,
+          value.unclassifiedNotes, now, id,
         );
       }
       return;
@@ -232,9 +242,13 @@ function writeTarget(
 }
 
 export interface ProposalsRepository {
-  list(status?: ProposalStatus): ChangeProposal[];
+  list(status?: ProposalStatus): ChangeProposalListResult;
   get(id: string): ChangeProposal;
   create(input: ChangeProposalInput): ChangeProposal;
+  commitCapabilityAnalysis(
+    run: CapabilityAnalysisRunInput,
+    inputs: ChangeProposalInput[],
+  ): { run: CapabilityAnalysisRun; proposals: ChangeProposal[] };
   commitReview(
     interviewId: string,
     summary: string,
@@ -245,11 +259,30 @@ export interface ProposalsRepository {
   ignore(id: string): ChangeProposal;
 }
 
+function decodeContext(value: unknown): ChangeProposalContext {
+  const data = row(value, 'proposal context');
+  const company = nullableText(data.context_position_company, 'context_position_company');
+  const title = nullableText(data.context_position_title, 'context_position_title');
+  const roundName = nullableText(data.context_interview_round, 'context_interview_round');
+  const interviewDate = nullableText(data.context_interview_date, 'context_interview_date');
+  return {
+    position: company === null || title === null ? null : { company, title },
+    interview: roundName === null ? null : { roundName, interviewDate },
+  };
+}
+
 export function createProposalsRepository(db: DatabaseSync): ProposalsRepository {
   const get = (id: string): ChangeProposal => {
     const value = db.prepare('SELECT * FROM change_proposals WHERE id = ?').get(id);
     if (value === undefined) notFound('Proposal', id);
-    return decodeProposal(value);
+    try {
+      return decodeProposal(value);
+    } catch {
+      throw new RepositoryError(
+        'VALIDATION_ERROR',
+        '该建议的数据已损坏，只能只读查看，不能接受或忽略。',
+      );
+    }
   };
   const insert = (input: ChangeProposalInput): ChangeProposal => {
     const parsed = changeProposalInputSchema.parse(input);
@@ -258,8 +291,9 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
     db.prepare(`
       INSERT INTO change_proposals (
         id, target_type, target_id, operation, payload_json, accepted_payload_json,
-        rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
-      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, 'pending', ?, ?, NULL)
+        rationale, position_id, interview_id, analysis_run_id, status,
+        created_at, updated_at, resolved_at
+      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'pending', ?, ?, NULL)
     `).run(
       id,
       parsed.targetType,
@@ -269,6 +303,7 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
       parsed.rationale,
       parsed.positionId,
       parsed.interviewId,
+      parsed.analysisRunId,
       now,
       now,
     );
@@ -276,17 +311,114 @@ export function createProposalsRepository(db: DatabaseSync): ProposalsRepository
   };
   return {
     list(status) {
-      if (status) {
-        return db.prepare(`
-          SELECT * FROM change_proposals WHERE status = ? ORDER BY created_at DESC
-        `).all(proposalStatusSchema.parse(status)).map(decodeProposal);
+      const values = status
+        ? db.prepare(`
+          SELECT cp.*,
+            p.company AS context_position_company,
+            p.title AS context_position_title,
+            i.round_name AS context_interview_round,
+            i.interview_date AS context_interview_date
+          FROM change_proposals cp
+          LEFT JOIN positions p ON p.id = cp.position_id
+          LEFT JOIN interviews i ON i.id = cp.interview_id
+          WHERE cp.status = ?
+          ORDER BY cp.created_at DESC
+        `).all(proposalStatusSchema.parse(status))
+        : db.prepare(`
+          SELECT cp.*,
+            p.company AS context_position_company,
+            p.title AS context_position_title,
+            i.round_name AS context_interview_round,
+            i.interview_date AS context_interview_date
+          FROM change_proposals cp
+          LEFT JOIN positions p ON p.id = cp.position_id
+          LEFT JOIN interviews i ON i.id = cp.interview_id
+          ORDER BY cp.created_at DESC
+        `).all();
+      const items: ChangeProposalListItem[] = [];
+      const corruptItems: CorruptChangeProposal[] = [];
+      for (const value of values) {
+        try {
+          items.push({ ...decodeProposal(value), context: decodeContext(value) });
+        } catch {
+          const data = row(value, 'proposal');
+          const parsedStatus = proposalStatusSchema.safeParse(data.status);
+          const createdAt = typeof data.created_at === 'string'
+            && !Number.isNaN(Date.parse(data.created_at))
+            ? data.created_at
+            : null;
+          corruptItems.push({
+            id: typeof data.id === 'string' ? data.id : 'unknown',
+            status: parsedStatus.success ? parsedStatus.data : null,
+            createdAt,
+            code: 'CORRUPT_PROPOSAL',
+            message: '该建议的数据已损坏，只能只读查看。',
+            readOnly: true,
+            context: decodeContext(value),
+          });
+        }
       }
-      return db.prepare('SELECT * FROM change_proposals ORDER BY created_at DESC')
-        .all().map(decodeProposal);
+      return { items, corruptItems, corruptCount: corruptItems.length };
     },
     get,
     create(input) {
       return insert(input);
+    },
+    commitCapabilityAnalysis(runInput, inputs) {
+      const selectedPositionIds = capabilityAnalysisSelectionSchema.parse(
+        runInput.selectedPositionIds,
+      );
+      const promptSnapshot = interviewSummarySchema.parse(runInput.promptSnapshot);
+      const providerOrigin = interviewSummarySchema.max(2_000).parse(runInput.providerOrigin);
+      const model = interviewSummarySchema.max(500).parse(runInput.model);
+      const createdAt = new Date(runInput.createdAt).toISOString();
+      if (createdAt !== runInput.createdAt) {
+        throw new RepositoryError('VALIDATION_ERROR', 'Invalid analysis creation time');
+      }
+      const inputJson = JSON.stringify(runInput.input);
+      const outputJson = JSON.stringify(runInput.output);
+      if (inputJson === undefined || outputJson === undefined) {
+        throw new RepositoryError('VALIDATION_ERROR', 'Analysis snapshots must be JSON values');
+      }
+      const parsedInputs = inputs.map((input) => changeProposalInputSchema.parse({
+        ...input,
+        analysisRunId: null,
+      }));
+      return transaction(db, () => {
+        const id = randomUUID();
+        db.prepare(`
+          INSERT INTO capability_analysis_runs (
+            id, selected_position_ids_json, prompt_snapshot, provider_origin,
+            model, input_json, output_json, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          id,
+          JSON.stringify(selectedPositionIds),
+          promptSnapshot,
+          providerOrigin,
+          model,
+          inputJson,
+          outputJson,
+          createdAt,
+        );
+        const proposals = parsedInputs.map((input) => insert({
+          ...input,
+          analysisRunId: id,
+        }));
+        return {
+          run: {
+            id,
+            selectedPositionIds,
+            promptSnapshot,
+            providerOrigin,
+            model,
+            input: runInput.input,
+            output: runInput.output,
+            createdAt,
+          },
+          proposals,
+        };
+      });
     },
     commitReview(interviewId, summary, snapshot, inputs) {
       return transaction(db, () => {

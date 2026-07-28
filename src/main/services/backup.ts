@@ -14,6 +14,7 @@ import { CURRENT_SCHEMA_VERSION } from '../migrations';
 const REQUIRED_TABLES = [
   'asset_versions',
   'capabilities',
+  'capability_analysis_runs',
   'capability_evidence',
   'change_proposals',
   'insights',

@@ -178,6 +178,7 @@ function assembleOutbound(
   const canonical = canonicalizePreparationJobData({
     company: position.company,
     title: position.title,
+    location: position.location,
     rawJd: position.rawJd,
   }, selectedAssets);
   const outbound = {

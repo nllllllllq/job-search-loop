@@ -101,6 +101,7 @@ const emptyPosition: Position = {
   id: '11111111-1111-4111-8111-111111111111',
   company: '示例公司',
   title: '示例岗位',
+  location: '',
   interest: 3,
   rawJd: '示例 JD',
   currentStage: 'interested',
@@ -212,7 +213,11 @@ export function createJobSearchFake(): JobSearchApiFake {
         cancelPreview: vi.fn<JobSearchApi['reviews']['review']['cancelPreview']>().mockResolvedValue(undefined),
       },
       proposals: {
-        list: vi.fn<JobSearchApi['reviews']['proposals']['list']>().mockResolvedValue([] as ChangeProposal[]),
+        list: vi.fn<JobSearchApi['reviews']['proposals']['list']>().mockResolvedValue({
+          items: [] as ChangeProposal[],
+          corruptItems: [],
+          corruptCount: 0,
+        }),
         accept: vi.fn<JobSearchApi['reviews']['proposals']['accept']>().mockRejectedValue(new Error('未设置建议')),
         ignore: vi.fn<JobSearchApi['reviews']['proposals']['ignore']>().mockRejectedValue(new Error('未设置建议')),
       },

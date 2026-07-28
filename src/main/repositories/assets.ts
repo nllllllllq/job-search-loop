@@ -54,6 +54,7 @@ function decodeProject(value: unknown): Project {
     evidence: text(data.evidence, 'evidence'),
     reflections: text(data.reflections, 'reflections'),
     storytellingVersions: text(data.storytelling_versions, 'storytelling_versions'),
+    unclassifiedNotes: text(data.unclassified_notes, 'unclassified_notes'),
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),
   };
@@ -143,7 +144,8 @@ function sameProjectNarrative(previous: Project, input: ProjectInput): boolean {
     && previous.outcome === input.outcome
     && previous.evidence === input.evidence
     && previous.reflections === input.reflections
-    && previous.storytellingVersions === input.storytellingVersions;
+    && previous.storytellingVersions === input.storytellingVersions
+    && previous.unclassifiedNotes === (input.unclassifiedNotes ?? '');
 }
 
 function requireExistingIds(
@@ -230,7 +232,7 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
           db.prepare(`
             UPDATE projects SET name = ?, background = ?, goal = ?, role = ?,
               key_decisions = ?, outcome = ?, evidence = ?, reflections = ?,
-              storytelling_versions = ?, updated_at = ? WHERE id = ?
+              storytelling_versions = ?, unclassified_notes = ?, updated_at = ? WHERE id = ?
           `).run(
             parsed.name,
             parsed.background,
@@ -241,6 +243,7 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
             parsed.evidence,
             parsed.reflections,
             parsed.storytellingVersions,
+            parsed.unclassifiedNotes,
             now,
             id,
           );
@@ -248,8 +251,8 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
           db.prepare(`
             INSERT INTO projects (
               id, name, background, goal, role, key_decisions, outcome,
-              evidence, reflections, storytelling_versions, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              evidence, reflections, storytelling_versions, unclassified_notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             id,
             parsed.name,
@@ -261,6 +264,7 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
             parsed.evidence,
             parsed.reflections,
             parsed.storytellingVersions,
+            parsed.unclassifiedNotes,
             now,
             now,
           );

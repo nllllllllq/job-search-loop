@@ -88,6 +88,7 @@ describe('typed IPC contract', () => {
       id: '4c10d827-2684-4bf0-9131-dd18b7ce8075',
       company: '远山科技',
       title: '产品经理',
+      location: '',
       interest: 5 as const,
       rawJd: '负责产品规划',
       currentStage: 'interested' as const,
@@ -137,6 +138,7 @@ describe('typed IPC contract', () => {
         get: vi.fn(),
         create: vi.fn(),
         commitReview: vi.fn(),
+        commitCapabilityAnalysis: vi.fn(),
         accept: vi.fn(),
         ignore: vi.fn(),
       },
@@ -196,6 +198,7 @@ describe('typed IPC contract', () => {
       get: vi.fn(),
       create: vi.fn(),
       commitReview: vi.fn(),
+      commitCapabilityAnalysis: vi.fn(),
       accept: vi.fn(() => {
         throw new RepositoryError('CONFLICT', '建议已处理');
       }),

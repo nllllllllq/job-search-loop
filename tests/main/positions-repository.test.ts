@@ -13,11 +13,16 @@ describe('positions repository', () => {
       const created = positions.create({
         company: '远山科技',
         title: '产品经理',
+        location: '上海',
         interest: 5,
         rawJd: '负责产品规划与用户研究',
       });
 
       expect(positions.list()).toHaveLength(1);
+      expect(created.location).toBe('上海');
+      expect(positions.list({ query: '上海' })).toEqual([
+        expect.objectContaining({ id: created.id, location: '上海' }),
+      ]);
       expect(positions.listStages(created.id).map((stage) => stage.canonicalStage)).toEqual([
         'interested',
         'applied',

@@ -7,15 +7,29 @@ import {
   interviewSummarySchema,
   interviewUpdateSchema,
 } from '../../shared/schemas';
-import { json, notFound, nullableText, row, text } from './common';
+import { json, notFound, nullableText, RepositoryError, row, text } from './common';
 
 export type InterviewInput = Omit<
   Interview,
   'id' | 'summary' | 'reviewSnapshot' | 'createdAt' | 'updatedAt'
 >;
 
-function decodeInterview(value: unknown): Interview {
+export function decodeInterviewRow(value: unknown): Interview {
   const data = row(value, 'interview');
+  let reviewSnapshot: Interview['reviewSnapshot'] = { status: 'none' };
+  if (data.review_snapshot_json !== null) {
+    try {
+      reviewSnapshot = {
+        status: 'valid',
+        snapshot: interviewReviewSnapshotSchema.parse(json(
+          data.review_snapshot_json,
+          'review_snapshot_json',
+        )),
+      };
+    } catch {
+      reviewSnapshot = { status: 'invalid' };
+    }
+  }
   return {
     id: text(data.id, 'id'),
     positionId: text(data.position_id, 'position_id'),
@@ -24,12 +38,7 @@ function decodeInterview(value: unknown): Interview {
     transcript: text(data.transcript, 'transcript'),
     personalNotes: text(data.personal_notes, 'personal_notes'),
     summary: nullableText(data.summary, 'summary'),
-    reviewSnapshot: data.review_snapshot_json === null
-      ? null
-      : interviewReviewSnapshotSchema.parse(json(
-        data.review_snapshot_json,
-        'review_snapshot_json',
-      )),
+    reviewSnapshot,
     feedbackResult: nullableText(data.feedback_result, 'feedback_result'),
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),
@@ -48,7 +57,7 @@ export function createInterviewsRepository(db: DatabaseSync): InterviewsReposito
   const get = (id: string): Interview => {
     const value = db.prepare('SELECT * FROM interviews WHERE id = ?').get(id);
     if (value === undefined) notFound('Interview', id);
-    return decodeInterview(value);
+    return decodeInterviewRow(value);
   };
   const write = (id: string, input: InterviewInput, create: boolean): Interview => {
     const parsed = (create ? interviewInputSchema : interviewUpdateSchema).parse(input);
@@ -73,12 +82,11 @@ export function createInterviewsRepository(db: DatabaseSync): InterviewsReposito
         now,
       );
     } else {
-      get(id);
-      db.prepare(`
+      const result = db.prepare(`
         UPDATE interviews
         SET position_id = ?, round_name = ?, interview_date = ?, transcript = ?,
             personal_notes = ?, feedback_result = ?, updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND review_snapshot_json IS NULL
       `).run(
         parsed.positionId,
         parsed.roundName,
@@ -89,6 +97,15 @@ export function createInterviewsRepository(db: DatabaseSync): InterviewsReposito
         now,
         id,
       );
+      if (result.changes !== 1) {
+        if (db.prepare('SELECT id FROM interviews WHERE id = ?').get(id) === undefined) {
+          notFound('Interview', id);
+        }
+        throw new RepositoryError(
+          'CONFLICT',
+          '已完成复盘的面试记录不能修改，请新建补充记录。',
+        );
+      }
     }
     return get(id);
   };
@@ -104,13 +121,24 @@ export function createInterviewsRepository(db: DatabaseSync): InterviewsReposito
       return db.prepare(`
         SELECT * FROM interviews
         WHERE position_id = ? ORDER BY interview_date DESC, created_at DESC
-      `).all(positionId).map(decodeInterview);
+      `).all(positionId).map(decodeInterviewRow);
     },
     saveSummary(id, summary) {
-      get(id);
       const parsed = interviewSummarySchema.parse(summary);
-      db.prepare('UPDATE interviews SET summary = ?, updated_at = ? WHERE id = ?')
+      const result = db.prepare(`
+        UPDATE interviews SET summary = ?, updated_at = ?
+        WHERE id = ? AND review_snapshot_json IS NULL
+      `)
         .run(parsed, new Date().toISOString(), id);
+      if (result.changes !== 1) {
+        if (db.prepare('SELECT id FROM interviews WHERE id = ?').get(id) === undefined) {
+          notFound('Interview', id);
+        }
+        throw new RepositoryError(
+          'CONFLICT',
+          '已完成复盘的面试记录不能修改，请新建补充记录。',
+        );
+      }
       return get(id);
     },
   };

@@ -28,6 +28,7 @@ interface ReviewInputSnapshot {
     id: string;
     company: string;
     title: string;
+    location: string;
     rawJd: string;
   };
   interview: {
@@ -114,6 +115,18 @@ function buildRequest(bound: BoundPreview): AiCompletionRequest {
               rationale: 'string',
               payload: 'complete target-specific object',
             }],
+            projectPayload: {
+              name: 'string',
+              background: 'string',
+              goal: 'string',
+              role: 'string',
+              keyDecisions: 'string',
+              outcome: 'string',
+              evidence: 'string',
+              reflections: 'string',
+              storytellingVersions: 'string',
+              unclassifiedNotes: 'string',
+            },
           }, null, 2),
           '所有建议只是待确认变更，不代表已经写入资产。',
           'update/merge 必须提供现存同类型 targetId；create 必须使用 null。',
@@ -260,6 +273,7 @@ export function createInterviewReviewService({
       previewRequestSequence = requestId;
       latestPreviewRequest.set(interviewId, requestId);
       const hasPending = proposals.list('pending')
+        .items
         .some((proposal) => proposal.interviewId === interviewId);
       if (hasPending) {
         throw new RepositoryError(
@@ -268,7 +282,7 @@ export function createInterviewReviewService({
         );
       }
       const interview = interviews.get(interviewId);
-      if (interview.reviewSnapshot !== null) {
+      if (interview.reviewSnapshot.status !== 'none') {
         throw new RepositoryError(
           'CONFLICT',
           '这次面试已经完成复盘；为保留审计快照，第一版不重复覆盖。',
@@ -294,6 +308,7 @@ export function createInterviewReviewService({
           id: position.id,
           company: position.company,
           title: position.title,
+          location: position.location,
           rawJd: position.rawJd,
         },
         interview: {
@@ -388,13 +403,14 @@ export function createInterviewReviewService({
       }
 
       const currentInterview = interviews.get(bound.input.interview.id);
-      if (currentInterview.reviewSnapshot !== null) {
+      if (currentInterview.reviewSnapshot.status !== 'none') {
         throw new RepositoryError(
           'CONFLICT',
           '这次面试已经完成复盘，请重新载入面试记录。',
         );
       }
       const hasPending = proposals.list('pending')
+        .items
         .some((proposal) => proposal.interviewId === bound.input.interview.id);
       if (hasPending) {
         throw new RepositoryError(

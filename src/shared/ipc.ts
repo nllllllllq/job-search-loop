@@ -8,6 +8,7 @@ import type {
   CapabilityAnalysisPreview,
   CapabilityInput,
   ChangeProposal,
+  ChangeProposalListResult,
   DashboardSummary,
   Insight,
   InsightInput,
@@ -186,7 +187,7 @@ export interface JobSearchApi {
       cancelPreview(token: string): Promise<void>;
     };
     readonly proposals: {
-      list(status?: ProposalStatus): Promise<ChangeProposal[]>;
+      list(status?: ProposalStatus): Promise<ChangeProposalListResult>;
       accept(id: string, editedPayload?: unknown): Promise<ChangeProposal>;
       ignore(id: string): Promise<ChangeProposal>;
     };

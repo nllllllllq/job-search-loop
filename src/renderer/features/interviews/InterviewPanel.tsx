@@ -241,11 +241,11 @@ export function InterviewPanel({ positionId }: InterviewPanelProps) {
                 </button>
                 <button
                   className="button button--primary"
-                  disabled={previewingId === item.id || item.reviewSnapshot !== null}
+                  disabled={previewingId === item.id || item.reviewSnapshot.status !== 'none'}
                   onClick={() => void beginReview(item.id)}
                   type="button"
                 >
-                  {item.reviewSnapshot
+                  {item.reviewSnapshot.status !== 'none'
                     ? '已完成 AI 复盘'
                     : previewingId === item.id ? '准备预览…' : '开始 AI 复盘'}
                 </button>

@@ -15,6 +15,7 @@ const project = {
   evidence: '线上数据。',
   reflections: '需要更早做基线。',
   storytellingVersions: '两分钟版本。',
+  unclassifiedNotes: '',
 };
 
 describe('controlled proposal acceptance', () => {

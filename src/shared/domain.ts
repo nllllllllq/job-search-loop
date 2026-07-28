@@ -16,6 +16,7 @@ export type PromptKind = 'preparation' | 'interview-review' | 'capability-analys
 export interface PositionInput {
   company: string;
   title: string;
+  location?: string;
   interest: 1 | 2 | 3 | 4 | 5;
   rawJd: string;
 }
@@ -31,8 +32,9 @@ export interface ProcessStageInput {
   orderIndex: number;
 }
 
-export interface Position extends PositionInput {
+export interface Position extends Omit<PositionInput, 'location'> {
   id: string;
+  location: string;
   currentStage: CanonicalStage | null;
   finalResult: string | null;
   createdAt: string;
@@ -43,6 +45,7 @@ export interface PositionListItem {
   id: string;
   company: string;
   title: string;
+  location: string;
   interest: 1 | 2 | 3 | 4 | 5;
   currentStage: CanonicalStage | null;
   finalResult: string | null;
@@ -83,6 +86,7 @@ export interface PreparationOutboundPreview {
   position: {
     company: string;
     title: string;
+    location: string;
     rawJd: string;
   };
   selectedAssets: PreparationAssetsSnapshot;
@@ -152,7 +156,7 @@ export interface Interview {
   transcript: string;
   personalNotes: string;
   summary: string | null;
-  reviewSnapshot: InterviewReviewSnapshot | null;
+  reviewSnapshot: InterviewReviewAudit;
   feedbackResult: string | null;
   createdAt: string;
   updatedAt: string;
@@ -199,7 +203,7 @@ export interface InterviewReviewSelectedAssets {
 }
 
 export interface InterviewReviewOutbound {
-  position: Pick<Position, 'id' | 'company' | 'title' | 'rawJd'>;
+  position: Pick<Position, 'id' | 'company' | 'title' | 'location' | 'rawJd'>;
   interview: Pick<
     Interview,
     | 'id'
@@ -245,10 +249,17 @@ export interface ProjectInput {
   evidence: string;
   reflections: string;
   storytellingVersions: string;
+  unclassifiedNotes?: string;
 }
 
-export interface Project extends ProjectInput {
+export type InterviewReviewAudit =
+  | { status: 'none' }
+  | { status: 'valid'; snapshot: InterviewReviewSnapshot }
+  | { status: 'invalid' };
+
+export interface Project extends Omit<ProjectInput, 'unclassifiedNotes'> {
   id: string;
+  unclassifiedNotes: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -315,15 +326,64 @@ export interface ChangeProposalInput {
   rationale: string;
   positionId: string | null;
   interviewId: string | null;
+  analysisRunId?: string | null;
 }
 
 export interface ChangeProposal extends ChangeProposalInput {
   id: string;
+  analysisRunId: string | null;
   status: ProposalStatus;
   acceptedPayload: unknown | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
+  context?: ChangeProposalContext;
+}
+
+export interface ChangeProposalContext {
+  position: { company: string; title: string } | null;
+  interview: { roundName: string; interviewDate: string | null } | null;
+}
+
+export interface ChangeProposalListItem extends ChangeProposal {
+  context: ChangeProposalContext;
+}
+
+export interface CorruptChangeProposal {
+  id: string;
+  status: ProposalStatus | null;
+  createdAt: string | null;
+  code: 'CORRUPT_PROPOSAL';
+  message: string;
+  readOnly: true;
+  context: ChangeProposalContext;
+}
+
+export interface ChangeProposalListResult {
+  items: ChangeProposal[];
+  corruptItems: CorruptChangeProposal[];
+  corruptCount: number;
+}
+
+export interface CapabilityAnalysisRun {
+  id: string;
+  selectedPositionIds: string[];
+  promptSnapshot: string;
+  providerOrigin: string;
+  model: string;
+  input: unknown;
+  output: unknown;
+  createdAt: string;
+}
+
+export interface CapabilityAnalysisRunInput {
+  selectedPositionIds: string[];
+  promptSnapshot: string;
+  providerOrigin: string;
+  model: string;
+  input: unknown;
+  output: unknown;
+  createdAt: string;
 }
 
 export interface AssetVersion {

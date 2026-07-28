@@ -19,6 +19,7 @@ const position: PositionDetail = {
   id: positionId,
   company: '远山科技',
   title: 'AI 产品经理',
+  location: '',
   interest: 5,
   rawJd: '负责 AI 产品规划。',
   currentStage: 'interview',
@@ -37,7 +38,7 @@ const interview: Interview = {
   transcript: '面试官问我如何判断需求优先级。',
   personalNotes: '回答得有些散。',
   summary: null,
-  reviewSnapshot: null,
+  reviewSnapshot: { status: 'none' },
   feedbackResult: null,
   createdAt: '2026-07-27T09:00:00.000Z',
   updatedAt: '2026-07-27T09:00:00.000Z',
@@ -55,6 +56,7 @@ const preview: InterviewReviewPreview = {
       id: position.id,
       company: position.company,
       title: position.title,
+      location: position.location,
       rawJd: position.rawJd,
     },
     interview: {
@@ -94,6 +96,7 @@ const proposal: ChangeProposal = {
   rationale: '值得沉淀为面试官问题。',
   positionId,
   interviewId,
+  analysisRunId: null,
   status: 'pending',
   acceptedPayload: null,
   createdAt: '2026-07-27T10:00:00.000Z',
@@ -112,6 +115,7 @@ const projectAsset: Project = {
   evidence: '用户访谈',
   reflections: '控制范围',
   storytellingVersions: 'STAR',
+  unclassifiedNotes: '',
   createdAt: '2026-07-27T08:00:00.000Z',
   updatedAt: '2026-07-27T08:00:00.000Z',
 };
@@ -332,10 +336,14 @@ describe('interview and review UI', () => {
   it('shows proposal context/history and supports accept, edit-accept validation, and ignore', async () => {
     window.location.hash = '#/reviews';
     const fake = resetJobSearchFake();
-    fake.reviews.proposals.list.mockResolvedValue([
+    fake.reviews.proposals.list.mockResolvedValue({
+      items: [
       proposal,
       { ...proposal, id: '55555555-5555-4555-8555-555555555555', status: 'ignored', resolvedAt: '2026-07-27T11:00:00.000Z' },
-    ]);
+      ],
+      corruptItems: [],
+      corruptCount: 0,
+    });
     fake.positions.get.mockResolvedValue(position);
     fake.reviews.interviews.get.mockResolvedValue(interview);
     fake.reviews.proposals.accept.mockResolvedValue({ ...proposal, status: 'accepted' });
@@ -372,7 +380,11 @@ describe('interview and review UI', () => {
   it('retains proposal editor content after mutation failure', async () => {
     window.location.hash = '#/reviews';
     const fake = installJobSearchFake(resetJobSearchFake());
-    fake.reviews.proposals.list.mockResolvedValue([proposal]);
+    fake.reviews.proposals.list.mockResolvedValue({
+      items: [proposal],
+      corruptItems: [],
+      corruptCount: 0,
+    });
     fake.positions.get.mockResolvedValue(position);
     fake.reviews.interviews.get.mockResolvedValue(interview);
     fake.reviews.proposals.accept.mockRejectedValue(new Error('write failed'));
@@ -397,7 +409,11 @@ describe('interview and review UI', () => {
       rationale: '不采用的建议',
     };
     const fake = resetJobSearchFake();
-    fake.reviews.proposals.list.mockResolvedValue([proposal, second]);
+    fake.reviews.proposals.list.mockResolvedValue({
+      items: [proposal, second],
+      corruptItems: [],
+      corruptCount: 0,
+    });
     fake.positions.get.mockResolvedValue(position);
     fake.reviews.interviews.get.mockResolvedValue(interview);
     fake.reviews.proposals.accept.mockImplementation(async (id) => ({

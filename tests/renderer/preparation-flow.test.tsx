@@ -18,6 +18,7 @@ const detail: PositionDetail = {
   id: positionId,
   company: '远山科技',
   title: 'AI 产品经理',
+  location: '',
   interest: 5,
   rawJd: '需要用户研究与产品规划能力。\n需要跨团队协作。',
   currentStage: 'applied',
@@ -39,6 +40,7 @@ const project: Project = {
   evidence: '实验数据与访谈记录。',
   reflections: '应更早建立对照组。',
   storytellingVersions: '两分钟业务面版本。',
+  unclassifiedNotes: '',
   createdAt: '2026-07-01T00:00:00.000Z',
   updatedAt: '2026-07-02T00:00:00.000Z',
 };
@@ -108,6 +110,7 @@ const outboundPreview = {
   position: {
     company: detail.company,
     title: detail.title,
+    location: detail.location,
     rawJd: detail.rawJd,
   },
   selectedAssets: {
@@ -118,6 +121,7 @@ const outboundPreview = {
     position: {
       company: detail.company,
       title: detail.title,
+      location: detail.location,
       rawJd: detail.rawJd,
     },
     selectedAssets: {

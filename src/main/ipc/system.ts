@@ -2,7 +2,7 @@ import { CHANNELS } from '../../shared/ipc';
 import {
   capabilityAnalysisPreviewSchema,
   capabilityAnalysisSelectionSchema,
-  changeProposalListSchema,
+  changeProposalArraySchema,
   dashboardSummarySchema,
   idSchema,
   noPayloadSchema,
@@ -50,7 +50,7 @@ export function registerSystemHandlers(
     ipcMain.handle(
       CHANNELS.system.confirmCapabilityAnalysis,
       safeIpcHandler(async (_event, payload) => (
-        changeProposalListSchema.parse(
+        changeProposalArraySchema.parse(
           await capabilityAnalysis.confirm(idSchema.parse(payload)),
         )
       )),

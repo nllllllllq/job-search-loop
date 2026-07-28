@@ -147,6 +147,13 @@ export function registerIpcHandlers(
     capabilityAnalysisService,
     runtime?.system,
   );
-  registerImportHandlers(guardedIpcMain, runtime?.imports);
+  registerImportHandlers(guardedIpcMain, {
+    ...(ai ? {
+      ai: ai.client,
+      getSettings: () => ai.settings.getPrivate(),
+      prompts,
+    } : {}),
+    ...runtime?.imports,
+  });
   if (ai) registerAiHandlers(guardedIpcMain, ai.settings, ai.client);
 }

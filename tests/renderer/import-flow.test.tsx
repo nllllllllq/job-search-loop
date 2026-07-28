@@ -74,6 +74,7 @@ describe('local import UI', () => {
     fake.imports.previewProjectsFromDocument.mockResolvedValue({
       sessionId: '22222222-2222-4222-8222-222222222222',
       sourceSummary: 'notes.md · 2 个候选项目',
+      analysisMode: 'ai',
       segments: [
         project('33333333-3333-4333-8333-333333333333', '项目一'),
         project('44444444-4444-4444-8444-444444444444', '项目二'),
@@ -88,8 +89,16 @@ describe('local import UI', () => {
     render(<ProjectImportWizard onClose={vi.fn()} onCompleted={vi.fn()} open />);
     const file = new File(['# 项目一'], 'notes.md', { type: 'text/markdown' });
     fireEvent.change(screen.getByLabelText('选择项目文件'), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole('button', { name: '解析文件' }));
+    expect(screen.getByText(/提取后的纯文本/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'AI 辅助解析' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '仅本地解析' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'AI 辅助解析' }));
     expect(await screen.findByDisplayValue('项目一')).toBeInTheDocument();
+    expect(fake.imports.previewProjectsFromDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'notes.md' }),
+      'ai',
+    );
+    expect(screen.getByText('AI 已完成项目识别与字段预填')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '进入字段确认' }));
     fireEvent.click(screen.getByRole('button', { name: '保存 2 个项目' }));
 

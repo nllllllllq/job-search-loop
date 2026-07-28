@@ -17,6 +17,7 @@ import {
   type RestoreMarker,
 } from '../../src/main/services/backup';
 import { CURRENT_SCHEMA_VERSION } from '../../src/main/migrations';
+import { createPromptsRepository } from '../../src/main/repositories/prompts';
 
 const temporaryDirectories: string[] = [];
 const openControllers: LiveDatabaseController[] = [];
@@ -154,6 +155,32 @@ function createLegacyBackup(path: string, version: 1 | 4): void {
   }
 }
 
+function createVersion5Backup(path: string): void {
+  const db = openDatabase(path);
+  try {
+    db.exec(`
+      DELETE FROM prompt_templates WHERE kind = 'project-import';
+      ALTER TABLE prompt_templates RENAME TO prompt_templates_v6;
+      CREATE TABLE prompt_templates (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL UNIQUE CHECK (
+          kind IN ('preparation', 'interview-review', 'capability-analysis')
+        ),
+        name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+      INSERT INTO prompt_templates
+      SELECT * FROM prompt_templates_v6;
+      DROP TABLE prompt_templates_v6;
+      PRAGMA user_version = 5;
+    `);
+  } finally {
+    db.close();
+  }
+}
+
 afterEach(async () => {
   for (const controller of openControllers.splice(0)) {
     try {
@@ -168,6 +195,19 @@ afterEach(async () => {
 });
 
 describe('local database backup', () => {
+  it('restores a V5 backup and adds the project import prompt on repository startup', async () => {
+    const app = await fixture();
+    const backupPath = join(app.directory, 'v5.jobloop');
+    createVersion5Backup(backupPath);
+
+    await app.service.restoreFrom(backupPath);
+
+    expect(app.database().prepare('PRAGMA user_version').get())
+      .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
+    expect(createPromptsRepository(app.database()).get('project-import').name)
+      .toBe('项目文件导入');
+  });
+
   it('exports and restores the complete closed-loop records', async () => {
     const app = await fixture();
     seedClosedLoop(app.database());

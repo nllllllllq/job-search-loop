@@ -12,6 +12,7 @@ const promptOrder: PromptKind[] = [
   'preparation',
   'interview-review',
   'capability-analysis',
+  'project-import',
 ];
 
 export function PromptTemplatesSection({
@@ -26,6 +27,9 @@ export function PromptTemplatesSection({
     )?.content ?? '',
     'capability-analysis': prompts.find(
       (prompt) => prompt.kind === 'capability-analysis',
+    )?.content ?? '',
+    'project-import': prompts.find(
+      (prompt) => prompt.kind === 'project-import',
     )?.content ?? '',
   }));
   const [saving, setSaving] = useState<PromptKind | null>(null);

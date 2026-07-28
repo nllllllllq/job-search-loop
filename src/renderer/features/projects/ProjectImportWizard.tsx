@@ -39,6 +39,7 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
   const [pending, setPending] = useState<ProjectSegmentPreview[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [aiLabel, setAiLabel] = useState('正在读取 AI 配置…');
 
   useEffect(() => {
     if (!open) return;
@@ -48,6 +49,16 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
     setStep(1);
     setBusy(false);
     setMessage('');
+    setAiLabel('正在读取 AI 配置…');
+    void window.jobSearch.ai.settings.get()
+      .then((settings) => {
+        setAiLabel(settings.hasApiKey && settings.baseUrl && settings.model
+          ? `${settings.baseUrl} · ${settings.model}`
+          : '当前未配置 AI，使用时会自动回退本地规则');
+      })
+      .catch(() => {
+        setAiLabel('AI 配置暂不可用，使用时会自动回退本地规则');
+      });
   }, [open]);
 
   const close = async () => {
@@ -55,16 +66,19 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
     onClose();
   };
 
-  const parse = async () => {
+  const parse = async (mode: 'ai' | 'local') => {
     if (!file || busy) return;
     setBusy(true);
     setMessage('');
     try {
-      const result = await window.jobSearch.imports.previewProjectsFromDocument({
-        name: file.name,
-        type: file.type,
-        bytes: await fileBytes(file),
-      });
+      const result = await window.jobSearch.imports.previewProjectsFromDocument(
+        {
+          name: file.name,
+          type: file.type,
+          bytes: await fileBytes(file),
+        },
+        mode,
+      );
       setPreview(result);
       setPending(result.segments);
     } catch {
@@ -172,9 +186,21 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
               type="file"
             />
           </Field>
-          <button className="button button--primary" disabled={!file || busy} onClick={() => void parse()} type="button">
-            {busy ? '解析中…' : '解析文件'}
-          </button>
+          {file ? (
+            <div className="project-import-ai-note">
+              <strong>AI 辅助解析</strong>
+              <p>点击后会把本机提取后的纯文本发送到当前外部 AI，点击即表示确认；原始文件不会外发。</p>
+              <span>{aiLabel}</span>
+            </div>
+          ) : null}
+          <div className="project-import-parse-actions">
+            <button className="button button--primary" disabled={!file || busy} onClick={() => void parse('ai')} type="button">
+              {busy ? '解析中…' : 'AI 辅助解析'}
+            </button>
+            <button className="button button--quiet" disabled={!file || busy} onClick={() => void parse('local')} type="button">
+              仅本地解析
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -183,7 +209,19 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
           <div className="import-preview-meta">
             <strong>{preview.sourceSummary}</strong>
             <span>先确认分段和顺序，再检查字段。</span>
+            <span className={`import-analysis-mode import-analysis-mode--${preview.analysisMode}`}>
+              {preview.analysisMode === 'ai'
+                ? 'AI 已完成项目识别与字段预填'
+                : preview.analysisMode === 'local'
+                  ? '已使用本地规则完成项目识别'
+                  : 'AI 未完成解析，已自动回退本地规则'}
+            </span>
           </div>
+          {preview.warnings.length ? (
+            <ul className="import-warning-list">
+              {preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+            </ul>
+          ) : null}
           {preview.segments.map((segment, index) => (
             <article className="segment-card" key={segment.tempId}>
               <input

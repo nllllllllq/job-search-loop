@@ -11,7 +11,11 @@ export type ProposalStatus = 'pending' | 'accepted' | 'ignored';
 export type ProposalTarget = 'project' | 'question' | 'capability' | 'insight';
 export type ProposalOperation = 'create' | 'update' | 'merge';
 export type QuestionType = 'interviewer' | 'candidate';
-export type PromptKind = 'preparation' | 'interview-review' | 'capability-analysis';
+export type PromptKind =
+  | 'preparation'
+  | 'interview-review'
+  | 'capability-analysis'
+  | 'project-import';
 
 export interface PositionInput {
   company: string;
@@ -47,6 +51,7 @@ export interface ProjectSegmentPreview {
 export interface ProjectImportPreview {
   sessionId: ImportSessionId;
   sourceSummary: string;
+  analysisMode: 'ai' | 'local' | 'local-fallback';
   segments: ProjectSegmentPreview[];
   warnings: string[];
 }

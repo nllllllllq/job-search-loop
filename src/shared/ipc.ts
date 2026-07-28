@@ -236,7 +236,10 @@ export interface JobSearchApi {
   readonly imports: {
     previewPositionFromText(text: string): Promise<PositionImportPreview>;
     previewPositionFromImages(images: ImportedImageInput[]): Promise<PositionImportPreview>;
-    previewProjectsFromDocument(file: ImportedFileInput): Promise<ProjectImportPreview>;
+    previewProjectsFromDocument(
+      file: ImportedFileInput,
+      mode: 'ai' | 'local',
+    ): Promise<ProjectImportPreview>;
     updateProjectSegments(
       sessionId: string,
       operation: ProjectSegmentUpdate,

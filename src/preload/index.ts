@@ -253,9 +253,9 @@ const api = frozen<JobSearchApi>({
       CHANNELS.imports.previewPositionFromImages,
       positionImportImagesSchema.parse({ images }),
     ),
-    previewProjectsFromDocument: (file) => invoke(
+    previewProjectsFromDocument: (file, mode) => invoke(
       CHANNELS.imports.previewProjectsFromDocument,
-      projectImportDocumentSchema.parse({ file }),
+      projectImportDocumentSchema.parse({ file, mode }),
     ),
     updateProjectSegments: (sessionId, operation) => invoke(
       CHANNELS.imports.updateProjectSegments,

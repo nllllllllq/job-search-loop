@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
@@ -143,7 +143,7 @@ const CREATE_SCHEMA_V1 = `
 
   CREATE TABLE IF NOT EXISTS prompt_templates (
     id TEXT PRIMARY KEY,
-    kind TEXT NOT NULL UNIQUE CHECK (kind IN ('preparation', 'interview-review', 'capability-analysis')),
+    kind TEXT NOT NULL UNIQUE CHECK (kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import')),
     name TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -406,6 +406,27 @@ export function migrate(db: DatabaseSync): void {
             REFERENCES capability_analysis_runs(id) ON DELETE SET NULL;
         `);
       }
+    }
+    if (version < 6 && hasTable(db, 'prompt_templates')) {
+      db.exec(`
+        ALTER TABLE prompt_templates RENAME TO prompt_templates_v5;
+        CREATE TABLE prompt_templates (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL UNIQUE CHECK (
+            kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import')
+          ),
+          name TEXT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        INSERT INTO prompt_templates (
+          id, kind, name, content, created_at, updated_at
+        )
+        SELECT id, kind, name, content, created_at, updated_at
+        FROM prompt_templates_v5;
+        DROP TABLE prompt_templates_v5;
+      `);
     }
     db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     db.exec('COMMIT');

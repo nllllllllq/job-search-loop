@@ -30,13 +30,13 @@ const REQUIRED_TABLES_V1_TO_V4 = [
   'questions',
 ] as const;
 
-const REQUIRED_TABLES_V5 = [
+const REQUIRED_TABLES_V5_PLUS = [
   ...REQUIRED_TABLES_V1_TO_V4,
   'capability_analysis_runs',
 ].sort();
 
 function requiredTablesForVersion(version: number): readonly string[] {
-  return version >= 5 ? REQUIRED_TABLES_V5 : REQUIRED_TABLES_V1_TO_V4;
+  return version >= 5 ? REQUIRED_TABLES_V5_PLUS : REQUIRED_TABLES_V1_TO_V4;
 }
 
 export type BackupServiceErrorCode = 'BACKUP_INVALID' | 'BACKUP_FAILED';

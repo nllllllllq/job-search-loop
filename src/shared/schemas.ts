@@ -7,7 +7,12 @@ const proposalStatuses = ['pending', 'accepted', 'ignored'] as const;
 const proposalTargets = ['project', 'question', 'capability', 'insight'] as const;
 const proposalOperations = ['create', 'update', 'merge'] as const;
 const questionTypes = ['interviewer', 'candidate'] as const;
-const promptKinds = ['preparation', 'interview-review', 'capability-analysis'] as const;
+const promptKinds = [
+  'preparation',
+  'interview-review',
+  'capability-analysis',
+  'project-import',
+] as const;
 
 const interestSchema = z.union([
   z.literal(1),
@@ -722,6 +727,7 @@ export const positionImportImagesSchema = z.object({
 
 export const projectImportDocumentSchema = z.object({
   file: importedFileSchema,
+  mode: z.enum(['ai', 'local']),
 }).strict();
 
 export const projectSegmentUpdateSchema = z.discriminatedUnion('type', [

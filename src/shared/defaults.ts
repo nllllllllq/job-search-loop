@@ -53,4 +53,14 @@ export const DEFAULT_PROMPT_TEMPLATES: readonly DefaultPromptTemplate[] = [
     name: '共性能力分析',
     content: '分析所选原始 JD 中反复出现的能力，输出能力名称、出现频率、已有证据与待补足的能力缺口。',
   },
+  {
+    id: 'd5a6f2f5-4eb7-45bd-8ce3-37f4efc1bb64',
+    kind: 'project-import',
+    name: '项目文件导入',
+    content: [
+      '你是项目档案整理助手。请只依据用户提供的文档原文识别项目边界，并提取可核验的项目字段。',
+      '不得编造文档中没有出现的经历、数据或职责；无法可靠分类的内容放入 unclassifiedNotes。',
+      'startLine 必须指向每个项目在带行号原文中的起始行。',
+    ].join('\n'),
+  },
 ];

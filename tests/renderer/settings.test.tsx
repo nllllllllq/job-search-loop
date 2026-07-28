@@ -31,6 +31,14 @@ const prompts: PromptTemplate[] = [
     createdAt: '2026-07-27T00:00:00.000Z',
     updatedAt: '2026-07-27T00:00:00.000Z',
   },
+  {
+    id: 'd5a6f2f5-4eb7-45bd-8ce3-37f4efc1bb64',
+    kind: 'project-import',
+    name: '项目文件导入',
+    content: '按原文识别项目',
+    createdAt: '2026-07-28T00:00:00.000Z',
+    updatedAt: '2026-07-28T00:00:00.000Z',
+  },
 ];
 
 function renderSettings() {
@@ -42,6 +50,33 @@ function renderSettings() {
 }
 
 describe('settings page', () => {
+  it('edits the independent project import prompt', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockResolvedValue({
+      baseUrl: '',
+      model: '',
+      hasApiKey: false,
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    fake.assets.prompts.save.mockImplementation(async (kind, content) => ({
+      ...prompts.find((prompt) => prompt.kind === kind)!,
+      content,
+    }));
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    const editor = await screen.findByLabelText(/^项目文件导入模板/);
+    await user.clear(editor);
+    await user.type(editor, '只按原文项目边界解析');
+    await user.click(screen.getByRole('button', { name: '保存项目文件导入模板' }));
+
+    expect(fake.assets.prompts.save).toHaveBeenCalledWith(
+      'project-import',
+      '只按原文项目边界解析',
+    );
+  });
+
   it('loads public settings without exposing a saved key', async () => {
     const fake = createJobSearchFake();
     fake.ai.settings.get.mockResolvedValue({

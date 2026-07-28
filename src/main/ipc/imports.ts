@@ -15,7 +15,10 @@ import type {
 } from '../../shared/domain';
 import { extractDocumentText } from '../services/document-import';
 import {
-  classifyProjectText,
+  analyzeProjectImport,
+  type ProjectImportAiDependencies,
+} from '../services/project-import-ai';
+import {
   mergeProjectSegments,
   renameProjectSegment,
   reorderProjectSegments,
@@ -39,6 +42,9 @@ type StoredPositionPreview = Omit<PositionImportPreview, 'sessionId'>;
 export interface ImportRuntime {
   sessions?: ImportSessionService;
   createOcr?: () => Promise<OcrService>;
+  ai?: ProjectImportAiDependencies['ai'];
+  getSettings?: ProjectImportAiDependencies['getSettings'];
+  prompts?: ProjectImportAiDependencies['prompts'];
 }
 
 function userFacing(error: unknown): never {
@@ -105,14 +111,21 @@ export function registerImportHandlers(
 
   ipcMain.handle(CHANNELS.imports.previewProjectsFromDocument, safeIpcHandler(async (_event, payload) => {
     try {
-      const { file } = projectImportDocumentSchema.parse(payload);
+      const { file, mode } = projectImportDocumentSchema.parse(payload);
       const extracted = await extractDocumentText(file);
       if (!extracted.text) throw new Error(extracted.warnings[0] ?? '文件中没有可提取文字');
-      const segments = classifyProjectText(extracted.text);
+      const aiDependencies = runtime.ai && runtime.getSettings && runtime.prompts
+        ? {
+          ai: runtime.ai,
+          getSettings: runtime.getSettings,
+          prompts: runtime.prompts,
+        }
+        : undefined;
+      const analyzed = await analyzeProjectImport(extracted.text, mode, aiDependencies);
       const preview: StoredProjectPreview = {
-        sourceSummary: `${file.name} · ${segments.length} 个候选项目`,
-        segments,
-        warnings: extracted.warnings,
+        sourceSummary: `${file.name} · ${analyzed.segments.length} 个候选项目`,
+        ...analyzed,
+        warnings: [...extracted.warnings, ...analyzed.warnings],
       };
       const sessionId = sessions.create('project', preview);
       return { sessionId, ...preview };

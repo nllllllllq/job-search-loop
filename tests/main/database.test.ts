@@ -24,6 +24,51 @@ function removeDatabaseFiles(path: string): void {
 }
 
 describe('database migrations', () => {
+  it('migrates V5 prompt templates to allow project imports without losing custom prompts', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`
+      CREATE TABLE prompt_templates (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL UNIQUE CHECK (kind IN ('preparation', 'interview-review', 'capability-analysis')),
+        name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+      INSERT INTO prompt_templates VALUES (
+        'custom-preparation',
+        'preparation',
+        '岗位准备',
+        '我的定制内容',
+        '2026-07-27T00:00:00.000Z',
+        '2026-07-27T00:00:00.000Z'
+      );
+      PRAGMA user_version = 5;
+    `);
+
+    try {
+      migrate(db);
+
+      expect(db.prepare('PRAGMA user_version').get())
+        .toEqual({ user_version: 6 });
+      expect(db.prepare(
+        "SELECT content FROM prompt_templates WHERE kind = 'preparation'",
+      ).get()).toEqual({ content: '我的定制内容' });
+      expect(() => db.prepare(`
+        INSERT INTO prompt_templates VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        'project-import',
+        'project-import',
+        '项目文件导入',
+        '按原文解析',
+        '2026-07-28T00:00:00.000Z',
+        '2026-07-28T00:00:00.000Z',
+      )).not.toThrow();
+    } finally {
+      db.close();
+    }
+  });
+
   it('creates the Stage 1 schema and default prompt templates', () => {
     const db = createTestDatabase();
 
@@ -69,13 +114,18 @@ describe('database migrations', () => {
           kind: 'preparation',
           name: '岗位准备',
         },
+        {
+          id: 'd5a6f2f5-4eb7-45bd-8ce3-37f4efc1bb64',
+          kind: 'project-import',
+          name: '项目文件导入',
+        },
       ]);
       for (const template of templates) {
         expect(z.string().uuid().safeParse(template.id).success).toBe(true);
         expect(String(template.content).trim()).not.toBe('');
       }
       expect(db.prepare('SELECT COUNT(*) AS count FROM prompt_templates').get())
-        .toMatchObject({ count: 3 });
+        .toMatchObject({ count: 4 });
       expect(db.prepare('PRAGMA user_version').get())
         .toMatchObject({ user_version: CURRENT_SCHEMA_VERSION });
       expect(db.prepare('PRAGMA foreign_keys').get()).toMatchObject({ foreign_keys: 1 });
@@ -206,13 +256,13 @@ describe('database migrations', () => {
       expect(db.prepare('SELECT company FROM positions WHERE id = ?').get('position-1'))
         .toMatchObject({ company: '远山科技' });
       expect(db.prepare('SELECT COUNT(*) AS count FROM prompt_templates').get())
-        .toMatchObject({ count: 3 });
+        .toMatchObject({ count: 4 });
     } finally {
       db.close();
     }
   });
 
-  it('migrates a V4 database to V5 without losing positions, projects, or proposals', () => {
+  it('migrates a V4 database to the current schema without losing positions, projects, or proposals', () => {
     const db = new DatabaseSync(':memory:');
     const now = '2026-07-27T00:00:00.000Z';
 
@@ -420,7 +470,8 @@ describe('database migrations', () => {
 
       migrate(db);
 
-      expect(db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 });
+      expect(db.prepare('PRAGMA user_version').get())
+        .toMatchObject({ user_version: CURRENT_SCHEMA_VERSION });
       expect(db.prepare('SELECT company, location FROM positions').get()).toEqual({
         company: '甲公司',
         location: '',

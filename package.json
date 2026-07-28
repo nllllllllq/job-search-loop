@@ -1,6 +1,6 @@
 {
   "name": "job-search-loop",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Local-first job-search planning and learning loop",
   "main": "dist-electron/main/index.js",
@@ -17,7 +17,8 @@
     "test:build-output": "npm run build && vitest run --config vitest.build-output.config.ts",
     "test:e2e": "npm run build && playwright test",
     "smoke:win": "node scripts/smoke-win.mjs",
-    "smoke:ocr": "npm run build:electron && node scripts/smoke-ocr.mjs",
+    "verify:ocr-assets": "node scripts/verify-ocr-assets.mjs",
+    "smoke:ocr": "npm run build:electron && npm run verify:ocr-assets && node scripts/smoke-ocr.mjs",
     "package:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
@@ -43,7 +44,7 @@
     "@vitejs/plugin-react": "^6.0.0",
     "concurrently": "^9.0.0",
     "electron": "43.2.0",
-    "electron-builder": "^26.0.0",
+    "electron-builder": "26.15.3",
     "jsdom": "^26.0.0",
     "typescript": "^5.9.0",
     "vite": "^8.1.0",

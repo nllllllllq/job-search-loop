@@ -24,7 +24,7 @@ async function launchTestApp(userData: string): Promise<ElectronApplication> {
 
 async function openWindow(app: ElectronApplication): Promise<Page> {
   const page = await app.firstWindow();
-  await expect(page.getByRole('link', { name: '岗位' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '岗位', exact: true })).toBeVisible();
   return page;
 }
 
@@ -41,7 +41,7 @@ async function createPosition(
   page: Page,
   input: { company: string; title: string; rawJd: string },
 ): Promise<void> {
-  await page.getByRole('link', { name: '岗位' }).click();
+  await page.getByRole('link', { name: '岗位', exact: true }).click();
   await page.getByRole('button', { name: /录入岗位/ }).click();
   await page.getByLabel('公司').fill(input.company);
   await page.getByLabel('岗位名称').fill(input.title);
@@ -56,7 +56,6 @@ async function generatePreparation(
   server: FakeAiServer,
   question?: string,
 ): Promise<void> {
-  await page.getByRole('tab', { name: '准备材料' }).click();
   await page.getByRole('button', { name: '生成准备材料' }).click();
   if (question) {
     await page.getByLabel(`问题：${question}`).check();
@@ -85,13 +84,11 @@ test('turns one interview into reusable preparation for the next job', async () 
       rawJd: '需要用户研究、产品规划和跨团队协作能力。',
     });
 
-    await page.getByRole('tab', { name: '流程' }).click();
-    await page.getByRole('button', { name: '编辑 面试' }).click();
+    await page.getByRole('button', { name: '编辑流程阶段：面试' }).click();
     await page.getByLabel('实际日期').fill('2026-08-01');
     await page.getByRole('button', { name: '保存阶段' }).click();
     await expect(page.getByText('实际日期：2026-08-01')).toBeVisible();
 
-    await page.getByRole('tab', { name: '准备材料' }).click();
     await page.getByRole('button', { name: '生成准备材料' }).click();
     await page.getByRole('button', { name: '查看发送摘要' }).click();
     await expect(page.getByRole('heading', { name: '预计载荷摘要' })).toBeVisible();
@@ -100,7 +97,6 @@ test('turns one interview into reusable preparation for the next job', async () 
     await expect.poll(() => server.requests.length).toBe(1);
     await expect(page.getByRole('heading', { name: '岗位摘要' })).toBeVisible();
 
-    await page.getByRole('tab', { name: '面试记录' }).click();
     await page.getByRole('button', { name: '新增面试记录' }).click();
     await page.getByLabel('轮次').fill('一面');
     await page.getByLabel('面试日期').fill('2026-08-01');
@@ -117,13 +113,19 @@ test('turns one interview into reusable preparation for the next job', async () 
     await expect.poll(() => server.requests.length).toBe(2);
     await expect(page.getByText('候选人能够说明用户研究方法，但需要补充业务影响证据。')).toBeVisible();
 
-    await page.getByRole('link', { name: '复盘中心' }).click();
+    await page.getByRole('link', { name: '总览' }).click();
+    await page.getByRole('button', { name: /待确认清单/ }).click();
     const questionProposal = page.locator('article.proposal-card').filter({
       hasText: REUSABLE_QUESTION,
     });
     await expect(questionProposal).toBeVisible();
     await questionProposal.getByRole('button', { name: '接受', exact: true }).click();
-    await expect(questionProposal.getByText('已接受')).toBeVisible();
+    await page.getByRole('button', { name: /历史 1/ }).click();
+    const acceptedQuestion = page.locator('article.proposal-card').filter({
+      hasText: REUSABLE_QUESTION,
+    });
+    await expect(acceptedQuestion.getByText('已接受')).toBeVisible();
+    await page.getByRole('button', { name: '关闭待确认清单' }).click();
 
     await createPosition(page, {
       company: '海川软件',

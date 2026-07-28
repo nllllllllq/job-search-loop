@@ -95,6 +95,11 @@ export interface JobSearchApiFake {
     confirmCapabilityAnalysis: ApiMock<JobSearchApi['system']['confirmCapabilityAnalysis']>;
     exportBackup: ApiMock<JobSearchApi['system']['exportBackup']>;
     restoreBackup: ApiMock<JobSearchApi['system']['restoreBackup']>;
+    getBackupProgress: ApiMock<JobSearchApi['system']['getBackupProgress']>;
+    cancelBackup: ApiMock<JobSearchApi['system']['cancelBackup']>;
+    listRollbacks: ApiMock<JobSearchApi['system']['listRollbacks']>;
+    checkRollback: ApiMock<JobSearchApi['system']['checkRollback']>;
+    deleteRollback: ApiMock<JobSearchApi['system']['deleteRollback']>;
   };
 }
 
@@ -234,6 +239,22 @@ export function createJobSearchFake(): JobSearchApiFake {
         .mockResolvedValue({ status: 'cancelled' }),
       restoreBackup: vi.fn<JobSearchApi['system']['restoreBackup']>()
         .mockResolvedValue({ status: 'cancelled' }),
+      getBackupProgress: vi.fn<JobSearchApi['system']['getBackupProgress']>()
+        .mockResolvedValue({
+          operation: 'idle',
+          phase: 'idle',
+          percent: 0,
+          cancellable: false,
+          active: false,
+        }),
+      cancelBackup: vi.fn<JobSearchApi['system']['cancelBackup']>()
+        .mockResolvedValue({ status: 'not-cancellable' }),
+      listRollbacks: vi.fn<JobSearchApi['system']['listRollbacks']>()
+        .mockResolvedValue([]),
+      checkRollback: vi.fn<JobSearchApi['system']['checkRollback']>()
+        .mockRejectedValue(new Error('未设置回滚副本')),
+      deleteRollback: vi.fn<JobSearchApi['system']['deleteRollback']>()
+        .mockResolvedValue(undefined),
     },
   };
 }

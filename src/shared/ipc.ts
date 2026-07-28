@@ -101,6 +101,11 @@ export const CHANNELS = {
     confirmCapabilityAnalysis: 'system:capability-analysis:confirm',
     exportBackup: 'system:backup:export',
     restoreBackup: 'system:backup:restore',
+    getBackupProgress: 'system:backup:progress',
+    cancelBackup: 'system:backup:cancel',
+    listRollbacks: 'system:backup:rollbacks:list',
+    checkRollback: 'system:backup:rollbacks:check',
+    deleteRollback: 'system:backup:rollbacks:delete',
   },
 } as const;
 
@@ -108,6 +113,23 @@ export type BackupActionResult =
   | { status: 'cancelled' }
   | { status: 'exported' }
   | { status: 'restored' };
+
+export type BackupProgress = {
+  operation: 'idle' | 'export' | 'restore' | 'deep-check';
+  phase: string;
+  percent: number;
+  cancellable: boolean;
+  active: boolean;
+};
+
+export type RollbackSummary = {
+  id: string;
+  label: string;
+  createdAt: string;
+  size: number;
+  quickStatus: 'valid';
+  deepStatus: 'unchecked' | 'valid';
+};
 
 export interface AppError {
   code:
@@ -204,6 +226,11 @@ export interface JobSearchApi {
     previewCapabilityAnalysis(positionIds: string[]): Promise<CapabilityAnalysisPreview>;
     confirmCapabilityAnalysis(token: string): Promise<ChangeProposal[]>;
     exportBackup(): Promise<BackupActionResult>;
-    restoreBackup(): Promise<BackupActionResult>;
+    restoreBackup(options?: { deepCheck?: boolean }): Promise<BackupActionResult>;
+    getBackupProgress(): Promise<BackupProgress>;
+    cancelBackup(): Promise<{ status: 'cancelled' | 'not-cancellable' }>;
+    listRollbacks(): Promise<RollbackSummary[]>;
+    checkRollback(id: string, deep: boolean): Promise<RollbackSummary>;
+    deleteRollback(id: string): Promise<void>;
   };
 }

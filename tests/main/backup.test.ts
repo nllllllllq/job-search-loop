@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,7 +9,12 @@ import { registerSystemHandlers } from '../../src/main/ipc/system';
 import {
   BackupServiceError,
   createBackupService,
+  markerPathFor,
+  readRestoreMarker,
+  recoverInterruptedRestore,
+  writeRestoreMarker,
   type LiveDatabaseController,
+  type RestoreMarker,
 } from '../../src/main/services/backup';
 import { CURRENT_SCHEMA_VERSION } from '../../src/main/migrations';
 
@@ -198,7 +203,7 @@ describe('local database backup', () => {
     expect(readFileSync(settingsPath, 'utf8')).toBe(
       '{"encryptedKey":"never-in-backup-secret"}',
     );
-    expect(existsSync(restored.rollbackPath)).toBe(true);
+    expect('rollbackPath' in restored && existsSync(restored.rollbackPath)).toBe(true);
   });
 
   it.each([1, 4] as const)(
@@ -346,7 +351,21 @@ describe('local database backup', () => {
       { getSummary: vi.fn() },
       undefined,
       {
-        backup: { exportTo, restoreFrom },
+        backup: {
+          exportTo,
+          restoreFrom,
+          getProgress: vi.fn().mockReturnValue({
+            operation: 'idle',
+            phase: 'idle',
+            percent: 0,
+            cancellable: false,
+            active: false,
+          }),
+          cancel: vi.fn().mockReturnValue(false),
+          listRollbacks: vi.fn().mockResolvedValue([]),
+          checkRollback: vi.fn(),
+          deleteRollback: vi.fn(),
+        },
         dialogs: {
           chooseExportPath: vi.fn().mockResolvedValue(null),
           chooseRestorePath: vi.fn().mockResolvedValue(null),
@@ -364,5 +383,136 @@ describe('local database backup', () => {
     expect(exportTo).not.toHaveBeenCalled();
     expect(restoreFrom).not.toHaveBeenCalled();
     expect(onRestoreCompleted).not.toHaveBeenCalled();
+  });
+
+  it('records restore phases, reports progress, and clears the marker on success', async () => {
+    const source = await fixture();
+    seedClosedLoop(source.database());
+    const backupPath = join(source.directory, 'source.jobloop');
+    await source.service.exportTo(backupPath);
+
+    const target = await fixture();
+    const phases: string[] = [];
+    const service = createBackupService({
+      controller: target.controller,
+      onProgress: (progress) => {
+        if (progress.operation === 'restore') phases.push(progress.phase);
+      },
+    });
+
+    await service.restoreFrom(backupPath);
+
+    expect(phases).toEqual(expect.arrayContaining([
+      'validating-source',
+      'staging',
+      'creating-rollback',
+      'ready-to-replace',
+      'replacing',
+      'completed',
+    ]));
+    expect(service.getProgress()).toMatchObject({
+      operation: 'restore',
+      phase: 'completed',
+      percent: 100,
+      cancellable: false,
+      active: false,
+    });
+    expect(existsSync(markerPathFor(target.livePath))).toBe(false);
+  });
+
+  it('can cancel restore before replacement without changing live data', async () => {
+    const source = await fixture();
+    seedClosedLoop(source.database());
+    const backupPath = join(source.directory, 'source.jobloop');
+    await source.service.exportTo(backupPath);
+
+    const target = await fixture();
+    target.database().prepare(`
+      INSERT INTO positions (
+        id, company, title, interest, raw_jd, current_stage, final_result, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      '77777777-7777-4777-8777-777777777777',
+      '取消后保留',
+      '产品经理',
+      3,
+      '原始数据',
+      'interested',
+      null,
+      '2026-07-28T08:00:00.000Z',
+      '2026-07-28T08:00:00.000Z',
+    );
+    let service!: ReturnType<typeof createBackupService>;
+    service = createBackupService({
+      controller: target.controller,
+      onProgress: (progress) => {
+        if (progress.phase === 'ready-to-replace') service.cancel();
+      },
+    });
+
+    await expect(service.restoreFrom(backupPath)).resolves.toEqual({
+      status: 'cancelled',
+    });
+    expect(target.database().prepare('SELECT company FROM positions').get())
+      .toEqual({ company: '取消后保留' });
+    expect(existsSync(markerPathFor(target.livePath))).toBe(false);
+  });
+
+  it('resolves interrupted restore by continuing, rolling back, or preserving files', async () => {
+    const source = await fixture();
+    seedClosedLoop(source.database());
+    const replacementPath = join(source.directory, 'replacement.jobloop');
+    await source.service.exportTo(replacementPath);
+    source.controller.close();
+
+    for (const choice of ['continue', 'rollback', 'preserve'] as const) {
+      const directory = await mkdtemp(join(tmpdir(), `job-loop-recovery-${choice}-`));
+      temporaryDirectories.push(directory);
+      const livePath = join(directory, 'live.sqlite');
+      const stagedPath = join(directory, '.live.sqlite.restore.tmp');
+      const rollbackPath = join(directory, 'live.sqlite.rollback-safe.jobloop');
+      await copyFile(replacementPath, stagedPath);
+      await copyFile(replacementPath, rollbackPath);
+      if (choice !== 'continue') await copyFile(replacementPath, livePath);
+      const marker: RestoreMarker = {
+        version: 1,
+        phase: choice === 'continue' ? 'live-displaced' : 'replacement-installed',
+        livePath,
+        stagedPath,
+        rollbackPath,
+        startedAt: '2026-07-28T08:00:00.000Z',
+      };
+      await writeRestoreMarker(marker);
+
+      await expect(recoverInterruptedRestore(livePath, choice)).resolves.toBe(choice);
+      expect(await readRestoreMarker(livePath)).toBeNull();
+      if (choice !== 'preserve') expect(existsSync(livePath)).toBe(true);
+      if (choice === 'preserve') {
+        expect((await readdir(directory)).some((name) => name.includes('restore-preserved')))
+          .toBe(true);
+      }
+    }
+  });
+
+  it('keeps the newest three validated rollbacks and safely deletes by opaque id', async () => {
+    const app = await fixture();
+    seedClosedLoop(app.database());
+    for (let index = 0; index < 4; index += 1) {
+      const backupPath = join(app.directory, `source-${index}.jobloop`);
+      await app.service.exportTo(backupPath);
+      await app.service.restoreFrom(backupPath);
+    }
+
+    const rollbacks = await app.service.listRollbacks();
+    expect(rollbacks).toHaveLength(3);
+    expect(rollbacks.every((item) => !('path' in item))).toBe(true);
+    await expect(app.service.deleteRollback('../live.sqlite')).rejects.toMatchObject({
+      code: 'BACKUP_INVALID',
+    });
+    await expect(app.service.checkRollback(rollbacks[0].id, true)).resolves.toMatchObject({
+      deepStatus: 'valid',
+    });
+    await app.service.deleteRollback(rollbacks[0].id);
+    expect(await app.service.listRollbacks()).toHaveLength(2);
   });
 });

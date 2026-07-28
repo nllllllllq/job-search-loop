@@ -222,6 +222,33 @@ export const backupActionResultSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('exported') }).strict(),
   z.object({ status: z.literal('restored') }).strict(),
 ]);
+export const backupRestoreOptionsSchema = z.object({
+  deepCheck: z.boolean().optional(),
+}).strict().optional();
+export const backupProgressSchema = z.object({
+  operation: z.enum(['idle', 'export', 'restore', 'deep-check']),
+  phase: z.string().min(1).max(100),
+  percent: z.number().int().min(0).max(100),
+  cancellable: z.boolean(),
+  active: z.boolean(),
+}).strict();
+export const backupCancelResultSchema = z.object({
+  status: z.enum(['cancelled', 'not-cancellable']),
+}).strict();
+export const rollbackSummarySchema = z.object({
+  id: z.string().min(1).max(255),
+  label: z.string().min(1).max(500),
+  createdAt: z.iso.datetime(),
+  size: z.number().int().nonnegative(),
+  quickStatus: z.literal('valid'),
+  deepStatus: z.enum(['unchecked', 'valid']),
+}).strict();
+export const rollbackSummaryArraySchema = z.array(rollbackSummarySchema);
+export const rollbackCheckInputSchema = z.object({
+  id: z.string().min(1).max(255),
+  deep: z.boolean(),
+}).strict();
+export const rollbackIdSchema = z.string().min(1).max(255);
 
 export const positionListFilterSchema = z.object({
   query: z.string().max(500).optional(),

@@ -2586,6 +2586,80 @@ a {
   }
 }
 
+.backup-progress,
+.backup-rollbacks {
+  grid-column: 1 / -1;
+}
+
+.backup-progress {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.backup-progress progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.backup-rollbacks {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.backup-rollbacks p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.backup-rollbacks ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.backup-rollbacks li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+}
+
+.backup-rollbacks li > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.backup-rollbacks li span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.field--checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.field--checkbox span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.field--checkbox small {
+  color: var(--muted);
+}
+
 /* Dashboard drawers: dense, right-anchored work surfaces. */
 .dashboard-shortcuts {
   display: grid;

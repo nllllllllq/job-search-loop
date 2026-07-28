@@ -13,6 +13,8 @@ import { createAiSettingsStore, AiServiceError } from './services/ai-settings';
 import { createAiClient } from './services/ai-client';
 import {
   createBackupService,
+  readRestoreMarker,
+  recoverInterruptedRestore,
   type LiveDatabaseController,
 } from './services/backup';
 
@@ -65,8 +67,40 @@ function closeDatabaseOnce(): void {
   database = null;
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   databasePath = join(app.getPath('userData'), 'job-search-loop.sqlite');
+  try {
+    const interrupted = await readRestoreMarker(databasePath);
+    if (interrupted !== null) {
+      const result = await dialog.showMessageBox({
+        type: 'warning',
+        title: '发现未完成的数据恢复',
+        message: '上次恢复在替换数据库时中断。',
+        detail: '你可以继续安装已校验的备份、恢复到操作前副本，或保留现场后退出应用。',
+        buttons: ['继续恢复', '使用回滚副本', '保留现场并退出'],
+        defaultId: 1,
+        cancelId: 2,
+        noLink: true,
+      });
+      const choice = result.response === 0
+        ? 'continue'
+        : result.response === 1
+          ? 'rollback'
+          : 'preserve';
+      await recoverInterruptedRestore(databasePath, choice);
+      if (choice === 'preserve') {
+        app.exit(0);
+        return;
+      }
+    }
+  } catch {
+    dialog.showErrorBox(
+      '数据恢复无法继续',
+      '恢复现场未被修改。请保留应用数据目录并重新启动后选择回滚副本。',
+    );
+    app.exit(1);
+    return;
+  }
   database = openDatabase(databasePath);
   databaseClosed = false;
   const repositories = createRepositoryBundle(database);

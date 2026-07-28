@@ -5,6 +5,9 @@ import {
   aiPublicSettingsSchema,
   aiSettingsSaveSchema,
   backupActionResultSchema,
+  backupCancelResultSchema,
+  backupProgressSchema,
+  backupRestoreOptionsSchema,
   capabilityAnalysisPreviewSchema,
   capabilityMergeResultSchema,
   capabilityMergeSchema,
@@ -29,6 +32,10 @@ import {
   promptSaveSchema,
   promptTemplateListSchema,
   promptTemplateSchema,
+  rollbackCheckInputSchema,
+  rollbackIdSchema,
+  rollbackSummaryArraySchema,
+  rollbackSummarySchema,
 } from '../shared/schemas';
 
 function parseAppError(value: unknown): AppError | null {
@@ -251,9 +258,33 @@ const api = frozen<JobSearchApi>({
     exportBackup: async () => backupActionResultSchema.parse(
       await invoke(CHANNELS.system.exportBackup),
     ),
-    restoreBackup: async () => backupActionResultSchema.parse(
-      await invoke(CHANNELS.system.restoreBackup),
+    restoreBackup: async (options) => backupActionResultSchema.parse(
+      await invoke(
+        CHANNELS.system.restoreBackup,
+        backupRestoreOptionsSchema.parse(options),
+      ),
     ),
+    getBackupProgress: async () => backupProgressSchema.parse(
+      await invoke(CHANNELS.system.getBackupProgress),
+    ),
+    cancelBackup: async () => backupCancelResultSchema.parse(
+      await invoke(CHANNELS.system.cancelBackup),
+    ),
+    listRollbacks: async () => rollbackSummaryArraySchema.parse(
+      await invoke(CHANNELS.system.listRollbacks),
+    ),
+    checkRollback: async (id, deep) => rollbackSummarySchema.parse(
+      await invoke(
+        CHANNELS.system.checkRollback,
+        rollbackCheckInputSchema.parse({ id, deep }),
+      ),
+    ),
+    deleteRollback: async (id) => {
+      await invoke(
+        CHANNELS.system.deleteRollback,
+        rollbackIdSchema.parse(id),
+      );
+    },
   }),
 });
 

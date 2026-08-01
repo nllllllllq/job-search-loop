@@ -71,12 +71,16 @@ describe('dashboard repository', () => {
       const first = createPosition(positions, '远山科技');
       const second = createPosition(positions, '青川科技');
       db.prepare(`
+        UPDATE process_stages SET actual_date = NULL
+        WHERE position_id = ? AND canonical_stage = 'applied'
+      `).run(second.id);
+      db.prepare(`
         UPDATE process_stages SET actual_date = ?, expected_date = ?
         WHERE position_id = ? AND canonical_stage = 'applied'
       `).run('2026-08-01', '2026-08-03', first.id);
       db.prepare(`
         UPDATE process_stages SET actual_date = ?
-        WHERE position_id = ? AND canonical_stage = 'interested'
+        WHERE position_id = ? AND canonical_stage = 'assessment'
       `).run('2026-08-02', second.id);
 
       const events = createDashboardRepository(db).getSummary().processEvents;

@@ -91,6 +91,7 @@ describe('positions flow', () => {
       id: '8e4868e1-0da2-4fb7-b66f-5b55c5d5a212',
       company: '远山',
       title: '高级产品经理',
+      currentStage: null,
     };
     const { fake, user } = renderAt('#/positions', (api) => {
       api.positions.listGrouped.mockResolvedValue([
@@ -101,8 +102,13 @@ describe('positions flow', () => {
 
     const header = await screen.findByText('远山科技', { selector: '.position-group-header strong' });
     expect(header.parentElement).toHaveTextContent('1 条记录');
+    expect(header.parentElement).toHaveTextContent('2026-07-27');
+    expect(within(header.closest('button')!).getByText('面试中')).toHaveClass('status-badge');
+    expect(header.parentElement).not.toHaveTextContent('interview');
     expect(screen.queryByText('高级产品经理')).not.toBeInTheDocument();
     expect(screen.getByText('远山')).toBeInTheDocument();
+    const unconfiguredHeader = screen.getByText('远山', { selector: '.position-group-header strong' });
+    expect(within(unconfiguredHeader.closest('button')!).getByText('未设置')).toHaveClass('status-badge');
     await user.click(header.closest('button')!);
     expect(await screen.findByText('产品经理')).toBeInTheDocument();
     await user.click(header.closest('button')!);
@@ -173,7 +179,7 @@ describe('positions flow', () => {
     const { fake, user } = renderAt('#/positions');
 
     expect(await screen.findAllByText('远山科技')).toHaveLength(1);
-    expect(screen.getByText('2026-07-27')).toBeInTheDocument();
+    expect(screen.getByText(/最近更新 2026-07-27/)).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '搜索岗位' }), '产品');
     await user.selectOptions(screen.getByRole('combobox', { name: '流程阶段' }), 'interview');
     await user.click(screen.getByRole('button', { name: '筛选' }));

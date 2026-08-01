@@ -35,9 +35,21 @@ describe('shared UI primitives', () => {
   });
 
   it('renders canonical stage labels with semantic status', () => {
-    render(<StatusBadge stage="interview" />);
+    const { rerender } = render(<StatusBadge stage="interview" />);
 
     expect(screen.getByText('面试中')).toHaveAttribute('data-tone', 'primary');
+
+    rerender(<StatusBadge stage="applied" />);
+    expect(screen.getByText('已投递')).toHaveAttribute('data-tone', 'primary');
+
+    rerender(<StatusBadge stage="rejected" />);
+    expect(screen.getByText('未通过')).toHaveAttribute('data-tone', 'danger');
+  });
+
+  it('labels an absent stage as unconfigured', () => {
+    render(<StatusBadge />);
+
+    expect(screen.getByText('未设置')).toHaveAttribute('data-tone', 'neutral');
   });
 
   it('gives contextual empty content a labelled region', () => {

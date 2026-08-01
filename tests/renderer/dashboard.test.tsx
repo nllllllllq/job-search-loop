@@ -122,8 +122,14 @@ describe('dashboard page', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('累计岗位')).toBeInTheDocument();
-    expect(screen.getAllByText('2', { selector: '.dashboard-stat__value' })).toHaveLength(3);
+    const summaryCards = await screen.findByLabelText('求职进度摘要');
+    expect(within(summaryCards).getAllByRole('article')).toHaveLength(5);
+    expect(within(summaryCards).getByText('公司数量')).toBeInTheDocument();
+    expect(within(summaryCards).getByText('累计岗位')).toBeInTheDocument();
+    expect(within(summaryCards).getByText('进入面试')).toBeInTheDocument();
+    expect(within(summaryCards).getByText('完成复盘')).toBeInTheDocument();
+    expect(within(summaryCards).getByText('待确认建议')).toBeInTheDocument();
+    expect(within(summaryCards).getAllByText('2', { selector: '.dashboard-stat__value' })).toHaveLength(3);
     expect(screen.getByText('实际日期')).toBeInTheDocument();
     expect(screen.getByText('预计日期')).toBeInTheDocument();
     expect(screen.getByText('日期仅用于记录流程，不会创建提醒')).toBeInTheDocument();

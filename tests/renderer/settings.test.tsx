@@ -62,9 +62,9 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    const provider = await screen.findByRole('button', { name: /OpenAI-compatible/ });
-    const prompt = screen.getByRole('button', { name: /Prompt/ });
-    const backup = screen.getByRole('button', { name: /涓氬姟鏁版嵁/ });
+    const provider = await screen.findByRole('button', { name: /PROVIDER \/ 外部服务.*AI 服务配置/ });
+    const prompt = screen.getByRole('button', { name: /WORKING INSTRUCTIONS \/ 工作指令.*Prompt 模板/ });
+    const backup = screen.getByRole('button', { name: /ARCHIVE \/ 本地归档.*本地备份与恢复/ });
     expect(provider).toHaveAttribute('aria-expanded', 'false');
     expect(prompt).toHaveAttribute('aria-expanded', 'false');
     expect(backup).toHaveAttribute('aria-expanded', 'false');
@@ -73,6 +73,9 @@ describe('settings page', () => {
     await user.click(provider);
     expect(provider).toHaveAttribute('aria-expanded', 'true');
     expect(await screen.findByLabelText(/^API/)).toBeVisible();
+    expect(screen.getByText('API 地址')).toBeVisible();
+    expect(screen.getByText('模型')).toBeVisible();
+    expect(screen.getByText('替换 API Key')).toBeVisible();
     expect(prompt).toHaveAttribute('aria-expanded', 'false');
 
     await user.click(prompt);
@@ -121,7 +124,7 @@ describe('settings page', () => {
     installJobSearchFake(fake);
 
     renderSettings();
-    await userEvent.setup().click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await userEvent.setup().click(await screen.findByRole('button', { name: /AI 服务配置/ }));
 
     expect(await screen.findByDisplayValue('https://api.example.com/v1')).toBeVisible();
     expect(screen.getByDisplayValue('model-a')).toBeVisible();
@@ -149,7 +152,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
     await user.click(await screen.findByLabelText('启用图片输入'));
     expect(screen.getByText('当前 OpenAI-compatible Chat Completions 不支持直接发送原始文件；请使用本地文本提取。')).toBeVisible();
     expect(screen.queryByLabelText('文件输入协议')).not.toBeInTheDocument();
@@ -181,7 +184,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
     await user.type(await screen.findByLabelText(/^API 地址/), 'https://api.example.com/v1/');
     await user.type(screen.getByLabelText(/^模型/), 'model-a');
     await user.type(screen.getByLabelText('替换 API Key'), 'sk-user-entry');
@@ -214,7 +217,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
     const model = await screen.findByLabelText(/^模型/);
     await user.clear(model);
     await user.type(model, 'model-b');
@@ -251,7 +254,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
     const key = await screen.findByLabelText('替换 API Key');
     const testButton = screen.getByRole('button', { name: '测试连接' });
     expect(testButton).toBeEnabled();
@@ -277,7 +280,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
     const baseUrl = await screen.findByLabelText(/^API 地址/);
     const key = screen.getByLabelText('替换 API Key');
     await user.clear(baseUrl);
@@ -312,7 +315,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
     const baseUrl = await screen.findByLabelText(/^API 地址/);
     await user.clear(baseUrl);
     await user.type(baseUrl, 'https://API.EXAMPLE.com:443/v2/');
@@ -344,7 +347,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
     const model = await screen.findByLabelText(/^模型/);
     const key = screen.getByLabelText('替换 API Key');
     await user.clear(model);
@@ -374,7 +377,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
     expect(await screen.findByText(
       '配置文件已损坏，必须填写新的 API Key 才能覆盖恢复。',
     )).toBeVisible();
@@ -438,7 +441,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
-    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
     await user.click(await screen.findByRole('button', { name: '测试连接' }));
 
     expect((await screen.findAllByText('请求过于频繁，请稍后再试。'))[0]).toBeVisible();

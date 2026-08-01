@@ -283,7 +283,7 @@ export function SettingsPage() {
       ) : null}
       {!settings.loading && effectivePublicSettings ? (
         <section className="settings-accordion" aria-label="AI provider settings">
-          {sectionToggle('provider', 'PROVIDER / 澶栭儴鏈嶅姟', 'OpenAI-compatible 閰嶇疆')}
+          {sectionToggle('provider', 'PROVIDER / 外部服务', 'AI 服务配置')}
           {openSection === 'provider' ? <div id="settings-panel-provider" className="settings-accordion__panel">
           <section
             aria-labelledby="ai-provider-title"
@@ -435,14 +435,14 @@ export function SettingsPage() {
       ) : null}
       {prompts.data ? (
         <section className="settings-accordion" aria-label="Prompt settings">
-          {sectionToggle('prompts', 'WORKING INSTRUCTIONS / 宸ヤ綔鎸囦护', 'Prompt 妯℃澘')}
+          {sectionToggle('prompts', 'WORKING INSTRUCTIONS / 工作指令', 'Prompt 模板')}
           {openSection === 'prompts' ? <div id="settings-panel-prompts" className="settings-accordion__panel">
             <PromptTemplatesSection onSaved={promptSaved} prompts={prompts.data} />
           </div> : null}
         </section>
       ) : null}
       <section className="settings-accordion" aria-label="Backup settings">
-        {sectionToggle('backup', 'ARCHIVE / 鏈湴褰掓。', '涓氬姟鏁版嵁澶囦唤涓庢仮澶�')}
+        {sectionToggle('backup', 'ARCHIVE / 本地归档', '本地备份与恢复')}
         {openSection === 'backup' ? <div id="settings-panel-backup" className="settings-accordion__panel"><BackupSection /></div> : null}
       </section>
     </div>

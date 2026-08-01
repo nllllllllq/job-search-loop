@@ -29,7 +29,7 @@ describe('AI tasks repository', () => {
       })).toMatchObject({
         status: 'failed',
         safeError: {
-          message: 'Provider rejected the request', statusCode: 401, requestId: 'req_123',
+          message: 'AI service returned an unsafe diagnostic payload', statusCode: 401, requestId: 'req_123',
         },
       });
 
@@ -128,6 +128,31 @@ describe('AI tasks repository', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('suppresses unlabeled request echoes while retaining benign provider diagnostics', () => {
+    const db = createTestDatabase();
+    try {
+      const position = createPositionsRepository(db).create({
+        company: 'Example Co', title: 'Product Manager', interest: 3, rawJd: 'private JD sentence',
+      });
+      const tasks = createAiTasksRepository(db);
+      const echoed = tasks.createPreparation(position.id);
+      tasks.markRunning(echoed.id);
+      expect(tasks.markFailed(echoed.id, {
+        message: 'The request contains: private JD sentence', statusCode: 400, requestId: 'req_echo',
+      }).safeError).toMatchObject({
+        message: 'AI service returned an unsafe diagnostic payload', statusCode: 400, requestId: 'req_echo',
+      });
+
+      const benign = tasks.createPreparation(position.id);
+      tasks.markRunning(benign.id);
+      expect(tasks.markFailed(benign.id, {
+        message: 'Unknown model name', statusCode: 400, requestId: 'req_model',
+      }).safeError).toMatchObject({
+        message: 'Unknown model name', statusCode: 400, requestId: 'req_model',
+      });
+    } finally { db.close(); }
   });
 
   it('marks queued and running preparation tasks interrupted on startup', () => {

@@ -56,6 +56,15 @@ describe('preload preparation contract', () => {
     expect(electronMocks.invoke).not.toHaveBeenCalled();
   });
 
+  it('rejects invalid background preparation start input before invoking main IPC', async () => {
+    await expect(exposedApi().preparations.start({
+      positionId: 'not-a-uuid',
+      projectIds: [],
+      questionIds: [],
+    })).rejects.toBeDefined();
+    expect(electronMocks.invoke).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid preview input before invoking main IPC', async () => {
     await expect(exposedApi().preparations.preview({
       positionId: 'not-a-uuid',
@@ -78,6 +87,11 @@ describe('preload preparation contract', () => {
       questionIds: [],
     })],
     ['preview', () => exposedApi().preparations.preview({
+      positionId: '11111111-1111-4111-8111-111111111111',
+      projectIds: [],
+      questionIds: [],
+    })],
+    ['start', () => exposedApi().preparations.start({
       positionId: '11111111-1111-4111-8111-111111111111',
       projectIds: [],
       questionIds: [],

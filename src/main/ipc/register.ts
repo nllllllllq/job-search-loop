@@ -27,16 +27,22 @@ import {
   createProposalsRepository,
   type ProposalsRepository,
 } from '../repositories/proposals';
+import {
+  createAiTasksRepository,
+  type AiTasksRepository,
+} from '../repositories/ai-tasks';
 import { registerAssetHandlers } from './assets';
 import { registerAiHandlers } from './ai';
 import { registerPositionHandlers, registerPreparationHandlers } from './positions';
 import { registerReviewHandlers } from './reviews';
 import { registerSystemHandlers } from './system';
 import { registerImportHandlers, type ImportRuntime } from './imports';
+import { registerPreparationTaskHandlers } from './tasks';
 import { SafeIpcError, type IpcMainRegistrar } from './common';
 import type { AiClient } from '../services/ai-client';
 import type { AiSettingsStore } from '../services/ai-settings';
 import { createPreparationService } from '../services/preparation';
+import { createPreparationTaskRuntime } from '../services/preparation-tasks';
 import { createInterviewReviewService } from '../services/interview-review';
 import { createCapabilityAnalysisService } from '../services/capability-analysis';
 import type { SystemRuntime } from './system';
@@ -51,6 +57,7 @@ export interface RepositoryBundle {
   prompts: PromptsRepository;
   proposals: ProposalsRepository;
   dashboard: DashboardRepository;
+  aiTasks: AiTasksRepository;
 }
 
 export interface AiRuntime {
@@ -73,6 +80,7 @@ export function createRepositoryBundle(db: DatabaseSync): RepositoryBundle {
     prompts: createPromptsRepository(db),
     proposals: createProposalsRepository(db),
     dashboard: createDashboardRepository(db),
+    aiTasks: createAiTasksRepository(db),
   };
 }
 
@@ -105,6 +113,7 @@ export function registerIpcHandlers(
     interviews,
     proposals,
     dashboard,
+    aiTasks,
   } = repositories;
 
   registerPositionHandlers(guardedIpcMain, positions);
@@ -119,6 +128,12 @@ export function registerIpcHandlers(
     })
     : undefined;
   registerPreparationHandlers(guardedIpcMain, preparations, preparationService);
+  if (preparationService !== undefined) {
+    registerPreparationTaskHandlers(
+      guardedIpcMain,
+      createPreparationTaskRuntime({ tasks: aiTasks, preparation: preparationService }),
+    );
+  }
   registerAssetHandlers(guardedIpcMain, assets, prompts);
   const reviewService = ai
     ? createInterviewReviewService({

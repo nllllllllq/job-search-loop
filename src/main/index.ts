@@ -104,6 +104,7 @@ app.whenReady().then(async () => {
   database = openDatabase(databasePath);
   databaseClosed = false;
   const repositories = createRepositoryBundle(database);
+  repositories.aiTasks.interruptRunningOnStartup();
   const databaseController: LiveDatabaseController = {
     path: databasePath,
     current() {

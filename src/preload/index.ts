@@ -4,6 +4,8 @@ import {
   aiConnectionResultSchema,
   aiPublicSettingsSchema,
   aiSettingsSaveSchema,
+  aiTaskListSchema,
+  aiTaskSchema,
   backupActionResultSchema,
   backupCancelResultSchema,
   backupProgressSchema,
@@ -161,6 +163,20 @@ const api = frozen<JobSearchApi>({
         preparationGenerateSchema.parse(input),
       ),
     ),
+    start: async (input) => aiTaskSchema.parse(await invoke(
+      CHANNELS.preparations.start,
+      preparationGenerateSchema.parse(input),
+    )),
+  }),
+  tasks: frozen<JobSearchApi['tasks']>({
+    listByPosition: async (positionId) => aiTaskListSchema.parse(await invoke(
+      CHANNELS.tasks.listByPosition,
+      idSchema.parse(positionId),
+    )),
+    get: async (id) => aiTaskSchema.parse(await invoke(
+      CHANNELS.tasks.get,
+      idSchema.parse(id),
+    )),
   }),
   assets: frozen<JobSearchApi['assets']>({
     projects: frozen<JobSearchApi['assets']['projects']>({

@@ -35,7 +35,13 @@ const REQUIRED_TABLES_V5_PLUS = [
   'capability_analysis_runs',
 ].sort();
 
+const REQUIRED_TABLES_V7_PLUS = [
+  ...REQUIRED_TABLES_V5_PLUS,
+  'ai_tasks',
+].sort();
+
 function requiredTablesForVersion(version: number): readonly string[] {
+  if (version >= 7) return REQUIRED_TABLES_V7_PLUS;
   return version >= 5 ? REQUIRED_TABLES_V5_PLUS : REQUIRED_TABLES_V1_TO_V4;
 }
 

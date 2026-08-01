@@ -1,4 +1,5 @@
 import type {
+  AiTask,
   AiConnectionResult,
   AiPublicSettings,
   AiSettingsSaveInput,
@@ -69,6 +70,11 @@ export const CHANNELS = {
     get: 'preparations:get',
     preview: 'preparations:preview',
     generate: 'preparations:generate',
+    start: 'preparations:start',
+  },
+  tasks: {
+    listByPosition: 'tasks:list-by-position',
+    get: 'tasks:get',
   },
   assets: {
     projects: { list: 'assets:projects:list', get: 'assets:projects:get', save: 'assets:projects:save' },
@@ -190,6 +196,11 @@ export interface JobSearchApi {
     get(id: string): Promise<PreparationMaterial>;
     preview(input: PreparationGenerateInput): Promise<PreparationOutboundPreview>;
     generate(input: PreparationGenerateInput): Promise<PreparationMaterial>;
+    start(input: PreparationGenerateInput): Promise<AiTask>;
+  };
+  readonly tasks: {
+    listByPosition(positionId: string): Promise<AiTask[]>;
+    get(id: string): Promise<AiTask>;
   };
   readonly assets: {
     readonly projects: {

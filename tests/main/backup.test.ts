@@ -141,6 +141,7 @@ function createLegacyBackup(path: string, version: 1 | 4): void {
       DROP TABLE capability_analysis_runs;
       ALTER TABLE positions DROP COLUMN location;
       ALTER TABLE projects DROP COLUMN unclassified_notes;
+      DROP TABLE ai_tasks;
     `);
     if (version === 1) {
       db.exec(`
@@ -174,6 +175,7 @@ function createVersion5Backup(path: string): void {
       INSERT INTO prompt_templates
       SELECT * FROM prompt_templates_v6;
       DROP TABLE prompt_templates_v6;
+      DROP TABLE ai_tasks;
       PRAGMA user_version = 5;
     `);
   } finally {

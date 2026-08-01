@@ -1,5 +1,6 @@
 import { vi, type Mock } from 'vitest';
 import type {
+  AiTask,
   Capability,
   ChangeProposalListItem,
   DashboardSummary,
@@ -42,6 +43,11 @@ export interface JobSearchApiFake {
     get: ApiMock<JobSearchApi['preparations']['get']>;
     preview: ApiMock<JobSearchApi['preparations']['preview']>;
     generate: ApiMock<JobSearchApi['preparations']['generate']>;
+    start: ApiMock<JobSearchApi['preparations']['start']>;
+  };
+  readonly tasks: {
+    listByPosition: ApiMock<JobSearchApi['tasks']['listByPosition']>;
+    get: ApiMock<JobSearchApi['tasks']['get']>;
   };
   readonly assets: {
     readonly projects: {
@@ -141,6 +147,17 @@ const dashboardSummary: DashboardSummary = {
   recentPositions: [],
 };
 
+const emptyAiTask: AiTask = {
+  id: '33333333-3333-4333-8333-333333333333',
+  kind: 'preparation',
+  positionId: emptyPosition.id,
+  status: 'queued',
+  safeError: null,
+  createdAt: '2026-08-01T00:00:00.000Z',
+  startedAt: null,
+  updatedAt: '2026-08-01T00:00:00.000Z',
+};
+
 export function createJobSearchFake(): JobSearchApiFake {
   return {
     version: '0.1.0',
@@ -186,6 +203,11 @@ export function createJobSearchFake(): JobSearchApiFake {
       get: vi.fn<JobSearchApi['preparations']['get']>().mockRejectedValue(new Error('未设置准备材料')),
       preview: vi.fn<JobSearchApi['preparations']['preview']>().mockRejectedValue(new Error('未设置准备预览')),
       generate: vi.fn<JobSearchApi['preparations']['generate']>().mockRejectedValue(new Error('未设置准备材料')),
+      start: vi.fn<JobSearchApi['preparations']['start']>().mockResolvedValue(emptyAiTask),
+    },
+    tasks: {
+      listByPosition: vi.fn<JobSearchApi['tasks']['listByPosition']>().mockResolvedValue([]),
+      get: vi.fn<JobSearchApi['tasks']['get']>().mockResolvedValue(emptyAiTask),
     },
     assets: {
       projects: {

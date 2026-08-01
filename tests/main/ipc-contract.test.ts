@@ -8,11 +8,37 @@ import { registerIpcHandlers } from '../../src/main/ipc/register';
 import { registerReviewHandlers } from '../../src/main/ipc/reviews';
 import { registerSystemHandlers } from '../../src/main/ipc/system';
 import { registerAssetHandlers } from '../../src/main/ipc/assets';
+import { registerPreparationTaskHandlers } from '../../src/main/ipc/tasks';
 import { createAssetsRepository } from '../../src/main/repositories/assets';
 import { createTestDatabase } from '../helpers/database';
 import { RepositoryError } from '../../src/main/repositories/common';
 
 describe('typed IPC contract', () => {
+  it('validates and forwards background preparation task IPC payloads', async () => {
+    const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
+    const ipcMain = { handle(channel: string, handler: (event: unknown, payload: unknown) => unknown) {
+      handlers.set(channel, handler);
+    } };
+    const task = {
+      id: '11111111-1111-4111-8111-111111111111', kind: 'preparation' as const,
+      positionId: '22222222-2222-4222-8222-222222222222', status: 'queued' as const,
+      safeError: null, createdAt: '2026-08-01T00:00:00.000Z', startedAt: null,
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    };
+    const runtime = { start: vi.fn(() => task), get: vi.fn(() => task), listByPosition: vi.fn(() => [task]) };
+    registerPreparationTaskHandlers(ipcMain, runtime);
+
+    await expect(handlers.get(CHANNELS.preparations.start)!({}, {
+      positionId: task.positionId, projectIds: [], questionIds: [],
+    })).resolves.toEqual(task);
+    expect(runtime.start).toHaveBeenCalledOnce();
+    await expect(handlers.get(CHANNELS.preparations.start)!({}, {
+      positionId: 'bad-id', projectIds: [], questionIds: [],
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    await expect(handlers.get(CHANNELS.tasks.listByPosition)!({}, 'bad-id'))
+      .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
   it('exposes a narrow validated capability merge handler backed by the repository transaction', async () => {
     const db = createTestDatabase();
     try {
@@ -61,6 +87,7 @@ describe('typed IPC contract', () => {
     expectTypeOf<JobSearchApi>().toHaveProperty('positions');
     expectTypeOf<JobSearchApi>().toHaveProperty('ai');
     expectTypeOf<JobSearchApi>().toHaveProperty('preparations');
+    expectTypeOf<JobSearchApi>().toHaveProperty('tasks');
     expectTypeOf<JobSearchApi>().toHaveProperty('assets');
     expectTypeOf<JobSearchApi>().toHaveProperty('reviews');
     expectTypeOf<JobSearchApi>().toHaveProperty('imports');
@@ -74,6 +101,7 @@ describe('typed IPC contract', () => {
       'preparations',
       'reviews',
       'system',
+      'tasks',
     ]);
     expect('invoke' in ({} as JobSearchApi)).toBe(false);
     expect('send' in ({} as JobSearchApi)).toBe(false);
@@ -195,6 +223,11 @@ describe('typed IPC contract', () => {
         ignore: vi.fn(),
       },
       dashboard: { getSummary: vi.fn() },
+      aiTasks: {
+        createPreparation: vi.fn(), get: vi.fn(), listByPosition: vi.fn(),
+        markRunning: vi.fn(), markSucceeded: vi.fn(), markFailed: vi.fn(),
+        interruptRunningOnStartup: vi.fn(),
+      },
     };
 
     registerIpcHandlers(ipcMain, repositories);

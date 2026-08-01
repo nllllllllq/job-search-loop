@@ -47,6 +47,7 @@ export const aiTaskSchema = z.object({
   startedAt: z.string().datetime().nullable(),
   updatedAt: z.string().datetime(),
 }).strict();
+export const aiTaskListSchema = z.array(aiTaskSchema);
 export const isoDateSchema = z.string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, '日期必须是 YYYY-MM-DD')
   .refine((value) => {

@@ -5,7 +5,11 @@ import { aiTaskSafeErrorSchema, aiTaskSchema } from '../../shared/schemas';
 import { RepositoryError, notFound, nullableText, row, text, transaction } from './common';
 
 function sanitizeDiagnosticMessage(message: string): string {
-  if (/(?:authorization|proxy-authorization|api[-_ ]?key|request\s*body|prompt|input|assets?|(?:raw\s*)?jd|job description|content)\s*[:=]/i.test(message)) {
+  if (
+    /\b(?:authorization|proxy-authorization|api[-_ ]?key|request|prompt|input|content|assets?|attachments?|(?:raw\s*)?jd|job description)\b/i.test(message)
+    || /[{}\[\]]/.test(message)
+    || /\bdata:(?:image|application)\//i.test(message)
+  ) {
     return 'AI service returned an unsafe diagnostic payload';
   }
   return message.split(/\r?\n/).map((line) => {
@@ -37,6 +41,7 @@ function decodeTask(value: unknown): AiTask {
 export interface AiTasksRepository {
   createPreparation(positionId: string): AiTask;
   get(id: string): AiTask;
+  listByPosition(positionId: string): AiTask[];
   markRunning(id: string): AiTask;
   markSucceeded(id: string): AiTask;
   markFailed(id: string, safeError: AiTaskSafeError): AiTask;
@@ -91,6 +96,13 @@ export function createAiTasksRepository(db: DatabaseSync): AiTasksRepository {
       return get(id);
     },
     get,
+    listByPosition(positionId) {
+      return db.prepare(`
+        SELECT * FROM ai_tasks
+        WHERE position_id = ?
+        ORDER BY updated_at DESC, id DESC
+      `).all(positionId).map(decodeTask);
+    },
     markRunning(id) { return updateStatus(id, 'running', ['queued'], null, true); },
     markSucceeded(id) { return updateStatus(id, 'succeeded', ['running'], null, false); },
     markFailed(id, safeError) { return updateStatus(id, 'failed', ['running'], safeError, false); },

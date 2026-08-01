@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ToastProvider } from '../../src/renderer/hooks/useToast';
 import { DashboardPage } from '../../src/renderer/features/dashboard/DashboardPage';
+import { ProcessTimeline } from '../../src/renderer/features/dashboard/ProcessTimeline';
 import { resetJobSearchFake } from '../helpers/bridge';
 import type { Capability, ChangeProposalListItem } from '../../src/shared/domain';
 
@@ -56,6 +57,7 @@ describe('dashboard page', () => {
     const fake = resetJobSearchFake();
     fake.system.getDashboardSummary.mockResolvedValue({
       totalPositions: 2,
+      companyCount: 2,
       stageDistribution: [{ stage: 'interview', count: 2 }],
       positionsWithInterviews: 1,
       completedReviews: 1,
@@ -121,7 +123,7 @@ describe('dashboard page', () => {
     );
 
     expect(await screen.findByText('累计岗位')).toBeInTheDocument();
-    expect(screen.getAllByText('2', { selector: '.dashboard-stat__value' })).toHaveLength(2);
+    expect(screen.getAllByText('2', { selector: '.dashboard-stat__value' })).toHaveLength(3);
     expect(screen.getByText('实际日期')).toBeInTheDocument();
     expect(screen.getByText('预计日期')).toBeInTheDocument();
     expect(screen.getByText('日期仅用于记录流程，不会创建提醒')).toBeInTheDocument();
@@ -150,6 +152,21 @@ describe('dashboard page', () => {
     expect(await screen.findByText('总览加载失败')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: '重试' }));
     await waitFor(() => expect(fake.system.getDashboardSummary).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows only the ten newest process dates', () => {
+    const events = Array.from({ length: 11 }, (_, index) => ({
+      positionId: `11111111-1111-4111-8111-11111111111${index}`,
+      positionLabel: `公司${index} · 岗位`,
+      stageName: '投递',
+      canonicalStage: 'applied' as const,
+      date: `2026-08-${String(index + 1).padStart(2, '0')}`,
+      dateType: 'actual' as const,
+    }));
+    render(<MemoryRouter><ProcessTimeline events={events} /></MemoryRouter>);
+    expect(screen.getAllByRole('listitem')).toHaveLength(10);
+    expect(screen.getByText('2026-08-11')).toBeInTheDocument();
+    expect(screen.queryByText('2026-08-01')).not.toBeInTheDocument();
   });
 
   it('opens review pending/history in one drawer without per-card context IPC', async () => {

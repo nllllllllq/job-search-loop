@@ -258,23 +258,11 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
     },
 
     listGrouped(filter = {}) {
-      const aliases = new Map<string, string>();
-      for (const value of db.prepare(`
-        SELECT a.alias, c.canonical_name
-        FROM company_aliases a
-        JOIN canonical_companies c ON c.id = a.canonical_company_id
-      `).all()) {
-        const data = row(value, 'company alias');
-        aliases.set(text(data.alias, 'alias'), text(data.canonical_name, 'canonical_name'));
-      }
       const groups = new Map<string, CompanyPositionGroup>();
       for (const member of this.list(filter)) {
-        // Exact confirmed aliases only. Normalized similarities are candidates
-        // for confirmation, never a reason to merge records automatically.
-        const canonicalName = aliases.get(member.company) ?? member.company;
-        const group = groups.get(canonicalName);
+        const group = groups.get(member.company);
         if (group) group.members.push(member);
-        else groups.set(canonicalName, { canonicalName, members: [member] });
+        else groups.set(member.company, { canonicalName: member.company, members: [member] });
       }
       return [...groups.values()].sort((left, right) => (
         right.members[0]!.updatedAt.localeCompare(left.members[0]!.updatedAt)

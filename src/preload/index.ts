@@ -13,9 +13,6 @@ import {
   capabilityAnalysisPreviewSchema,
   capabilityMergeResultSchema,
   capabilityMergeSchema,
-  companyAliasConfirmationSchema,
-  companyAliasSchema,
-  companyIdentitySchema,
   capabilityAnalysisSelectionSchema,
   changeProposalArraySchema,
   changeProposalListSchema,
@@ -148,15 +145,6 @@ const api = frozen<JobSearchApi>({
       CHANNELS.positions.removeStage,
       { positionId, stageId },
     ),
-  }),
-  companyAliases: frozen<JobSearchApi['companyAliases']>({
-    confirm: async (input) => companyAliasSchema.parse(await invoke(
-      CHANNELS.companyAliases.confirm,
-      companyAliasConfirmationSchema.parse(input),
-    )),
-    remove: async (alias) => {
-      await invoke(CHANNELS.companyAliases.remove, companyIdentitySchema.parse(alias));
-    },
   }),
   preparations: frozen<JobSearchApi['preparations']>({
     list: async (positionId) => preparationMaterialListSchema.parse(

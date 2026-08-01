@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useMemo, useState } from 'react';
 import type { ProcessStage, ProcessStageInput } from '../../../shared/domain';
-import { ContextMenu } from '../../components/ContextMenu';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../hooks/useToast';
 import { StageEditor } from './StageEditor';
@@ -12,8 +11,6 @@ interface StageTimelineProps {
 }
 
 type StageNodeState = 'actual' | 'expected' | 'empty';
-type ContextTarget = { stage: ProcessStage; x: number; y: number };
-
 function getNodeState(stage: ProcessStage): StageNodeState {
   if (stage.actualDate) return 'actual';
   if (stage.expectedDate) return 'expected';
@@ -25,22 +22,7 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
   const [editing, setEditing] = useState<ProcessStage | 'new' | null>(null);
   const [deleting, setDeleting] = useState<ProcessStage | null>(null);
   const [removing, setRemoving] = useState(false);
-  const [contextTarget, setContextTarget] = useState<ContextTarget | null>(null);
   const sortedStages = useMemo(() => [...stages].sort((a, b) => a.orderIndex - b.orderIndex), [stages]);
-
-  useEffect(() => {
-    if (!contextTarget) return undefined;
-    const dismissOnPointerOutside = () => setContextTarget(null);
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setContextTarget(null);
-    };
-    document.addEventListener('pointerdown', dismissOnPointerOutside);
-    document.addEventListener('keydown', dismissOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', dismissOnPointerOutside);
-      document.removeEventListener('keydown', dismissOnEscape);
-    };
-  }, [contextTarget]);
 
   const saveStage = async (input: ProcessStageInput & { id?: string }) => {
     try {
@@ -55,12 +37,10 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
   };
 
   const openDeleteConfirmation = (stage: ProcessStage) => {
-    setContextTarget(null);
     setDeleting(stage);
   };
 
   const openEditor = (stage: ProcessStage | 'new') => {
-    setContextTarget(null);
     setEditing(stage);
   };
 
@@ -77,11 +57,6 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
     } finally {
       setRemoving(false);
     }
-  };
-
-  const openContextMenu = (event: MouseEvent<HTMLLIElement>, stage: ProcessStage) => {
-    event.preventDefault();
-    setContextTarget({ stage, x: event.clientX, y: event.clientY });
   };
 
   return (
@@ -101,7 +76,7 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
             ? `已记录实际日期 ${stage.actualDate}`
             : stage.expectedDate ? `仅预计日期 ${stage.expectedDate}` : '未记录日期';
           return (
-            <li className="stage-flow__item" key={stage.id} onContextMenu={(event) => openContextMenu(event, stage)}>
+            <li className="stage-flow__item" key={stage.id}>
               <button
                 aria-label={`编辑流程阶段：${stage.name}，${accessibleStatus}`}
                 className={`stage-node stage-node--${state}`}
@@ -132,15 +107,6 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
           </button>
         </li>
       </ol>
-
-      {contextTarget ? (
-        <ContextMenu
-          label={`${contextTarget.stage.name}操作`}
-          onDelete={() => openDeleteConfirmation(contextTarget.stage)}
-          x={contextTarget.x}
-          y={contextTarget.y}
-        />
-      ) : null}
 
       <StageEditor
         initialValue={editing && editing !== 'new' ? editing : undefined}

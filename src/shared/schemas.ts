@@ -1006,6 +1006,7 @@ const dashboardPositionSchema = z.object({
 
 export const dashboardSummarySchema = z.object({
   totalPositions: z.number().int().nonnegative(),
+  companyCount: z.number().int().nonnegative(),
   stageDistribution: z.array(z.object({
     stage: canonicalStageSchema,
     count: z.number().int().nonnegative(),

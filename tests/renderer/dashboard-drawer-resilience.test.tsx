@@ -28,6 +28,7 @@ function deferred<T>() {
 
 const emptySummary: DashboardSummary = {
   totalPositions: 0,
+  companyCount: 0,
   stageDistribution: [],
   positionsWithInterviews: 0,
   completedReviews: 0,

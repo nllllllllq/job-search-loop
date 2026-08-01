@@ -6,12 +6,15 @@ interface ProcessTimelineProps {
 }
 
 export function ProcessTimeline({ events }: ProcessTimelineProps) {
-  if (events.length === 0) {
+  const visibleEvents = [...events]
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .slice(0, 10);
+  if (visibleEvents.length === 0) {
     return <p className="dashboard-panel__empty">还没有记录实际或预计流程日期。</p>;
   }
   return (
     <ol className="process-date-line">
-      {events.map((event, index) => (
+      {visibleEvents.map((event, index) => (
         <li key={`${event.positionId}-${event.stageName}-${event.dateType}-${event.date}-${index}`}>
           <time dateTime={event.date}>{event.date}</time>
           <span className="process-date-line__type" data-date-type={event.dateType}>

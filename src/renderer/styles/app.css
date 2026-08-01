@@ -1003,7 +1003,7 @@ a {
   gap: var(--space-6);
   align-items: flex-end;
   justify-content: space-between;
-  padding-bottom: var(--space-5);
+  padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--line-strong);
 }
 
@@ -1011,7 +1011,7 @@ a {
 .position-detail-header h2 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.8rem, 3.2vw, 2.8rem);
+  font-size: clamp(1.55rem, 2.6vw, 2.25rem);
   font-weight: 700;
   line-height: 1.28;
 }
@@ -1111,6 +1111,57 @@ a {
   background: rgba(225, 233, 246, 0.38);
 }
 
+.settings-accordion {
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.settings-accordion__toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-accordion__toggle:hover,
+.settings-accordion__toggle:focus-visible {
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent));
+}
+
+.settings-accordion__toggle strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+
+.settings-accordion__chevron {
+  flex: 0 0 auto;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.settings-accordion__panel {
+  border-top: 1px solid var(--line);
+  padding: 0 12px 12px;
+}
+
+.settings-accordion__panel > .settings-section,
+.settings-accordion__panel > .backup-section {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+
 .position-table tbody .position-group-header:hover {
   background: var(--surface-raised);
 }
@@ -1133,6 +1184,18 @@ a {
   color: var(--muted);
   font-size: 0.68rem;
   font-weight: 600;
+}
+
+.position-group-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 1rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .position-table tbody th {
@@ -1613,11 +1676,11 @@ a {
 .stage-node__delete {
   position: absolute;
   z-index: 2;
-  top: -0.28rem;
-  left: 1.05rem;
+  top: -0.18rem;
+  right: 0.55rem;
   display: grid;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 0.95rem;
+  height: 0.95rem;
   place-items: center;
   padding: 0;
   border: 1px solid var(--line-strong);
@@ -1625,6 +1688,7 @@ a {
   background: var(--surface);
   color: var(--danger);
   cursor: pointer;
+  font-size: 0.68rem;
   opacity: 0;
   transform: scale(0.85);
   transition: opacity 120ms ease, transform 120ms ease;
@@ -3603,13 +3667,13 @@ a {
 /* Dashboard — an annotated operations ledger, not a task board. */
 .dashboard-page {
   display: grid;
-  gap: var(--space-6);
+  gap: var(--space-4);
 }
 
 .dashboard-heading {
   align-items: end;
   border-bottom: 2px solid var(--ink-strong);
-  padding-bottom: var(--space-5);
+  padding-bottom: var(--space-3);
 }
 
 .dashboard-heading h2 {
@@ -3626,9 +3690,9 @@ a {
 .dashboard-stat {
   position: relative;
   display: grid;
-  min-height: 9rem;
+  min-height: 6.5rem;
   align-content: end;
-  padding: 1rem 1.15rem;
+  padding: 0.75rem 0.9rem;
   overflow: hidden;
   border-right: 1px solid var(--line);
 }
@@ -3648,7 +3712,7 @@ a {
 
 .dashboard-stat__value {
   font-family: var(--font-display);
-  font-size: clamp(2.6rem, 5vw, 4.3rem);
+  font-size: clamp(2rem, 4vw, 3.2rem);
   font-weight: 500;
   line-height: 1;
 }

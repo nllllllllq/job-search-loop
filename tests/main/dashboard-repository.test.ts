@@ -86,9 +86,9 @@ describe('dashboard repository', () => {
       const events = createDashboardRepository(db).getSummary().processEvents;
 
       expect(events.map(({ date, dateType }) => ({ date, dateType }))).toEqual([
-        { date: '2026-08-01', dateType: 'actual' },
-        { date: '2026-08-02', dateType: 'actual' },
         { date: '2026-08-03', dateType: 'expected' },
+        { date: '2026-08-02', dateType: 'actual' },
+        { date: '2026-08-01', dateType: 'actual' },
       ]);
     } finally {
       db.close();

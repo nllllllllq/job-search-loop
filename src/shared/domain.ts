@@ -577,6 +577,7 @@ export interface AiConnectionResult {
 
 export interface DashboardSummary {
   totalPositions: number;
+  companyCount: number;
   stageDistribution: Array<{ stage: CanonicalStage; count: number }>;
   positionsWithInterviews: number;
   completedReviews: number;

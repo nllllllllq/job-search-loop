@@ -14,6 +14,10 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
         row(db.prepare('SELECT COUNT(*) AS count FROM positions').get(), 'position count').count,
         'count',
       );
+      const companyCount = integer(
+        row(db.prepare('SELECT COUNT(DISTINCT company) AS count FROM positions').get(), 'company count').count,
+        'count',
+      );
       const stageDistribution = db.prepare(`
         SELECT current_stage AS stage, COUNT(*) AS count
         FROM positions WHERE current_stage IS NOT NULL
@@ -50,7 +54,8 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
         FROM process_stages s
         JOIN positions p ON p.id = s.position_id
         WHERE s.expected_date IS NOT NULL
-        ORDER BY event_date, date_type_order, order_index, stage_id
+        ORDER BY event_date DESC, date_type_order, order_index, stage_id
+        LIMIT 10
       `).all().map((value): DashboardSummary['processEvents'][number] => {
         const data = row(value, 'process event');
         const dateType = text(data.date_type, 'date_type');
@@ -109,6 +114,7 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
       });
       return {
         totalPositions,
+        companyCount,
         stageDistribution,
         positionsWithInterviews,
         completedReviews,

@@ -1,9 +1,6 @@
 import { CHANNELS } from '../../shared/ipc';
 import {
   idSchema,
-  companyAliasConfirmationSchema,
-  companyAliasSchema,
-  companyIdentitySchema,
   preparationGenerateSchema,
   positionInputSchema,
   positionListFilterSchema,
@@ -16,7 +13,6 @@ import {
   preparationReadableMaterialSchema,
 } from '../../shared/schemas';
 import type { PositionsRepository } from '../repositories/positions';
-import type { CompanyAliasesRepository } from '../repositories/company-aliases';
 import type { PreparationsRepository } from '../repositories/preparations';
 import { safeIpcHandler, type IpcMainRegistrar } from './common';
 import type { PreparationService } from '../services/preparation';
@@ -24,7 +20,6 @@ import type { PreparationService } from '../services/preparation';
 export function registerPositionHandlers(
   ipcMain: IpcMainRegistrar,
   positions: PositionsRepository,
-  companyAliases?: CompanyAliasesRepository,
 ): void {
   ipcMain.handle(CHANNELS.positions.list, safeIpcHandler((_event, payload) => (
     positions.list(positionListFilterSchema.parse(payload))
@@ -32,14 +27,6 @@ export function registerPositionHandlers(
   if (positions.listGrouped) {
     ipcMain.handle(CHANNELS.positions.listGrouped, safeIpcHandler((_event, payload) => (
       positions.listGrouped!(positionListFilterSchema.parse(payload))
-    )));
-  }
-  if (companyAliases) {
-    ipcMain.handle(CHANNELS.companyAliases.confirm, safeIpcHandler((_event, payload) => (
-      companyAliasSchema.parse(companyAliases.confirm(companyAliasConfirmationSchema.parse(payload)))
-    )));
-    ipcMain.handle(CHANNELS.companyAliases.remove, safeIpcHandler((_event, payload) => (
-      companyAliases.remove(companyIdentitySchema.parse(payload))
     )));
   }
   ipcMain.handle(CHANNELS.positions.get, safeIpcHandler((_event, payload) => (

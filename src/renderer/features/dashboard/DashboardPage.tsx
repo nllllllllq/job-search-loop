@@ -185,6 +185,7 @@ function AnalysisModal({
 
 function SummaryCards({ summary }: { summary: DashboardSummary }) {
   const cards = [
+    ['公司数量', summary.companyCount],
     ['累计岗位', summary.totalPositions],
     ['进入面试', summary.positionsWithInterviews],
     ['完成复盘', summary.completedReviews],
@@ -214,6 +215,7 @@ export function DashboardPage() {
   );
   const data = summary.data ?? {
     totalPositions: 0,
+    companyCount: 0,
     stageDistribution: [],
     positionsWithInterviews: 0,
     completedReviews: 0,

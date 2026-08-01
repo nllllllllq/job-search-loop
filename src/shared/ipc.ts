@@ -5,8 +5,6 @@ import type {
   AiSettingsSaveInput,
   AssetVersion,
   CanonicalStage,
-  CompanyAlias,
-  CompanyAliasConfirmation,
   CompanyPositionGroup,
   Capability,
   CapabilityMergeResult,
@@ -68,10 +66,6 @@ export const CHANNELS = {
     saveStage: 'positions:save-stage',
     reorderStages: 'positions:reorder-stages',
     removeStage: 'positions:remove-stage',
-  },
-  companyAliases: {
-    confirm: 'company-aliases:confirm',
-    remove: 'company-aliases:remove',
   },
   preparations: {
     list: 'preparations:list',
@@ -200,10 +194,6 @@ export interface JobSearchApi {
     saveStage(input: ProcessStageInput & { id?: string }): Promise<ProcessStage>;
     reorderStages(positionId: string, orderedIds: string[]): Promise<ProcessStage[]>;
     removeStage(positionId: string, stageId: string): Promise<ProcessStage[]>;
-  };
-  readonly companyAliases: {
-    confirm(input: CompanyAliasConfirmation): Promise<CompanyAlias>;
-    remove(alias: string): Promise<void>;
   };
   readonly preparations: {
     list(positionId: string): Promise<PreparationMaterial[]>;

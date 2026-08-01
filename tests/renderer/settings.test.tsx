@@ -50,6 +50,38 @@ function renderSettings() {
 }
 
 describe('settings page', () => {
+  it('keeps settings sections collapsed initially and opens only one at a time', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      hasApiKey: true,
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    const provider = await screen.findByRole('button', { name: /OpenAI-compatible/ });
+    const prompt = screen.getByRole('button', { name: /Prompt/ });
+    const backup = screen.getByRole('button', { name: /涓氬姟鏁版嵁/ });
+    expect(provider).toHaveAttribute('aria-expanded', 'false');
+    expect(prompt).toHaveAttribute('aria-expanded', 'false');
+    expect(backup).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText(/^API/)).not.toBeInTheDocument();
+
+    await user.click(provider);
+    expect(provider).toHaveAttribute('aria-expanded', 'true');
+    expect(await screen.findByLabelText(/^API/)).toBeVisible();
+    expect(prompt).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(prompt);
+    expect(provider).toHaveAttribute('aria-expanded', 'false');
+    expect(prompt).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByLabelText(/^API/)).not.toBeInTheDocument();
+    expect(await screen.findByLabelText(/岗位准备模板/)).toBeVisible();
+  });
+
   it('edits the independent project import prompt', async () => {
     const fake = createJobSearchFake();
     fake.ai.settings.get.mockResolvedValue({
@@ -66,6 +98,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /Prompt/ }));
     const editor = await screen.findByLabelText(/^项目文件导入模板/);
     await user.clear(editor);
     await user.type(editor, '只按原文项目边界解析');
@@ -88,6 +121,7 @@ describe('settings page', () => {
     installJobSearchFake(fake);
 
     renderSettings();
+    await userEvent.setup().click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
 
     expect(await screen.findByDisplayValue('https://api.example.com/v1')).toBeVisible();
     expect(screen.getByDisplayValue('model-a')).toBeVisible();
@@ -115,10 +149,11 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
     await user.click(await screen.findByLabelText('启用图片输入'));
     expect(screen.getByText('当前 OpenAI-compatible Chat Completions 不支持直接发送原始文件；请使用本地文本提取。')).toBeVisible();
     expect(screen.queryByLabelText('文件输入协议')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /AI/ }));
+    await user.click(screen.getByRole('button', { name: '保存 AI 配置' }));
 
     await waitFor(() => expect(fake.ai.settings.save).toHaveBeenCalledWith({
       baseUrl: 'https://api.example.com/v1',
@@ -146,6 +181,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
     await user.type(await screen.findByLabelText(/^API 地址/), 'https://api.example.com/v1/');
     await user.type(screen.getByLabelText(/^模型/), 'model-a');
     await user.type(screen.getByLabelText('替换 API Key'), 'sk-user-entry');
@@ -178,6 +214,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
     const model = await screen.findByLabelText(/^模型/);
     await user.clear(model);
     await user.type(model, 'model-b');
@@ -214,6 +251,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
     const key = await screen.findByLabelText('替换 API Key');
     const testButton = screen.getByRole('button', { name: '测试连接' });
     expect(testButton).toBeEnabled();
@@ -239,6 +277,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
     const baseUrl = await screen.findByLabelText(/^API 地址/);
     const key = screen.getByLabelText('替换 API Key');
     await user.clear(baseUrl);
@@ -273,6 +312,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
     const baseUrl = await screen.findByLabelText(/^API 地址/);
     await user.clear(baseUrl);
     await user.type(baseUrl, 'https://API.EXAMPLE.com:443/v2/');
@@ -304,6 +344,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
     const model = await screen.findByLabelText(/^模型/);
     const key = screen.getByLabelText('替换 API Key');
     await user.clear(model);
@@ -333,6 +374,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
     expect(await screen.findByText(
       '配置文件已损坏，必须填写新的 API Key 才能覆盖恢复。',
     )).toBeVisible();
@@ -396,6 +438,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /OpenAI-compatible/ }));
     await user.click(await screen.findByRole('button', { name: '测试连接' }));
 
     expect((await screen.findAllByText('请求过于频繁，请稍后再试。'))[0]).toBeVisible();
@@ -417,6 +460,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /Prompt/ }));
     const preparation = await screen.findByLabelText(/^岗位准备模板/);
     await user.clear(preparation);
     await user.type(preparation, '  新第一行\n\n新第二行  ');
@@ -446,6 +490,7 @@ describe('settings page', () => {
     const user = userEvent.setup();
 
     renderSettings();
+    await user.click(await screen.findByRole('button', { name: /Prompt/ }));
     const analysis = await screen.findByLabelText(/^共性能力分析模板/);
     await user.clear(analysis);
     await user.type(analysis, '   ');

@@ -79,6 +79,7 @@ export function SettingsPage() {
     tone: 'success' | 'error';
     text: string;
   } | null>(null);
+  const [openSection, setOpenSection] = useState<'provider' | 'prompts' | 'backup' | null>(null);
   const settingsCorrupt = errorCode(settings.error) === 'AI_SETTINGS_CORRUPT';
 
   useEffect(() => {
@@ -222,6 +223,33 @@ export function SettingsPage() {
     ));
   };
 
+  const toggleSection = (section: 'provider' | 'prompts' | 'backup') => {
+    setOpenSection((current) => (current === section ? null : section));
+  };
+
+  const sectionToggle = (
+    section: 'provider' | 'prompts' | 'backup',
+    label: string,
+    summary: string,
+  ) => {
+    const expanded = openSection === section;
+    return (
+      <button
+        aria-controls={`settings-panel-${section}`}
+        aria-expanded={expanded}
+        className="settings-accordion__toggle"
+        onClick={() => toggleSection(section)}
+        type="button"
+      >
+        <span>
+          <span className="section-label">{label}</span>
+          <strong>{summary}</strong>
+        </span>
+        <span aria-hidden="true" className="settings-accordion__chevron">{expanded ? '−' : '+'}</span>
+      </button>
+    );
+  };
+
   return (
     <div className="settings-page">
       <header className="page-heading">
@@ -254,10 +282,13 @@ export function SettingsPage() {
         />
       ) : null}
       {!settings.loading && effectivePublicSettings ? (
-        <section
-          aria-labelledby="ai-provider-title"
-          className="settings-section settings-provider"
-        >
+        <section className="settings-accordion" aria-label="AI provider settings">
+          {sectionToggle('provider', 'PROVIDER / 澶栭儴鏈嶅姟', 'OpenAI-compatible 閰嶇疆')}
+          {openSection === 'provider' ? <div id="settings-panel-provider" className="settings-accordion__panel">
+          <section
+            aria-labelledby="ai-provider-title"
+            className="settings-section settings-provider"
+          >
           <div className="settings-section__heading">
             <div>
               <p className="section-label">PROVIDER / 外部服务</p>
@@ -384,6 +415,8 @@ export function SettingsPage() {
               </button>
             </div>
           </form>
+          </section>
+          </div> : null}
         </section>
       ) : null}
 
@@ -401,12 +434,17 @@ export function SettingsPage() {
         />
       ) : null}
       {prompts.data ? (
-        <PromptTemplatesSection
-          onSaved={promptSaved}
-          prompts={prompts.data}
-        />
+        <section className="settings-accordion" aria-label="Prompt settings">
+          {sectionToggle('prompts', 'WORKING INSTRUCTIONS / 宸ヤ綔鎸囦护', 'Prompt 妯℃澘')}
+          {openSection === 'prompts' ? <div id="settings-panel-prompts" className="settings-accordion__panel">
+            <PromptTemplatesSection onSaved={promptSaved} prompts={prompts.data} />
+          </div> : null}
+        </section>
       ) : null}
-      <BackupSection />
+      <section className="settings-accordion" aria-label="Backup settings">
+        {sectionToggle('backup', 'ARCHIVE / 鏈湴褰掓。', '涓氬姟鏁版嵁澶囦唤涓庢仮澶�')}
+        {openSection === 'backup' ? <div id="settings-panel-backup" className="settings-accordion__panel"><BackupSection /></div> : null}
+      </section>
     </div>
   );
 }

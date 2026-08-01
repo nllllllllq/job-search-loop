@@ -2,7 +2,6 @@ import { vi, type Mock } from 'vitest';
 import type {
   AiTask,
   Capability,
-  CompanyAlias,
   CompanyPositionGroup,
   ChangeProposalListItem,
   DashboardSummary,
@@ -40,10 +39,6 @@ export interface JobSearchApiFake {
     saveStage: ApiMock<JobSearchApi['positions']['saveStage']>;
     reorderStages: ApiMock<JobSearchApi['positions']['reorderStages']>;
     removeStage: ApiMock<JobSearchApi['positions']['removeStage']>;
-  };
-  readonly companyAliases: {
-    confirm: ApiMock<JobSearchApi['companyAliases']['confirm']>;
-    remove: ApiMock<JobSearchApi['companyAliases']['remove']>;
   };
   readonly preparations: {
     list: ApiMock<JobSearchApi['preparations']['list']>;
@@ -145,6 +140,7 @@ const emptyDetail: PositionDetail = {
 
 const dashboardSummary: DashboardSummary = {
   totalPositions: 0,
+  companyCount: 0,
   stageDistribution: [],
   positionsWithInterviews: 0,
   completedReviews: 0,
@@ -214,12 +210,6 @@ export function createJobSearchFake(): JobSearchApiFake {
       } as ProcessStage),
       reorderStages: vi.fn<JobSearchApi['positions']['reorderStages']>().mockResolvedValue([]),
       removeStage: vi.fn<JobSearchApi['positions']['removeStage']>().mockResolvedValue([]),
-    },
-    companyAliases: {
-      confirm: vi.fn<JobSearchApi['companyAliases']['confirm']>().mockResolvedValue({
-        canonicalName: 'Example company', alias: 'Example', createdAt: '2026-08-01T00:00:00.000Z',
-      } as CompanyAlias),
-      remove: vi.fn<JobSearchApi['companyAliases']['remove']>().mockResolvedValue(undefined),
     },
     preparations: {
       list: vi.fn<JobSearchApi['preparations']['list']>().mockResolvedValue([] as PreparationMaterial[]),

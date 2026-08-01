@@ -85,7 +85,6 @@ describe('typed IPC contract', () => {
 
   it('publishes explicit nested methods without a generic invoke or send escape hatch', () => {
     expectTypeOf<JobSearchApi>().toHaveProperty('positions');
-    expectTypeOf<JobSearchApi>().toHaveProperty('companyAliases');
     expectTypeOf<JobSearchApi>().toHaveProperty('ai');
     expectTypeOf<JobSearchApi>().toHaveProperty('preparations');
     expectTypeOf<JobSearchApi>().toHaveProperty('tasks');
@@ -97,7 +96,6 @@ describe('typed IPC contract', () => {
     expect(Object.keys(CHANNELS).sort()).toEqual([
       'ai',
       'assets',
-      'companyAliases',
       'imports',
       'positions',
       'preparations',

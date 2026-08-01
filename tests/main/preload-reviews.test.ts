@@ -89,6 +89,20 @@ describe('review IPC and preload contract', () => {
     );
   });
 
+  it('preserves AI_INPUT_UNSUPPORTED errors from IPC for the renderer', async () => {
+    electronMocks.invoke.mockRejectedValueOnce(new Error(
+      'Error invoking remote method: JOB_SEARCH_ERROR:' + JSON.stringify({
+        code: 'AI_INPUT_UNSUPPORTED',
+        message: 'The configured AI model does not support this input type.',
+      }),
+    ));
+
+    await expect(exposedApi().ai.settings.get()).rejects.toMatchObject({
+      code: 'AI_INPUT_UNSUPPORTED',
+      message: 'The configured AI model does not support this input type.',
+    });
+  });
+
   it('keeps direct acceptance distinct from edited acceptance at the bridge', async () => {
     const accepted = {
       id: token,

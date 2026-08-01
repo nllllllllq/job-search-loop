@@ -96,15 +96,11 @@ export function QuestionEditor({
 
   return (
     <Modal
+      dismissal="close-button-only"
       footer={(
-        <>
-          <button className="button button--quiet" disabled={saving} onClick={onClose} type="button">
-            取消
-          </button>
-          <button className="button button--primary" disabled={saving} form="question-editor-form" type="submit">
-            {saving ? '保存中…' : '保存问题'}
-          </button>
-        </>
+        <button className="button button--primary" disabled={saving} form="question-editor-form" type="submit">
+          {saving ? '保存中…' : '保存问题'}
+        </button>
       )}
       onClose={() => {
         if (!saving) onClose();

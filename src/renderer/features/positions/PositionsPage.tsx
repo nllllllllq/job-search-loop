@@ -45,15 +45,17 @@ export function PositionsPage() {
   const [stage, setStage] = useState<CanonicalStage | ''>('');
   const [filter, setFilter] = useState<PositionFilter>({});
   const [editorOpen, setEditorOpen] = useState(false);
+  const [canonicalName, setCanonicalName] = useState('');
+  const [alias, setAlias] = useState('');
   const filterKey = `${filter.query ?? ''}|${filter.stage ?? ''}`;
   const resource = useAsyncResource(
-    () => window.jobSearch.positions.list(filter),
+    () => window.jobSearch.positions.listGrouped(filter),
     [filterKey],
   );
   const [preparationTasks, setPreparationTasks] = useState<Record<string, AiTask | null>>({});
 
   useEffect(() => {
-    const positions = resource.data ?? [];
+    const positions = (resource.data ?? []).flatMap((group) => group.members);
     if (positions.length === 0) {
       setPreparationTasks({});
       return undefined;
@@ -79,8 +81,16 @@ export function PositionsPage() {
 
   const countLabel = useMemo(() => {
     if (!resource.data) return '';
-    return `${resource.data.length} 条记录`;
+    return `${resource.data.reduce((count, group) => count + group.members.length, 0)} 条记录`;
   }, [resource.data]);
+
+  const companyCandidates = resource.data?.map((group) => group.canonicalName) ?? [];
+  const selectedCanonicalName = companyCandidates.includes(canonicalName)
+    ? canonicalName
+    : companyCandidates[0] ?? '';
+  const selectedAlias = companyCandidates.includes(alias) && alias !== selectedCanonicalName
+    ? alias
+    : companyCandidates.find((name) => name !== selectedCanonicalName) ?? '';
 
   const applyFilter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -100,6 +110,31 @@ export function PositionsPage() {
     } catch {
       toast.error('保存岗位失败，请稍后重试');
       throw new Error('position create failed');
+    }
+  };
+
+  const confirmCompanyAlias = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCanonicalName || !selectedAlias || selectedCanonicalName === selectedAlias) return;
+    try {
+      await window.jobSearch.companyAliases.confirm({
+        canonicalName: selectedCanonicalName,
+        alias: selectedAlias,
+      });
+      await resource.reload();
+      toast.success('公司别名已确认');
+    } catch {
+      toast.error('确认公司别名失败，请重新选择');
+    }
+  };
+
+  const removeCompanyAlias = async (companyAlias: string) => {
+    try {
+      await window.jobSearch.companyAliases.remove(companyAlias);
+      await resource.reload();
+      toast.success('公司别名确认已撤销');
+    } catch {
+      toast.error('撤销公司别名失败，请稍后重试');
     }
   };
 
@@ -146,6 +181,35 @@ export function PositionsPage() {
         <span className="position-filter__count" aria-live="polite">{countLabel}</span>
       </form>
 
+      {companyCandidates.length > 1 ? (
+        <form aria-label="确认公司别名" className="position-filter" onSubmit={confirmCompanyAlias}>
+          <span>仅在你确认后才会合并公司记录。</span>
+          <label>
+            <span>规范公司</span>
+            <select
+              aria-label="规范公司"
+              onChange={(event) => setCanonicalName(event.target.value)}
+              value={selectedCanonicalName}
+            >
+              {companyCandidates.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>别名公司</span>
+            <select
+              aria-label="别名公司"
+              onChange={(event) => setAlias(event.target.value)}
+              value={selectedAlias}
+            >
+              {companyCandidates.filter((name) => name !== selectedCanonicalName).map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <button className="button button--quiet" type="submit">确认合并公司</button>
+        </form>
+      ) : null}
+
       {resource.loading ? (
         <div className="resource-state" role="status">
           <span className="resource-state__mark" aria-hidden="true" />
@@ -183,24 +247,44 @@ export function PositionsPage() {
               </tr>
             </thead>
             <tbody>
-              {resource.data.map((position) => (
-                <tr key={position.id}>
-                  <th scope="row">
-                    <Link to={`/positions/${position.id}`}>
-                      <strong>{position.company}</strong>
-                      <span>{position.title}</span>
-                      <PreparationTaskBadge task={preparationTasks[position.id] ?? null} />
-                      {position.location ? (
-                        <small className="position-location">{position.location}</small>
-                      ) : null}
-                    </Link>
+              {resource.data.flatMap((group) => [
+                <tr className="position-group-header" key={`${group.canonicalName}-header`}>
+                  <th colSpan={5} scope="rowgroup">
+                    <strong>{group.canonicalName}</strong>
+                    <span>{group.members.length} 条记录</span>
+                    {[...new Set(group.members.map((member) => member.company))]
+                      .filter((companyAlias) => companyAlias !== group.canonicalName)
+                      .map((companyAlias) => (
+                        <button
+                          className="button button--quiet"
+                          key={companyAlias}
+                          onClick={() => void removeCompanyAlias(companyAlias)}
+                          type="button"
+                        >
+                          撤销别名 {companyAlias}
+                        </button>
+                      ))}
                   </th>
-                  <td><span className="interest-score">{position.interest}<small>/5</small></span></td>
-                  <td><StatusBadge stage={position.currentStage ?? undefined} /></td>
-                  <td aria-label="暂无最近流程日期" className="muted-cell">—</td>
-                  <td aria-label={position.finalResult ? undefined : '暂无结果'} className="muted-cell">{position.finalResult ?? '—'}</td>
-                </tr>
-              ))}
+                </tr>,
+                ...group.members.map((position) => (
+                  <tr key={position.id}>
+                    <th scope="row">
+                      <Link to={`/positions/${position.id}`}>
+                        <strong>{position.company}</strong>
+                        <span>{position.title}</span>
+                        <PreparationTaskBadge task={preparationTasks[position.id] ?? null} />
+                        {position.location ? (
+                          <small className="position-location">{position.location}</small>
+                        ) : null}
+                      </Link>
+                    </th>
+                    <td><span className="interest-score">{position.interest}<small>/5</small></span></td>
+                    <td><StatusBadge stage={position.currentStage ?? undefined} /></td>
+                    <td aria-label="暂无最近流程日期" className="muted-cell">—</td>
+                    <td aria-label={position.finalResult ? undefined : '暂无结果'} className="muted-cell">{position.finalResult ?? '—'}</td>
+                  </tr>
+                )),
+              ])}
             </tbody>
           </table>
         </div>

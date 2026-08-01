@@ -173,7 +173,7 @@ describe('interview and review UI', () => {
     await user.click(screen.getByRole('button', { name: '保存面试记录' }));
     expect(await screen.findByText('保存失败，已保留你填写的内容。')).toBeInTheDocument();
     expect(screen.getByLabelText(/已确认文字记录/)).toHaveValue('这段文字必须保留。');
-    await user.click(screen.getByRole('button', { name: '取消' }));
+    await user.click(screen.getByRole('button', { name: '关闭对话框' }));
     await user.click(screen.getAllByRole('button', { name: '编辑' })[0]);
     await user.clear(screen.getByLabelText('个人感受 / 补充'));
     await user.type(screen.getByLabelText('个人感受 / 补充'), '编辑后的个人补充');

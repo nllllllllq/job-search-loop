@@ -40,7 +40,14 @@ const REQUIRED_TABLES_V7_PLUS = [
   'ai_tasks',
 ].sort();
 
+const REQUIRED_TABLES_V8_PLUS = [
+  ...REQUIRED_TABLES_V7_PLUS,
+  'canonical_companies',
+  'company_aliases',
+].sort();
+
 function requiredTablesForVersion(version: number): readonly string[] {
+  if (version >= 8) return REQUIRED_TABLES_V8_PLUS;
   if (version >= 7) return REQUIRED_TABLES_V7_PLUS;
   return version >= 5 ? REQUIRED_TABLES_V5_PLUS : REQUIRED_TABLES_V1_TO_V4;
 }

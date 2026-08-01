@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ProjectImportPreview, ProjectInput, ProjectSegmentPreview } from '../../../shared/domain';
+import type { ProjectImportField, ProjectImportPreview, ProjectInput, ProjectSegmentPreview } from '../../../shared/domain';
 import { projectPayloadSchema } from '../../../shared/schemas';
 import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
@@ -8,6 +8,32 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onCompleted: () => void | Promise<void>;
+}
+
+function FieldAudit({
+  field,
+  accepted,
+  onAccept,
+  onRestore,
+}: {
+  field: { provenance: 'source' | 'ai-rewrite' | 'ai-suggestion'; evidence: string };
+  accepted: boolean;
+  onAccept: () => void;
+  onRestore: () => void;
+}) {
+  const label = field.provenance === 'source'
+    ? '原文'
+    : field.provenance === 'ai-rewrite' ? 'AI 改写（有原文依据）' : 'AI 建议（需确认）';
+  return (
+    <div className="field-audit">
+      <span className={`field-audit__badge field-audit__badge--${field.provenance}`}>{label}</span>
+      {field.evidence ? <small>依据：{field.evidence}</small> : null}
+      {field.provenance === 'ai-suggestion' ? (
+        <button onClick={onAccept} type="button">{accepted ? '已接受' : '接受建议'}</button>
+      ) : null}
+      <button onClick={onRestore} type="button">还原建议</button>
+    </div>
+  );
 }
 
 async function fileBytes(file: File): Promise<Uint8Array> {
@@ -39,6 +65,7 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
   const [pending, setPending] = useState<ProjectSegmentPreview[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [acceptedSuggestions, setAcceptedSuggestions] = useState<Record<string, boolean>>({});
   const [aiLabel, setAiLabel] = useState('正在读取 AI 配置…');
 
   useEffect(() => {
@@ -49,6 +76,7 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
     setStep(1);
     setBusy(false);
     setMessage('');
+    setAcceptedSuggestions({});
     setAiLabel('正在读取 AI 配置…');
     void window.jobSearch.ai.settings.get()
       .then((settings) => {
@@ -81,6 +109,7 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
       );
       setPreview(result);
       setPending(result.segments);
+      setAcceptedSuggestions({});
     } catch {
       setMessage('文件解析失败，请确认格式和内容后重试');
     } finally {
@@ -105,6 +134,7 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
   };
 
   const updateSuggested = (tempId: string, key: keyof ProjectInput, value: string) => {
+    setAcceptedSuggestions((current) => ({ ...current, [`${tempId}:${key}`]: true }));
     setPending((current) => current.map((segment) => segment.tempId === tempId
       ? {
         ...segment,
@@ -114,6 +144,56 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
       : segment));
   };
 
+  const sourceTextFromEvidence = (evidence: string) => evidence
+    .replace(/^L\d+(?:\s*-\s*L?\d+)?\s*[:：—-]?\s*/i, '')
+    .trim();
+
+  const restoreSuggested = (segment: ProjectSegmentPreview, key: keyof ProjectInput) => {
+    const field = segment.fields[key];
+    const restoredValue = field.provenance === 'ai-rewrite'
+      ? sourceTextFromEvidence(field.evidence)
+      : field.value;
+    setPending((current) => current.map((item) => item.tempId === segment.tempId
+      ? {
+        ...item,
+        name: key === 'name' ? restoredValue : item.name,
+        suggested: { ...item.suggested, [key]: restoredValue },
+        fields: field.provenance === 'ai-rewrite'
+          ? {
+            ...item.fields,
+            [key]: { value: restoredValue, provenance: 'source', evidence: field.evidence },
+          }
+          : item.fields,
+      }
+      : item));
+    if (field.provenance === 'ai-suggestion') {
+      setAcceptedSuggestions((current) => ({ ...current, [`${segment.tempId}:${key}`]: false }));
+    }
+  };
+
+  const acceptSuggestion = (tempId: string, key: ProjectImportField) => {
+    setAcceptedSuggestions((current) => ({ ...current, [`${tempId}:${key}`]: true }));
+  };
+
+  const acceptAllSuggestions = () => {
+    setAcceptedSuggestions(Object.fromEntries(pending.flatMap((segment) => (
+      Object.entries(segment.fields)
+        .filter(([, field]) => field.provenance === 'ai-suggestion' && field.value)
+        .map(([key]) => [`${segment.tempId}:${key}`, true])
+    ))));
+  };
+
+  const saveableProject = (segment: ProjectSegmentPreview): ProjectInput => {
+    const value = { ...segment.suggested };
+    (Object.keys(segment.fields) as ProjectImportField[]).forEach((key) => {
+      const field = segment.fields[key];
+      if (field.provenance === 'ai-suggestion' && !acceptedSuggestions[`${segment.tempId}:${key}`]) {
+        value[key] = '';
+      }
+    });
+    return value;
+  };
+
   const savePending = async () => {
     if (!pending.length || busy) return;
     setBusy(true);
@@ -121,7 +201,7 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
     const remaining = [...pending];
     while (remaining.length) {
       const segment = remaining[0]!;
-      const parsed = projectPayloadSchema.safeParse(segment.suggested);
+      const parsed = projectPayloadSchema.safeParse(saveableProject(segment));
       if (!parsed.success) {
         setMessage(`${segment.name}字段不完整，请修改后重试`);
         break;
@@ -158,10 +238,10 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
       footer={(
         <>
           <button className="button button--quiet" disabled={busy} onClick={() => void close()} type="button">取消</button>
-          {preview && step === 1 ? (
+          {preview && step === 1 && preview.classification === 'valid-project' ? (
             <button className="button button--primary" disabled={busy} onClick={() => setStep(2)} type="button">进入字段确认</button>
           ) : null}
-          {preview && step === 2 ? (
+          {preview && step === 2 && preview.classification === 'valid-project' ? (
             <button className="button button--primary" disabled={busy || !pending.length} onClick={() => void savePending()} type="button">
               {busy
                 ? '保存中…'
@@ -204,10 +284,19 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
         </section>
       ) : null}
 
-      {preview && step === 1 ? (
+      {preview && preview.classification === 'no-valid-project' ? (
+        <section className="import-empty-result" role="status">
+          <strong>未识别到可保存的项目</strong>
+          <p>{preview.explanation}</p>
+          <p>本次不会创建或保存任何项目；可改用仅本地解析，或选择另一份项目材料。</p>
+        </section>
+      ) : null}
+
+      {preview && step === 1 && preview.classification === 'valid-project' ? (
         <section className="segment-review">
           <div className="import-preview-meta">
             <strong>{preview.sourceSummary}</strong>
+            <span>{preview.explanation}</span>
             <span>先确认分段和顺序，再检查字段。</span>
             <span className={`import-analysis-mode import-analysis-mode--${preview.analysisMode}`}>
               {preview.analysisMode === 'ai'
@@ -267,8 +356,11 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
         </section>
       ) : null}
 
-      {preview && step === 2 ? (
+      {preview && step === 2 && preview.classification === 'valid-project' ? (
         <section className="project-import-editors">
+          <div className="segment-actions">
+            <button onClick={acceptAllSuggestions} type="button">接受所有 AI 建议</button>
+          </div>
           {pending.map((segment, index) => (
             <details key={segment.tempId} open={index === 0}>
               <summary>{index + 1}. {segment.suggested.name}</summary>
@@ -276,14 +368,28 @@ export function ProjectImportWizard({ open, onClose, onCompleted }: Props) {
                 <Field label="项目名称" required>
                   <input onChange={(event) => updateSuggested(segment.tempId, 'name', event.target.value)} value={segment.suggested.name} />
                 </Field>
+                <FieldAudit
+                    accepted={Boolean(acceptedSuggestions[`${segment.tempId}:name`])}
+                    field={segment.fields.name}
+                    onAccept={() => acceptSuggestion(segment.tempId, 'name')}
+                    onRestore={() => restoreSuggested(segment, 'name')}
+                  />
                 {editableFields.map(([key, label]) => (
-                  <Field key={key} label={label}>
+                  <div key={key}>
+                  <Field label={label}>
                     <textarea
                       onChange={(event) => updateSuggested(segment.tempId, key, event.target.value)}
                       rows={key === 'unclassifiedNotes' ? 5 : 3}
                       value={segment.suggested[key] ?? ''}
                     />
                   </Field>
+                    <FieldAudit
+                      accepted={Boolean(acceptedSuggestions[`${segment.tempId}:${key}`])}
+                      field={segment.fields[key]}
+                      onAccept={() => acceptSuggestion(segment.tempId, key)}
+                      onRestore={() => restoreSuggested(segment, key)}
+                    />
+                  </div>
                 ))}
               </div>
             </details>

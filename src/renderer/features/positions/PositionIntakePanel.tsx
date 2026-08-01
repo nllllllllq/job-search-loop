@@ -1,10 +1,17 @@
 import { type FormEvent, useEffect, useState } from 'react';
+import { ZodError } from 'zod';
 import type {
   ImportedImageInput,
   PositionImportPreview,
   PositionInput,
 } from '../../../shared/domain';
-import { positionInputSchema } from '../../../shared/schemas';
+import {
+  POSITION_IMPORT_IMAGE_MAX_BYTES,
+  POSITION_IMPORT_IMAGE_MAX_COUNT,
+  positionImportImagesSchema,
+  positionInputSchema,
+} from '../../../shared/schemas';
+import type { AppError } from '../../../shared/ipc';
 import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
 
@@ -47,6 +54,35 @@ async function imageInput(file: File): Promise<ImportedImageInput> {
   return { name: file.name, type: file.type, bytes, width, height };
 }
 
+function validateImageFiles(files: File[]): void {
+  if (files.length > POSITION_IMPORT_IMAGE_MAX_COUNT) {
+    throw new Error('Select no more than 10 images.');
+  }
+  for (const file of files) {
+    if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+      throw new Error('Only PNG and JPEG images are supported.');
+    }
+    if (file.size > POSITION_IMPORT_IMAGE_MAX_BYTES) {
+      throw new Error('Each image must be 12 MB or smaller.');
+    }
+  }
+}
+
+async function imageInputs(files: File[]): Promise<ImportedImageInput[]> {
+  validateImageFiles(files);
+  const inputs: ImportedImageInput[] = [];
+  for (const file of files) inputs.push(await imageInput(file));
+  return positionImportImagesSchema.parse({ images: inputs }).images;
+}
+
+function imageErrorMessage(error: unknown): string {
+  if (error instanceof ZodError) return error.issues[0]?.message ?? 'Invalid image input.';
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message;
+  }
+  return '截图识别失败，请检查格式、大小后重试';
+}
+
 function confidenceLabel(value: number): string {
   if (value >= 0.8) return '高置信';
   if (value >= 0.55) return '需确认';
@@ -61,6 +97,7 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
   const [value, setValue] = useState<PositionInput>(emptyPosition);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [imageInputUnsupported, setImageInputUnsupported] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof PositionInput, string>>>({});
 
   useEffect(() => {
@@ -72,6 +109,7 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
     setValue(emptyPosition);
     setBusy(false);
     setError('');
+    setImageInputUnsupported(false);
     setErrors({});
   }, [open]);
 
@@ -102,12 +140,31 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
     if (!images.length || busy) return;
     setBusy(true);
     setError('');
+    setImageInputUnsupported(false);
     try {
-      const inputs: ImportedImageInput[] = [];
-      for (const file of images) inputs.push(await imageInput(file));
+      const inputs = await imageInputs(images);
       applyPreview(await window.jobSearch.imports.previewPositionFromImages(inputs));
-    } catch {
-      setError('截图识别失败，请检查格式、大小后重试');
+    } catch (caught) {
+      if ((caught as Partial<AppError>)?.code === 'AI_INPUT_UNSUPPORTED') {
+        setImageInputUnsupported(true);
+      } else {
+        setError(imageErrorMessage(caught));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const useTextFallback = async () => {
+    if (!images.length || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const inputs = await imageInputs(images);
+      applyPreview(await window.jobSearch.imports.previewPositionFromImages(inputs, 'ocr-text'));
+      setImageInputUnsupported(false);
+    } catch (caught) {
+      setError(imageErrorMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -156,19 +213,18 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
     setPreview(null);
     setValue(emptyPosition);
     setError('');
+    setImageInputUnsupported(false);
     setErrors({});
   };
 
   return (
     <Modal
       closeDisabled={busy}
-      footer={(
-        <>
-          <button className="button button--quiet" disabled={busy} onClick={() => void close()} type="button">取消</button>
-          <button className="button button--primary" disabled={busy} form="position-intake-form" type="submit">
-            {busy ? '处理中…' : '保存岗位'}
-          </button>
-        </>
+      dismissal="close-button-only"
+      footer={imageInputUnsupported ? null : (
+        <button className="button button--primary" disabled={busy} form="position-intake-form" type="submit">
+          {busy ? '处理中…' : '保存岗位'}
+        </button>
       )}
       onClose={() => void close()}
       open={open}
@@ -204,14 +260,14 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
         </section>
       ) : null}
 
-      {tab === 'images' && !preview ? (
+      {tab === 'images' && !preview && !imageInputUnsupported ? (
         <section className="import-source">
-          <Field label="选择岗位截图" hint="最多 10 张，可调整顺序；仅在本机识别，原图不会保存">
+          <Field label="选择岗位截图" hint="最多 10 张，可调整顺序；AI 会按此顺序识别，原图不会保存">
             <input
               accept=".png,.jpg,.jpeg,image/png,image/jpeg"
               aria-label="选择岗位截图"
               multiple
-              onChange={(event) => setImages(Array.from(event.target.files ?? []).slice(0, 10))}
+              onChange={(event) => setImages(Array.from(event.target.files ?? []))}
               type="file"
             />
           </Field>
@@ -227,7 +283,7 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
             ))}
           </ol>
           <button className="button button--primary" disabled={busy || !images.length} onClick={() => void parseImages()} type="button">
-            {busy ? '本地识别中…' : '开始识别'}
+            {busy ? 'AI 识别中…' : '开始 AI 识别'}
           </button>
         </section>
       ) : null}
@@ -276,6 +332,13 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
         </form>
       ) : null}
       {error ? <p className="import-error" role="alert">{error}</p> : null}
+      {imageInputUnsupported ? (
+        <div className="import-error" role="alert">
+          <p>text fallback (local OCR then AI text structuring) or cancel</p>
+          <button className="button button--quiet" disabled={busy} onClick={() => void useTextFallback()} type="button">text fallback</button>
+          <button className="button button--quiet" disabled={busy} onClick={() => void close()} type="button">cancel</button>
+        </div>
+      ) : null}
     </Modal>
   );
 }

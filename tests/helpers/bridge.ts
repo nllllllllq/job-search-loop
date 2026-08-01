@@ -2,6 +2,8 @@ import { vi, type Mock } from 'vitest';
 import type {
   AiTask,
   Capability,
+  CompanyAlias,
+  CompanyPositionGroup,
   ChangeProposalListItem,
   DashboardSummary,
   Insight,
@@ -30,6 +32,7 @@ export interface JobSearchApiFake {
   };
   readonly positions: {
     list: ApiMock<JobSearchApi['positions']['list']>;
+    listGrouped: ApiMock<JobSearchApi['positions']['listGrouped']>;
     get: ApiMock<JobSearchApi['positions']['get']>;
     create: ApiMock<JobSearchApi['positions']['create']>;
     update: ApiMock<JobSearchApi['positions']['update']>;
@@ -37,6 +40,10 @@ export interface JobSearchApiFake {
     saveStage: ApiMock<JobSearchApi['positions']['saveStage']>;
     reorderStages: ApiMock<JobSearchApi['positions']['reorderStages']>;
     removeStage: ApiMock<JobSearchApi['positions']['removeStage']>;
+  };
+  readonly companyAliases: {
+    confirm: ApiMock<JobSearchApi['companyAliases']['confirm']>;
+    remove: ApiMock<JobSearchApi['companyAliases']['remove']>;
   };
   readonly preparations: {
     list: ApiMock<JobSearchApi['preparations']['list']>;
@@ -159,6 +166,7 @@ const emptyAiTask: AiTask = {
 };
 
 export function createJobSearchFake(): JobSearchApiFake {
+  const list = vi.fn<JobSearchApi['positions']['list']>().mockResolvedValue([] as PositionListItem[]);
   return {
     version: '0.1.0',
     ai: {
@@ -177,7 +185,16 @@ export function createJobSearchFake(): JobSearchApiFake {
       ),
     },
     positions: {
-      list: vi.fn<JobSearchApi['positions']['list']>().mockResolvedValue([] as PositionListItem[]),
+      list,
+      listGrouped: vi.fn<JobSearchApi['positions']['listGrouped']>().mockImplementation(async (filter) => {
+        const groups = new Map<string, CompanyPositionGroup>();
+        for (const member of await list(filter)) {
+          const group = groups.get(member.company);
+          if (group) group.members.push(member);
+          else groups.set(member.company, { canonicalName: member.company, members: [member] });
+        }
+        return [...groups.values()];
+      }),
       get: vi.fn<JobSearchApi['positions']['get']>().mockResolvedValue(emptyDetail),
       create: vi.fn<JobSearchApi['positions']['create']>().mockResolvedValue(emptyPosition),
       update: vi.fn<JobSearchApi['positions']['update']>().mockResolvedValue(emptyPosition),
@@ -197,6 +214,12 @@ export function createJobSearchFake(): JobSearchApiFake {
       } as ProcessStage),
       reorderStages: vi.fn<JobSearchApi['positions']['reorderStages']>().mockResolvedValue([]),
       removeStage: vi.fn<JobSearchApi['positions']['removeStage']>().mockResolvedValue([]),
+    },
+    companyAliases: {
+      confirm: vi.fn<JobSearchApi['companyAliases']['confirm']>().mockResolvedValue({
+        canonicalName: 'Example company', alias: 'Example', createdAt: '2026-08-01T00:00:00.000Z',
+      } as CompanyAlias),
+      remove: vi.fn<JobSearchApi['companyAliases']['remove']>().mockResolvedValue(undefined),
     },
     preparations: {
       list: vi.fn<JobSearchApi['preparations']['list']>().mockResolvedValue([] as PreparationMaterial[]),

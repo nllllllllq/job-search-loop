@@ -16,6 +16,10 @@ import {
   type PositionsRepository,
 } from '../repositories/positions';
 import {
+  createCompanyAliasesRepository,
+  type CompanyAliasesRepository,
+} from '../repositories/company-aliases';
+import {
   createPreparationsRepository,
   type PreparationsRepository,
 } from '../repositories/preparations';
@@ -51,6 +55,7 @@ export type { IpcMainRegistrar } from './common';
 
 export interface RepositoryBundle {
   positions: PositionsRepository;
+  companyAliases?: CompanyAliasesRepository;
   preparations: PreparationsRepository;
   interviews: InterviewsRepository;
   assets: AssetsRepository;
@@ -74,6 +79,7 @@ export interface MainRuntime {
 export function createRepositoryBundle(db: DatabaseSync): RepositoryBundle {
   return {
     positions: createPositionsRepository(db),
+    companyAliases: createCompanyAliasesRepository(db),
     preparations: createPreparationsRepository(db),
     interviews: createInterviewsRepository(db),
     assets: createAssetsRepository(db),
@@ -107,6 +113,7 @@ export function registerIpcHandlers(
     : ipcMain;
   const {
     positions,
+    companyAliases,
     preparations,
     assets,
     prompts,
@@ -116,7 +123,7 @@ export function registerIpcHandlers(
     aiTasks,
   } = repositories;
 
-  registerPositionHandlers(guardedIpcMain, positions);
+  registerPositionHandlers(guardedIpcMain, positions, companyAliases);
   const preparationService = ai
     ? createPreparationService({
       positions,

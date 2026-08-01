@@ -5,6 +5,9 @@ import type {
   AiSettingsSaveInput,
   AssetVersion,
   CanonicalStage,
+  CompanyAlias,
+  CompanyAliasConfirmation,
+  CompanyPositionGroup,
   Capability,
   CapabilityMergeResult,
   CapabilityAnalysisPreview,
@@ -57,6 +60,7 @@ export const CHANNELS = {
   },
   positions: {
     list: 'positions:list',
+    listGrouped: 'positions:list-grouped',
     get: 'positions:get',
     create: 'positions:create',
     update: 'positions:update',
@@ -64,6 +68,10 @@ export const CHANNELS = {
     saveStage: 'positions:save-stage',
     reorderStages: 'positions:reorder-stages',
     removeStage: 'positions:remove-stage',
+  },
+  companyAliases: {
+    confirm: 'company-aliases:confirm',
+    remove: 'company-aliases:remove',
   },
   preparations: {
     list: 'preparations:list',
@@ -162,6 +170,7 @@ export interface AppError {
     | 'AI_TIMEOUT'
     | 'AI_PROVIDER_ERROR'
     | 'AI_INVALID_OUTPUT'
+    | 'AI_INPUT_UNSUPPORTED'
     | 'AI_SETTINGS_CORRUPT'
     | 'AI_SETTINGS_UNAVAILABLE'
     | 'BACKUP_INVALID'
@@ -183,6 +192,7 @@ export interface JobSearchApi {
   };
   readonly positions: {
     list(filter?: { query?: string; stage?: CanonicalStage }): Promise<PositionListItem[]>;
+    listGrouped(filter?: { query?: string; stage?: CanonicalStage }): Promise<CompanyPositionGroup[]>;
     get(id: string): Promise<PositionDetail>;
     create(input: PositionInput): Promise<Position>;
     update(id: string, input: PositionInput): Promise<Position>;
@@ -190,6 +200,10 @@ export interface JobSearchApi {
     saveStage(input: ProcessStageInput & { id?: string }): Promise<ProcessStage>;
     reorderStages(positionId: string, orderedIds: string[]): Promise<ProcessStage[]>;
     removeStage(positionId: string, stageId: string): Promise<ProcessStage[]>;
+  };
+  readonly companyAliases: {
+    confirm(input: CompanyAliasConfirmation): Promise<CompanyAlias>;
+    remove(alias: string): Promise<void>;
   };
   readonly preparations: {
     list(positionId: string): Promise<PreparationMaterial[]>;
@@ -251,7 +265,10 @@ export interface JobSearchApi {
   };
   readonly imports: {
     previewPositionFromText(text: string): Promise<PositionImportPreview>;
-    previewPositionFromImages(images: ImportedImageInput[]): Promise<PositionImportPreview>;
+    previewPositionFromImages(
+      images: ImportedImageInput[],
+      mode?: 'vision' | 'ocr-text',
+    ): Promise<PositionImportPreview>;
     previewProjectsFromDocument(
       file: ImportedFileInput,
       mode: 'ai' | 'local',

@@ -6,6 +6,8 @@ This backlog is intentionally deferred until users have tried the core workflow.
 
 Validate OpenAI-compatible providers, models, image inputs, PDF and document inputs, error formats, and fallback choices across a maintained compatibility matrix.
 
+The currently supported OpenAI-compatible Chat path intentionally sends only locally extracted, line-numbered plain text. It does not transport raw document bytes/files; validate provider-specific raw-file protocols and any future opt-in compatibility path separately.
+
 ## Large and complex file corpus
 
 Evaluate large, scanned, multi-language, image-heavy, malformed, and unusually structured screenshots, PDFs, DOCX files, TXT files, and Markdown files.

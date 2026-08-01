@@ -4,10 +4,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import type {
-  AiPublicSettings,
-  PromptTemplate,
-} from '../../../shared/domain';
+import type { AiPublicSettings, PromptTemplate } from '../../../shared/domain';
+import { defaultAiModelCapabilities } from '../../../shared/domain';
 import type { AppError } from '../../../shared/ipc';
 import {
   aiBaseUrlSchema,
@@ -68,6 +66,9 @@ export function SettingsPage() {
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [imageInputEnabled, setImageInputEnabled] = useState(
+    defaultAiModelCapabilities.images,
+  );
   const [publicSettings, setPublicSettings] = useState<AiPublicSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -84,6 +85,9 @@ export function SettingsPage() {
     if (settings.data) {
       setBaseUrl(settings.data.baseUrl);
       setModel(settings.data.model);
+      setImageInputEnabled(
+        settings.data.capabilities?.images ?? defaultAiModelCapabilities.images,
+      );
       setPublicSettings(settings.data);
       return;
     }
@@ -91,6 +95,7 @@ export function SettingsPage() {
       setBaseUrl('');
       setModel('');
       setApiKey('');
+      setImageInputEnabled(defaultAiModelCapabilities.images);
       setPublicSettings({
         baseUrl: '',
         model: '',
@@ -104,10 +109,13 @@ export function SettingsPage() {
     model: '',
     hasApiKey: false,
   } : null);
+  const effectiveCapabilities = effectivePublicSettings?.capabilities
+    ?? defaultAiModelCapabilities;
   const settingsDirty = effectivePublicSettings !== null && (
     baseUrl !== effectivePublicSettings.baseUrl
     || model !== effectivePublicSettings.model
     || apiKey.length > 0
+    || imageInputEnabled !== effectiveCapabilities.images
   );
   const savedOrigin = effectivePublicSettings?.hasApiKey
     ? normalizedProviderOrigin(effectivePublicSettings.baseUrl)
@@ -122,7 +130,15 @@ export function SettingsPage() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (saving || testing) return;
-    const parsed = aiSettingsSaveSchema.safeParse({ baseUrl, model, apiKey });
+    const capabilities = { images: imageInputEnabled };
+    const shouldPersistCapabilities = imageInputEnabled
+      || effectivePublicSettings?.capabilities !== undefined;
+    const parsed = aiSettingsSaveSchema.safeParse({
+      baseUrl,
+      model,
+      apiKey,
+      ...(shouldPersistCapabilities ? { capabilities } : {}),
+    });
     if (!parsed.success) {
       setFormError('请填写有效的 HTTP/HTTPS 地址、模型和密钥。');
       setApiKeyError(null);
@@ -154,6 +170,9 @@ export function SettingsPage() {
       setPublicSettings(saved);
       setBaseUrl(saved.baseUrl);
       setModel(saved.model);
+      setImageInputEnabled(
+        saved.capabilities?.images ?? defaultAiModelCapabilities.images,
+      );
       setApiKey('');
       setApiKeyError(null);
       toast.success('AI 配置已安全保存');
@@ -279,6 +298,26 @@ export function SettingsPage() {
                 value={model}
               />
             </Field>
+            <Field
+              hint="只在当前模型明确支持图片输入时启用。"
+              label="启用图片输入"
+            >
+              <input
+                checked={imageInputEnabled}
+                onChange={(event) => {
+                  setImageInputEnabled(event.target.checked);
+                  setFormError(null);
+                  setTestMessage(null);
+                }}
+                type="checkbox"
+              />
+            </Field>
+            <div className="field">
+              <p className="field__label">文件输入</p>
+              <p className="field__hint">
+                当前 OpenAI-compatible Chat Completions 不支持直接发送原始文件；请使用本地文本提取。
+              </p>
+            </div>
             <Field
               error={apiKeyError}
               hint={

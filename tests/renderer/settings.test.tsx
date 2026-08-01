@@ -96,6 +96,40 @@ describe('settings page', () => {
     expect(screen.queryByDisplayValue(/secret|sk-/i)).not.toBeInTheDocument();
   });
 
+  it('lets users opt in to image inputs and clearly marks file input unavailable', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      hasApiKey: true,
+      capabilities: { images: false },
+    });
+    fake.ai.settings.save.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      hasApiKey: true,
+      capabilities: { images: true },
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    await user.click(await screen.findByLabelText('启用图片输入'));
+    expect(screen.getByText('当前 OpenAI-compatible Chat Completions 不支持直接发送原始文件；请使用本地文本提取。')).toBeVisible();
+    expect(screen.queryByLabelText('文件输入协议')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /AI/ }));
+
+    await waitFor(() => expect(fake.ai.settings.save).toHaveBeenCalledWith({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      apiKey: '',
+      capabilities: {
+        images: true,
+      },
+    }));
+  });
+
   it('keeps edited values after save failure and never echoes secrets', async () => {
     const fake = createJobSearchFake();
     fake.ai.settings.get.mockResolvedValue({

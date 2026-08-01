@@ -85,15 +85,11 @@ export function PositionEditor({
 
   return (
     <Modal
+      dismissal="close-button-only"
       footer={
-        <>
-          <button className="button button--quiet" disabled={saving} onClick={onClose} type="button">
-            取消
-          </button>
-          <button className="button button--primary" disabled={saving} form="position-editor-form" type="submit">
-            {saving ? '保存中…' : '保存岗位'}
-          </button>
-        </>
+        <button className="button button--primary" disabled={saving} form="position-editor-form" type="submit">
+          {saving ? '保存中…' : '保存岗位'}
+        </button>
       }
       onClose={() => {
         if (!saving) onClose();

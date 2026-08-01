@@ -95,15 +95,11 @@ export function InterviewEditor({
   return (
     <Modal
       closeDisabled={saving}
+      dismissal="close-button-only"
       footer={(
-        <>
-          <button className="button button--quiet" disabled={saving} onClick={onClose} type="button">
-            取消
-          </button>
-          <button className="button button--primary" disabled={saving} form="interview-editor" type="submit">
-            {saving ? '保存中…' : '保存面试记录'}
-          </button>
-        </>
+        <button className="button button--primary" disabled={saving} form="interview-editor" type="submit">
+          {saving ? '保存中…' : '保存面试记录'}
+        </button>
       )}
       onClose={onClose}
       open={open}

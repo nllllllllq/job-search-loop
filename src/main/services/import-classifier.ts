@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { ProjectInput, ProjectSegmentPreview } from '../../shared/domain';
+import type {
+  ProjectImportField,
+  ProjectImportFieldValue,
+  ProjectInput,
+  ProjectSegmentPreview,
+} from '../../shared/domain';
 
 const FIELD_RULES: Array<[keyof ProjectInput, RegExp]> = [
   ['background', /^(?:背景|项目背景)\s*[:：]\s*(.+)$/i],
@@ -27,8 +32,26 @@ function emptyProject(name: string): ProjectInput {
   };
 }
 
-function mapSegment(name: string, sourceText: string): ProjectSegmentPreview {
+const projectFields: ProjectImportField[] = [
+  'name', 'background', 'goal', 'role', 'keyDecisions', 'outcome', 'evidence',
+  'reflections', 'storytellingVersions', 'unclassifiedNotes',
+];
+
+function emptyFields(project: ProjectInput): Record<ProjectImportField, ProjectImportFieldValue> {
+  return Object.fromEntries(projectFields.map((field) => [field, {
+    value: project[field] ?? '',
+    provenance: field === 'name' ? 'source' : 'ai-suggestion',
+    evidence: field === 'name' ? project.name : '',
+  }])) as Record<ProjectImportField, ProjectImportFieldValue>;
+}
+
+function mapSegment(
+  name: string,
+  sourceText: string,
+  boundaries: { startLine: number; endLine: number } = { startLine: 1, endLine: sourceText.split('\n').length },
+): ProjectSegmentPreview {
   const suggested = emptyProject(name);
+  const fields = emptyFields(suggested);
   const unmatched: string[] = [];
   for (const line of sourceText.split('\n').map((item) => item.trim()).filter(Boolean)) {
     if (/^#{1,6}\s+/.test(line) || line === name) continue;
@@ -37,17 +60,28 @@ function mapSegment(name: string, sourceText: string): ProjectSegmentPreview {
       const [, pattern] = rule;
       const match = line.match(pattern);
       const key = rule[0];
-      suggested[key] = `${suggested[key] ? `${suggested[key]}\n` : ''}${match?.[1]?.trim() ?? ''}`;
+      const value = `${suggested[key] ? `${suggested[key]}\n` : ''}${match?.[1]?.trim() ?? ''}`;
+      suggested[key] = value;
+      fields[key] = { value, provenance: 'source', evidence: line };
     } else {
       unmatched.push(line);
     }
   }
   suggested.unclassifiedNotes = unmatched.join('\n');
+  fields.unclassifiedNotes = {
+    value: suggested.unclassifiedNotes,
+    provenance: suggested.unclassifiedNotes ? 'source' : 'ai-suggestion',
+    evidence: suggested.unclassifiedNotes,
+  };
   return {
     tempId: randomUUID(),
     name,
     sourceText,
     suggested,
+    boundaries,
+    fields,
+    missingFields: projectFields.filter((field) => field !== 'name' && !suggested[field]),
+    unusedContent: unmatched.map((content) => ({ content, reason: '未匹配到项目字段' })),
     warnings: unmatched.length ? ['部分内容已放入“待整理内容”'] : [],
   };
 }
@@ -61,7 +95,12 @@ export function classifyProjectText(text: string): ProjectSegmentPreview[] {
   return matches.slice(0, 30).map((match, index) => {
     const start = match.index ?? 0;
     const end = matches[index + 1]?.index ?? normalized.length;
-    return mapSegment(match[1]!.trim(), normalized.slice(start, end).trim());
+    const sourceText = normalized.slice(start, end).trim();
+    const startLine = normalized.slice(0, start).split('\n').length;
+    return mapSegment(match[1]!.trim(), sourceText, {
+      startLine,
+      endLine: startLine + sourceText.split('\n').length - 1,
+    });
   });
 }
 
@@ -73,7 +112,10 @@ export function mergeProjectSegments(
   if (index < 0 || index >= segments.length - 1) return segments;
   const current = segments[index]!;
   const next = segments[index + 1]!;
-  const merged = mapSegment(current.name, `${current.sourceText}\n\n${next.sourceText}`);
+  const merged = mapSegment(current.name, `${current.sourceText}\n\n${next.sourceText}`, {
+    startLine: current.boundaries.startLine,
+    endLine: next.boundaries.endLine,
+  });
   merged.tempId = current.tempId;
   return [...segments.slice(0, index), merged, ...segments.slice(index + 2)];
 }
@@ -113,6 +155,11 @@ export function renameProjectSegment(
   name: string,
 ): ProjectSegmentPreview[] {
   return segments.map((item) => item.tempId === tempId
-    ? { ...item, name: name.trim(), suggested: { ...item.suggested, name: name.trim() } }
+    ? {
+      ...item,
+      name: name.trim(),
+      suggested: { ...item.suggested, name: name.trim() },
+      fields: { ...item.fields, name: { value: name.trim(), provenance: 'source', evidence: item.fields.name.evidence } },
+    }
     : item);
 }

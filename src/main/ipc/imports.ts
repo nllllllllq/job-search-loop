@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { ZodError } from 'zod';
 import { CHANNELS } from '../../shared/ipc';
 import {
   importCancelSchema,
@@ -34,6 +35,8 @@ import {
   type OcrService,
 } from '../services/ocr';
 import { previewPositionFromText } from '../services/position-import';
+import { createPositionImageImportService } from '../services/position-image-import';
+import { AiServiceError } from '../services/ai-settings';
 import { SafeIpcError, safeIpcHandler, type IpcMainRegistrar } from './common';
 
 type StoredProjectPreview = Omit<ProjectImportPreview, 'sessionId'>;
@@ -49,6 +52,10 @@ export interface ImportRuntime {
 
 function userFacing(error: unknown): never {
   if (error instanceof SafeIpcError) throw error;
+  if (error instanceof AiServiceError) throw error;
+  if (error instanceof ZodError) {
+    throw new SafeIpcError('VALIDATION_ERROR', error.issues[0]?.message ?? 'Invalid request');
+  }
   if (error instanceof ImportSessionError) {
     throw new SafeIpcError('NOT_FOUND', error.message);
   }
@@ -76,6 +83,13 @@ export function registerImportHandlers(
       ?? createLocalTesseractOcrService(defaultOcrAssetPath());
     return ocrPromise;
   };
+  const positionImageImport = runtime.ai && runtime.getSettings && runtime.prompts
+    ? createPositionImageImportService({
+      ai: runtime.ai as unknown as Parameters<typeof createPositionImageImportService>[0]['ai'],
+      getSettings: runtime.getSettings,
+      prompts: runtime.prompts,
+    })
+    : undefined;
 
   ipcMain.handle(CHANNELS.imports.previewPositionFromText, safeIpcHandler(async (_event, payload) => {
     try {
@@ -90,17 +104,36 @@ export function registerImportHandlers(
 
   ipcMain.handle(CHANNELS.imports.previewPositionFromImages, safeIpcHandler(async (_event, payload) => {
     try {
-      const { images } = positionImportImagesSchema.parse(payload);
-      const ocr = await getOcr();
-      const recognized = await ocr.preview(images);
-      const base = previewPositionFromText(recognized.text);
-      const warnings = recognized.averageConfidence < 70
-        ? ['截图识别置信度较低，请逐项检查', ...base.warnings]
-        : base.warnings;
+      const { images, mode } = positionImportImagesSchema.parse(payload);
+      if (!positionImageImport) {
+        throw new AiServiceError('AI_NOT_CONFIGURED', 'AI image import is not configured.');
+      }
+      const recognized = mode === 'vision'
+        ? await positionImageImport.preview(images)
+        : await (async () => {
+          const ocr = await getOcr();
+          const extracted = await ocr.preview(images);
+          const structured = await positionImageImport.previewText(extracted.text);
+          return {
+            ...structured,
+            warnings: extracted.averageConfidence < 70
+              ? ['截图 OCR 置信度较低，请逐项检查', ...structured.warnings]
+              : structured.warnings,
+          };
+        })();
       const preview: StoredPositionPreview = {
-        ...base,
-        sourceSummary: `${images.length} 张截图，本地 OCR 平均置信度 ${Math.round(recognized.averageConfidence)}%`,
-        warnings,
+        sourceSummary: mode === 'vision'
+          ? `${images.length} 张截图，已由 AI 按当前顺序识别`
+          : `${images.length} 张截图，已由本地 OCR 提取并由 AI 结构化`,
+        suggested: {
+          company: recognized.company,
+          title: recognized.title,
+          location: recognized.location,
+          interest: 3,
+          rawJd: recognized.rawJd,
+        },
+        confidence: recognized.confidence,
+        warnings: recognized.warnings,
       };
       const sessionId = sessions.create('position', preview);
       return { sessionId, ...preview };

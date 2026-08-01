@@ -14,17 +14,18 @@ afterEach(() => {
 });
 
 describe('prompt templates repository', () => {
-  it('initializes the four required templates with unique kinds', () => {
+  it('initializes the five required templates with unique kinds', () => {
     database = createTestDatabase();
     const prompts = createPromptsRepository(database);
 
     expect(prompts.list().map(({ kind, name }) => ({ kind, name }))).toEqual([
       { kind: 'capability-analysis', name: '共性能力分析' },
       { kind: 'interview-review', name: '面试复盘' },
+      { kind: 'position-image', name: '岗位截图识别' },
       { kind: 'preparation', name: '岗位准备' },
       { kind: 'project-import', name: '项目文件导入' },
     ]);
-    expect(new Set(prompts.list().map((prompt) => prompt.kind)).size).toBe(4);
+    expect(new Set(prompts.list().map((prompt) => prompt.kind)).size).toBe(5);
   });
 
   it('allows the project import prompt to be read and edited', () => {

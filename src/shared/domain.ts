@@ -15,7 +15,8 @@ export type PromptKind =
   | 'preparation'
   | 'interview-review'
   | 'capability-analysis'
-  | 'project-import';
+  | 'project-import'
+  | 'position-image';
 
 export type AiTaskKind = 'preparation';
 export type AiTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
@@ -60,18 +61,47 @@ export interface PositionImportPreview {
   warnings: string[];
 }
 
+export interface PositionImageRecognitionPreview {
+  company: string;
+  title: string;
+  location: string;
+  rawJd: string;
+  confidence: {
+    company: number;
+    title: number;
+    location: number;
+    rawJd: number;
+  };
+  warnings: string[];
+}
+
 export interface ProjectSegmentPreview {
   tempId: string;
   name: string;
   sourceText: string;
   suggested: ProjectInput;
+  boundaries: { startLine: number; endLine: number };
+  fields: Record<ProjectImportField, ProjectImportFieldValue>;
+  missingFields: ProjectImportField[];
+  unusedContent: Array<{ content: string; reason: string }>;
   warnings: string[];
+}
+
+export type ProjectImportField = keyof ProjectInput;
+export type ProjectImportProvenance = 'source' | 'ai-rewrite' | 'ai-suggestion';
+
+export interface ProjectImportFieldValue {
+  value: string;
+  provenance: ProjectImportProvenance;
+  evidence: string;
 }
 
 export interface ProjectImportPreview {
   sessionId: ImportSessionId;
   sourceSummary: string;
   analysisMode: 'ai' | 'local' | 'local-fallback';
+  classification: 'valid-project' | 'no-valid-project';
+  explanation: string;
   segments: ProjectSegmentPreview[];
   warnings: string[];
 }
@@ -367,6 +397,20 @@ export interface Capability extends CapabilityInput {
   updatedAt: string;
 }
 
+export interface CompanyPositionGroup {
+  canonicalName: string;
+  members: PositionListItem[];
+}
+
+export interface CompanyAliasConfirmation {
+  canonicalName: string;
+  alias: string;
+}
+
+export interface CompanyAlias extends CompanyAliasConfirmation {
+  createdAt: string;
+}
+
 export interface CapabilityMergeResult {
   source: Capability;
   target: Capability;
@@ -486,13 +530,45 @@ export interface AiPublicSettings {
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
+  capabilities?: AiModelCapabilities;
 }
+
+export interface AiModelCapabilities {
+  images: boolean;
+  fileInputProtocol?: 'none';
+}
+
+export const defaultAiModelCapabilities: AiModelCapabilities = {
+  images: false,
+  fileInputProtocol: 'none',
+};
 
 export interface AiSettingsSaveInput {
   baseUrl: string;
   model: string;
   apiKey: string;
+  capabilities?: AiModelCapabilities;
 }
+
+export interface AiTextInputPart {
+  type: 'text';
+  text: string;
+}
+
+export interface AiImageInputPart {
+  type: 'image';
+  mimeType: string;
+  bytes: Uint8Array;
+}
+
+export interface AiFileInputPart {
+  type: 'file';
+  name: string;
+  mimeType: string;
+  bytes: Uint8Array;
+}
+
+export type AiInputPart = AiTextInputPart | AiImageInputPart | AiFileInputPart;
 
 export interface AiConnectionResult {
   ok: true;

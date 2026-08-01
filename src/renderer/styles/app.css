@@ -1111,6 +1111,30 @@ a {
   background: rgba(225, 233, 246, 0.38);
 }
 
+.position-table tbody .position-group-header:hover {
+  background: var(--surface-raised);
+}
+
+.position-table tbody .position-group-header > th {
+  padding: 0.68rem 1.1rem;
+  border-top: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--ink-strong);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.position-group-header strong {
+  margin-right: 0.5rem;
+}
+
+.position-group-header span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
 .position-table tbody th {
   min-width: 15rem;
   font-weight: inherit;

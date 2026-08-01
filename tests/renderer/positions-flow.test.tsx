@@ -85,6 +85,64 @@ describe('positions flow', () => {
     document.title = '';
   });
 
+  it('renders canonical company group headers with each member beneath them', async () => {
+    const aliasMember = {
+      ...listItem,
+      id: '8e4868e1-0da2-4fb7-b66f-5b55c5d5a212',
+      company: '远山',
+      title: '高级产品经理',
+    };
+    const { fake } = renderAt('#/positions', (api) => {
+      api.positions.listGrouped.mockResolvedValue([{
+        canonicalName: '远山科技',
+        members: [listItem, aliasMember],
+      }]);
+    });
+
+    const header = await screen.findByText('远山科技', { selector: '.position-group-header strong' });
+    expect(header.parentElement).toHaveTextContent('2 条记录');
+    expect(screen.getByText('高级产品经理')).toBeInTheDocument();
+    expect(fake.positions.listGrouped).toHaveBeenCalledWith({});
+  });
+
+  it('requires a user confirmation to group companies and can remove that confirmation', async () => {
+    const aliasMember = {
+      ...listItem,
+      id: '8e4868e1-0da2-4fb7-b66f-5b55c5d5a212',
+      company: '远山',
+      title: '高级产品经理',
+    };
+    const { fake, user } = renderAt('#/positions', (api) => {
+      api.positions.listGrouped
+        .mockResolvedValueOnce([
+          { canonicalName: '远山科技', members: [listItem] },
+          { canonicalName: '远山', members: [aliasMember] },
+        ])
+        .mockResolvedValueOnce([{
+          canonicalName: '远山科技', members: [listItem, aliasMember],
+        }])
+        .mockResolvedValueOnce([
+          { canonicalName: '远山科技', members: [listItem] },
+          { canonicalName: '远山', members: [aliasMember] },
+        ]);
+    });
+
+    const confirmation = await screen.findByRole('form', { name: '确认公司别名' });
+    expect(fake.companyAliases.confirm).not.toHaveBeenCalled();
+    await user.selectOptions(within(confirmation).getByRole('combobox', { name: '别名公司' }), '远山');
+    await user.click(within(confirmation).getByRole('button', { name: '确认合并公司' }));
+
+    await waitFor(() => expect(fake.companyAliases.confirm).toHaveBeenCalledWith({
+      canonicalName: '远山科技',
+      alias: '远山',
+    }));
+    await waitFor(() => expect(fake.positions.listGrouped).toHaveBeenCalledTimes(2));
+
+    await user.click(await screen.findByRole('button', { name: '撤销别名 远山' }));
+    await waitFor(() => expect(fake.companyAliases.remove).toHaveBeenCalledWith('远山'));
+    await waitFor(() => expect(fake.positions.listGrouped).toHaveBeenCalledTimes(3));
+  });
+
   it('creates a position, refreshes, and routes to the created record', async () => {
     const created = { ...detail, rawJd: '负责产品规划与用户研究' };
     const { fake, user } = renderAt('#/', (api) => {
@@ -147,14 +205,14 @@ describe('positions flow', () => {
   it('sends deterministic query and canonical-stage filters and shows missing dates as an em dash', async () => {
     const { fake, user } = renderAt('#/positions');
 
-    expect(await screen.findByText('远山科技')).toBeInTheDocument();
+    expect(await screen.findAllByText('远山科技')).toHaveLength(2);
     expect(screen.getByRole('cell', { name: '暂无最近流程日期' })).toHaveTextContent('—');
     await user.type(screen.getByRole('searchbox', { name: '搜索岗位' }), '产品');
     await user.selectOptions(screen.getByRole('combobox', { name: '流程阶段' }), 'interview');
     await user.click(screen.getByRole('button', { name: '筛选' }));
 
     await waitFor(() => {
-      expect(fake.positions.list).toHaveBeenLastCalledWith({
+      expect(fake.positions.listGrouped).toHaveBeenLastCalledWith({
         query: '产品',
         stage: 'interview',
       });
@@ -189,6 +247,21 @@ describe('positions flow', () => {
     expect(rawJd).toHaveStyle({ whiteSpace: 'pre-wrap' });
     expect(document.querySelector('.raw-jd script')).toBeNull();
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+  });
+
+  it('keeps position intake open until its labelled close button is used', async () => {
+    const { user } = renderAt('#/positions');
+
+    await user.click(await screen.findByRole('button', { name: '录入岗位' }));
+    const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    expect(within(dialog).queryByRole('button', { name: '取消' })).not.toBeInTheDocument();
+
+    fireEvent.click(dialog);
+    fireEvent(dialog, new Event('cancel', { bubbles: false, cancelable: true }));
+    expect(dialog).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: '关闭对话框' }));
+    expect(screen.queryByRole('dialog', { name: '录入岗位' })).not.toBeInTheDocument();
   });
 
   it('shows a compact preparation task status on the matching position row', async () => {
@@ -411,6 +484,19 @@ describe('positions flow', () => {
     });
     expect(await screen.findByRole('heading', { name: '岗位详情载入失败' })).toBeInTheDocument();
     expect(screen.queryByText(/SQL secret/)).not.toBeInTheDocument();
+  });
+
+  it('retains Cancel and Confirm actions in the position delete confirmation', async () => {
+    const { fake, user } = renderAt(`#/positions/${positionId}`);
+
+    await user.click(await screen.findByRole('button', { name: '删除岗位' }));
+    const dialog = screen.getByRole('dialog', { name: '确认删除岗位' });
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '确认删除' })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: '取消' }));
+    expect(fake.positions.remove).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '确认删除岗位' })).not.toBeInTheDocument();
   });
 
   it('captures and displays a position location on the main path', async () => {

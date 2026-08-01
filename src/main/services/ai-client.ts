@@ -1,10 +1,14 @@
 import { z, type ZodType } from 'zod';
-import type { AiConnectionResult } from '../../shared/domain';
+import {
+  defaultAiModelCapabilities,
+  type AiConnectionResult,
+  type AiInputPart,
+} from '../../shared/domain';
 import { AiServiceError, type PrivateAiSettings } from './ai-settings';
 
 export interface AiMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | AiInputPart[];
 }
 
 export interface AiCompletionRequest {
@@ -153,6 +157,56 @@ function statusError(
   );
 }
 
+function unsupportedInput(): AiServiceError {
+  return new AiServiceError(
+    'AI_INPUT_UNSUPPORTED',
+    'The configured AI model does not support this input type.',
+  );
+}
+
+function asDataUrl(mimeType: string, bytes: Uint8Array): string {
+  return `data:${mimeType};base64,${Buffer.from(bytes).toString('base64')}`;
+}
+
+function mapInputParts(
+  parts: AiInputPart[],
+  capabilities: PrivateAiSettings['capabilities'],
+): Array<Record<string, unknown>> {
+  const configured = capabilities ?? defaultAiModelCapabilities;
+  return parts.map((part) => {
+    if (part.type === 'text') return { type: 'text', text: part.text };
+    if (part.type === 'image') {
+      if (!configured.images) throw unsupportedInput();
+      return {
+        type: 'image_url',
+        image_url: { url: asDataUrl(part.mimeType, part.bytes) },
+      };
+    }
+    throw unsupportedInput();
+  });
+}
+
+function mapMessages(
+  messages: AiMessage[],
+  capabilities: PrivateAiSettings['capabilities'],
+): Array<{ role: AiMessage['role']; content: string | Array<Record<string, unknown>> }> {
+  return messages.map((message) => {
+    if (
+      typeof message.content !== 'string'
+      && message.role !== 'user'
+      && message.content.some((part) => part.type !== 'text')
+    ) {
+      throw unsupportedInput();
+    }
+    return {
+      role: message.role,
+      content: typeof message.content === 'string'
+        ? message.content
+        : mapInputParts(message.content, capabilities),
+    };
+  });
+}
+
 export function createAiClient({
   fetch,
   getSettings,
@@ -165,6 +219,7 @@ export function createAiClient({
     settingsOverride?: PrivateAiSettings,
   ): Promise<T> => {
     const settings = settingsOverride ?? await getSettings();
+    const messages = mapMessages(request.messages, settings.capabilities);
     const controller = new AbortController();
     let timedOut = false;
     const timer = scheduleTimeout(() => {
@@ -183,7 +238,7 @@ export function createAiClient({
           },
           body: JSON.stringify({
             model: settings.model,
-            messages: request.messages,
+            messages,
             temperature: 0.2,
           }),
           signal: controller.signal,

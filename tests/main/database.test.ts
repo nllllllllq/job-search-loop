@@ -47,7 +47,7 @@ describe('database migrations', () => {
       expect(db.prepare('PRAGMA table_info(ai_tasks)').all().map((column) => column.name)).toEqual([
         'id', 'kind', 'position_id', 'status', 'safe_error_json', 'created_at', 'started_at', 'updated_at',
       ]);
-      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
+      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: CURRENT_SCHEMA_VERSION });
     } finally {
       db.close();
     }
@@ -79,7 +79,7 @@ describe('database migrations', () => {
       migrate(db);
 
       expect(db.prepare('PRAGMA user_version').get())
-        .toEqual({ user_version: 7 });
+        .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
       expect(db.prepare(
         "SELECT content FROM prompt_templates WHERE kind = 'preparation'",
       ).get()).toEqual({ content: '我的定制内容' });
@@ -109,10 +109,12 @@ describe('database migrations', () => {
       expect(tables).toEqual([
         'ai_tasks',
         'asset_versions',
+        'canonical_companies',
         'capabilities',
         'capability_analysis_runs',
         'capability_evidence',
         'change_proposals',
+        'company_aliases',
         'insights',
         'interviews',
         'positions',
@@ -140,6 +142,11 @@ describe('database migrations', () => {
           name: '面试复盘',
         },
         {
+          id: 'b04bb165-3909-4bdf-85aa-7af6b69d6246',
+          kind: 'position-image',
+          name: '岗位截图识别',
+        },
+        {
           id: '0a8d1dfc-9a87-4d57-9e3c-451c20a6a901',
           kind: 'preparation',
           name: '岗位准备',
@@ -155,7 +162,7 @@ describe('database migrations', () => {
         expect(String(template.content).trim()).not.toBe('');
       }
       expect(db.prepare('SELECT COUNT(*) AS count FROM prompt_templates').get())
-        .toMatchObject({ count: 4 });
+        .toMatchObject({ count: 5 });
       expect(db.prepare('PRAGMA user_version').get())
         .toMatchObject({ user_version: CURRENT_SCHEMA_VERSION });
       expect(db.prepare('PRAGMA foreign_keys').get()).toMatchObject({ foreign_keys: 1 });
@@ -172,7 +179,7 @@ describe('database migrations', () => {
       const definitions = db.prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
       ).all();
-      expect(definitions).toHaveLength(14);
+      expect(definitions).toHaveLength(16);
       for (const definition of definitions) {
         expect(String(definition.sql).trim()).toMatch(/\) STRICT;?$/);
       }
@@ -286,7 +293,7 @@ describe('database migrations', () => {
       expect(db.prepare('SELECT company FROM positions WHERE id = ?').get('position-1'))
         .toMatchObject({ company: '远山科技' });
       expect(db.prepare('SELECT COUNT(*) AS count FROM prompt_templates').get())
-        .toMatchObject({ count: 4 });
+        .toMatchObject({ count: 5 });
     } finally {
       db.close();
     }

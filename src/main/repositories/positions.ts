@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROCESS_STAGES } from '../../shared/defaults';
 import type {
   CanonicalStage,
+  CompanyPositionGroup,
   Position,
   PositionDetail,
   PositionInput,
@@ -78,6 +79,7 @@ export interface PositionsRepository {
   get(id: string): Position;
   getDetail(id: string): PositionDetail;
   list(filter?: { query?: string; stage?: CanonicalStage }): PositionListItem[];
+  listGrouped?(filter?: { query?: string; stage?: CanonicalStage }): CompanyPositionGroup[];
   remove(id: string): void;
   listStages(positionId: string): ProcessStage[];
   upsertStage(input: ProcessStageInput & { id?: string }): ProcessStage;
@@ -253,6 +255,30 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
           updatedAt: position.updatedAt,
         };
       });
+    },
+
+    listGrouped(filter = {}) {
+      const aliases = new Map<string, string>();
+      for (const value of db.prepare(`
+        SELECT a.alias, c.canonical_name
+        FROM company_aliases a
+        JOIN canonical_companies c ON c.id = a.canonical_company_id
+      `).all()) {
+        const data = row(value, 'company alias');
+        aliases.set(text(data.alias, 'alias'), text(data.canonical_name, 'canonical_name'));
+      }
+      const groups = new Map<string, CompanyPositionGroup>();
+      for (const member of this.list(filter)) {
+        // Exact confirmed aliases only. Normalized similarities are candidates
+        // for confirmation, never a reason to merge records automatically.
+        const canonicalName = aliases.get(member.company) ?? member.company;
+        const group = groups.get(canonicalName);
+        if (group) group.members.push(member);
+        else groups.set(canonicalName, { canonicalName, members: [member] });
+      }
+      return [...groups.values()].sort((left, right) => (
+        right.members[0]!.updatedAt.localeCompare(left.members[0]!.updatedAt)
+      ));
     },
 
     remove(id) {

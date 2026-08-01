@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
@@ -143,7 +143,7 @@ const CREATE_SCHEMA_V1 = `
 
   CREATE TABLE IF NOT EXISTS prompt_templates (
     id TEXT PRIMARY KEY,
-    kind TEXT NOT NULL UNIQUE CHECK (kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import')),
+    kind TEXT NOT NULL UNIQUE CHECK (kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import', 'position-image')),
     name TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -425,7 +425,7 @@ export function migrate(db: DatabaseSync): void {
         CREATE TABLE prompt_templates (
           id TEXT PRIMARY KEY,
           kind TEXT NOT NULL UNIQUE CHECK (
-            kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import')
+            kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import', 'position-image')
           ),
           name TEXT NOT NULL,
           content TEXT NOT NULL,
@@ -453,6 +453,41 @@ export function migrate(db: DatabaseSync): void {
           updated_at TEXT NOT NULL
         ) STRICT;
         CREATE INDEX ai_tasks_position_updated_idx ON ai_tasks(position_id, updated_at DESC);
+      `);
+    }
+    if (version < 8) {
+      db.exec(`
+        CREATE TABLE canonical_companies (
+          id TEXT PRIMARY KEY,
+          canonical_name TEXT NOT NULL UNIQUE,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE company_aliases (
+          alias TEXT PRIMARY KEY,
+          canonical_company_id TEXT NOT NULL REFERENCES canonical_companies(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX company_aliases_canonical_company_idx
+          ON company_aliases(canonical_company_id);
+      `);
+    }
+    if (version < 9 && hasTable(db, 'prompt_templates')) {
+      db.exec(`
+        ALTER TABLE prompt_templates RENAME TO prompt_templates_v8;
+        CREATE TABLE prompt_templates (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL UNIQUE CHECK (
+            kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import', 'position-image')
+          ),
+          name TEXT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        INSERT INTO prompt_templates (id, kind, name, content, created_at, updated_at)
+        SELECT id, kind, name, content, created_at, updated_at FROM prompt_templates_v8;
+        DROP TABLE prompt_templates_v8;
       `);
     }
     db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);

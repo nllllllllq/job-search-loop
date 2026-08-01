@@ -13,6 +13,9 @@ import {
   capabilityAnalysisPreviewSchema,
   capabilityMergeResultSchema,
   capabilityMergeSchema,
+  companyAliasConfirmationSchema,
+  companyAliasSchema,
+  companyIdentitySchema,
   capabilityAnalysisSelectionSchema,
   changeProposalArraySchema,
   changeProposalListSchema,
@@ -60,6 +63,7 @@ function parseAppError(value: unknown): AppError | null {
       'AI_TIMEOUT',
       'AI_PROVIDER_ERROR',
       'AI_INVALID_OUTPUT',
+      'AI_INPUT_UNSUPPORTED',
       'AI_SETTINGS_CORRUPT',
       'AI_SETTINGS_UNAVAILABLE',
       'BACKUP_INVALID',
@@ -130,6 +134,7 @@ const api = frozen<JobSearchApi>({
   }),
   positions: frozen<JobSearchApi['positions']>({
     list: (filter) => invoke(CHANNELS.positions.list, filter),
+    listGrouped: (filter) => invoke(CHANNELS.positions.listGrouped, filter),
     get: (id) => invoke(CHANNELS.positions.get, id),
     create: (input) => invoke(CHANNELS.positions.create, input),
     update: (id, input) => invoke(CHANNELS.positions.update, { id, input }),
@@ -143,6 +148,15 @@ const api = frozen<JobSearchApi>({
       CHANNELS.positions.removeStage,
       { positionId, stageId },
     ),
+  }),
+  companyAliases: frozen<JobSearchApi['companyAliases']>({
+    confirm: async (input) => companyAliasSchema.parse(await invoke(
+      CHANNELS.companyAliases.confirm,
+      companyAliasConfirmationSchema.parse(input),
+    )),
+    remove: async (alias) => {
+      await invoke(CHANNELS.companyAliases.remove, companyIdentitySchema.parse(alias));
+    },
   }),
   preparations: frozen<JobSearchApi['preparations']>({
     list: async (positionId) => preparationMaterialListSchema.parse(
@@ -278,9 +292,9 @@ const api = frozen<JobSearchApi>({
       CHANNELS.imports.previewPositionFromText,
       positionImportTextSchema.parse({ text }),
     ),
-    previewPositionFromImages: (images) => invoke(
+    previewPositionFromImages: (images, mode) => invoke(
       CHANNELS.imports.previewPositionFromImages,
-      positionImportImagesSchema.parse({ images }),
+      positionImportImagesSchema.parse({ images, mode }),
     ),
     previewProjectsFromDocument: (file, mode) => invoke(
       CHANNELS.imports.previewProjectsFromDocument,

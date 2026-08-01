@@ -38,6 +38,134 @@ function fixture(
 }
 
 describe('OpenAI-compatible AI client', () => {
+  it('maps configured image input parts into an OpenAI-compatible request body', async () => {
+    const imageBytes = new Uint8Array([1, 2, 3]);
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }));
+    const client = fixture(fetch, {
+      getSettings: vi.fn(async () => ({
+        baseUrl: 'https://api.example.com/v1',
+        model: 'vision-model',
+        apiKey: 'secret-key',
+        capabilities: {
+          images: true,
+        },
+      })),
+    });
+
+    await expect(client.completeJson({
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Read these inputs.' },
+          { type: 'image', mimeType: 'image/png', bytes: imageBytes },
+        ],
+      }],
+    }, outputSchema)).resolves.toEqual({ answer: 'ok' });
+
+    const payload = JSON.parse(String(fetch.mock.calls[0][1]!.body));
+    expect(payload).toEqual({
+      model: 'vision-model',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Read these inputs.' },
+          {
+            type: 'image_url',
+            image_url: { url: 'data:image/png;base64,AQID' },
+          },
+        ],
+      }],
+      temperature: 0.2,
+    });
+    expect(JSON.stringify(fetch.mock.calls[0][0])).not.toContain('AQID');
+  });
+
+  it('rejects unsupported image inputs before fetching', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }));
+    const client = fixture(fetch);
+
+    const error = await client.completeJson({
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'image',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1, 2, 3]),
+        }],
+      }],
+    }, outputSchema).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: 'AI_INPUT_UNSUPPORTED' });
+    expect(JSON.stringify(error)).not.toContain('AQID');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects all file inputs before fetching, even when image input is enabled', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }));
+    const client = fixture(fetch, {
+      getSettings: vi.fn(async () => ({
+        baseUrl: 'https://api.example.com/v1',
+        model: 'vision-model',
+        apiKey: 'secret-key',
+        capabilities: { images: true },
+      })),
+    });
+
+    await expect(client.completeJson({
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'file',
+          name: 'resume.pdf',
+          mimeType: 'application/pdf',
+          bytes: new Uint8Array([4, 5, 6]),
+        }],
+      }],
+    }, outputSchema)).rejects.toMatchObject({ code: 'AI_INPUT_UNSUPPORTED' });
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects image and file inputs outside user messages before fetching', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }));
+    const client = fixture(fetch, {
+      getSettings: vi.fn(async () => ({
+        baseUrl: 'https://api.example.com/v1',
+        model: 'vision-model',
+        apiKey: 'secret-key',
+        capabilities: {
+          images: true,
+        },
+      })),
+    });
+
+    await expect(client.completeJson({
+      messages: [{
+        role: 'system',
+        content: [{
+          type: 'image',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1, 2, 3]),
+        }, {
+          type: 'file',
+          name: 'resume.pdf',
+          mimeType: 'application/pdf',
+          bytes: new Uint8Array([4, 5, 6]),
+        }],
+      }],
+    }, outputSchema)).rejects.toMatchObject({ code: 'AI_INPUT_UNSUPPORTED' });
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('posts the configured model, messages and fixed temperature', async () => {
     const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
       choices: [{ message: { content: '{"answer":"ok"}' } }],

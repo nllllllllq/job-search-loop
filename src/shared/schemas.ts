@@ -12,6 +12,7 @@ const promptKinds = [
   'interview-review',
   'capability-analysis',
   'project-import',
+  'position-image',
 ] as const;
 const aiTaskKinds = ['preparation'] as const;
 const aiTaskStatuses = ['queued', 'running', 'succeeded', 'failed', 'interrupted'] as const;
@@ -23,6 +24,15 @@ const interestSchema = z.union([
   z.literal(4),
   z.literal(5),
 ]);
+
+export function normalizeCompanyCandidate(value: string): string {
+  return value.trim().toLocaleLowerCase().replace(/[\s\p{P}]+/gu, '');
+}
+
+// Candidate normalization only supports an explicit user decision; it never
+// changes how positions are grouped by itself.
+export const companyIdentitySchema = z.string().trim().min(1).max(120)
+  .refine((value) => normalizeCompanyCandidate(value).length > 0, 'Company name cannot be only punctuation or whitespace');
 
 export const canonicalStageSchema = z.enum(canonicalStages);
 export const proposalStatusSchema = z.enum(proposalStatuses);
@@ -56,7 +66,7 @@ export const isoDateSchema = z.string()
   }, '日期必须是实际存在的 YYYY-MM-DD 日期');
 
 export const positionInputSchema = z.object({
-  company: z.string().trim().min(1).max(120),
+  company: companyIdentitySchema,
   title: z.string().trim().min(1).max(120),
   location: z.string().trim().max(200).default(''),
   interest: interestSchema,
@@ -279,6 +289,18 @@ export const positionListFilterSchema = z.object({
   query: z.string().max(500).optional(),
   stage: canonicalStageSchema.optional(),
 }).optional();
+
+export const companyAliasConfirmationSchema = z.object({
+  canonicalName: companyIdentitySchema,
+  alias: companyIdentitySchema,
+}).strict().refine(
+  (value) => value.canonicalName !== value.alias,
+  { message: 'Company alias must differ from its canonical name', path: ['alias'] },
+);
+
+export const companyAliasSchema = companyAliasConfirmationSchema.extend({
+  createdAt: z.string().datetime(),
+}).strict();
 
 export const positionUpdateSchema = z.object({
   id: idSchema,
@@ -737,7 +759,18 @@ export const importedFileSchema = z.object({
   bytes: z.instanceof(Uint8Array),
 }).strict();
 
+export const POSITION_IMPORT_IMAGE_MAX_COUNT = 10;
+export const POSITION_IMPORT_IMAGE_MAX_BYTES = 12 * 1024 * 1024;
+export const POSITION_IMPORT_IMAGE_MAX_PIXELS = 40_000_000;
+
 export const importedImageSchema = importedFileSchema.extend({
+  type: z.enum(['image/png', 'image/jpeg'], {
+    message: 'Only PNG and JPEG images are supported.',
+  }),
+  bytes: z.instanceof(Uint8Array).refine(
+    (value) => value.byteLength <= POSITION_IMPORT_IMAGE_MAX_BYTES,
+    'Each image must be 12 MB or smaller.',
+  ),
   width: z.number().int().positive().max(100_000),
   height: z.number().int().positive().max(100_000),
 }).strict();
@@ -747,7 +780,37 @@ export const positionImportTextSchema = z.object({
 }).strict();
 
 export const positionImportImagesSchema = z.object({
-  images: z.array(importedImageSchema).min(1).max(10),
+  images: z.array(importedImageSchema)
+    .min(1, 'Select at least one image.')
+    .max(POSITION_IMPORT_IMAGE_MAX_COUNT, 'Select no more than 10 images.'),
+  mode: z.enum(['vision', 'ocr-text']).default('vision'),
+}).strict().superRefine(({ images }, context) => {
+  const pixels = images.reduce((total, image) => total + image.width * image.height, 0);
+  if (pixels > POSITION_IMPORT_IMAGE_MAX_PIXELS) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['images'],
+      message: 'Combined image resolution must not exceed 40 MP.',
+    });
+  }
+});
+
+const importConfidenceSchema = z.number().min(0).max(1);
+
+// The AI response is intentionally narrower than the renderer's editable
+// import preview. It must not carry a session id or a ready-to-write position.
+export const positionImageRecognitionPreviewSchema = z.object({
+  company: z.string().trim().min(1).max(120),
+  title: z.string().trim().min(1).max(120),
+  location: z.string().trim().max(200),
+  rawJd: z.string().trim().min(1).max(100_000),
+  confidence: z.object({
+    company: importConfidenceSchema,
+    title: importConfidenceSchema,
+    location: importConfidenceSchema,
+    rawJd: importConfidenceSchema,
+  }).strict(),
+  warnings: z.array(z.string().trim().min(1).max(1_000)).max(20),
 }).strict();
 
 export const projectImportDocumentSchema = z.object({
@@ -1032,16 +1095,23 @@ export const aiBaseUrlSchema = z.string().trim().min(1).max(2_000).transform(
   },
 );
 
+export const aiModelCapabilitiesSchema = z.object({
+  images: z.boolean(),
+  fileInputProtocol: z.literal('none').optional(),
+}).strict();
+
 export const aiSettingsSaveSchema = z.object({
   baseUrl: aiBaseUrlSchema,
   model: z.string().trim().min(1).max(500),
   apiKey: z.string().max(10_000).optional().default(''),
+  capabilities: aiModelCapabilitiesSchema.optional(),
 });
 
 export const aiPublicSettingsSchema = z.object({
   baseUrl: z.string(),
   model: z.string(),
   hasApiKey: z.boolean(),
+  capabilities: aiModelCapabilitiesSchema.optional(),
 });
 
 export const aiConnectionResultSchema = z.object({

@@ -33,32 +33,36 @@ function createHarness(options?: {
   const database = createTestDatabase();
   const prompts = createPromptsRepository(database);
   const aiOutput = {
+    classification: 'valid-project' as const,
+    explanation: '识别到两个项目。',
     projects: [
       {
         startLine: 2,
-        name: '智能客服',
-        background: '客服响应较慢',
-        goal: '缩短响应时间',
-        role: '产品负责人',
-        keyDecisions: '采用知识库检索',
-        outcome: '响应时间下降 40%',
-        evidence: '客服工单数据',
-        reflections: '先验证高频问题',
-        storytellingVersions: '两分钟版本',
-        unclassifiedNotes: '',
+        name: { value: '智能客服', provenance: 'source' as const, evidence: 'L2: # 智能客服' },
+        background: { value: '客服响应较慢', provenance: 'source' as const, evidence: 'L3: 背景：客服响应较慢' },
+        goal: { value: '缩短响应时间', provenance: 'source' as const, evidence: 'L4: 目标：缩短响应时间' },
+        role: { value: '产品负责人', provenance: 'ai-rewrite' as const, evidence: 'L4: 目标：缩短响应时间' },
+        keyDecisions: { value: '采用知识库检索', provenance: 'ai-suggestion' as const, evidence: '' },
+        outcome: { value: '响应时间下降 40%', provenance: 'source' as const, evidence: 'L5: 结果：响应时间下降 40%' },
+        evidence: { value: '', provenance: 'ai-suggestion' as const, evidence: '' },
+        reflections: { value: '', provenance: 'ai-suggestion' as const, evidence: '' },
+        storytellingVersions: { value: '', provenance: 'ai-suggestion' as const, evidence: '' },
+        unclassifiedNotes: { value: '', provenance: 'ai-suggestion' as const, evidence: '' },
+        unusedContent: [],
       },
       {
         startLine: 6,
-        name: '数据看板',
-        background: '经营数据分散',
-        goal: '建立统一指标体系',
-        role: '产品经理',
-        keyDecisions: '统一指标口径',
-        outcome: '周报准备时间下降 60%',
-        evidence: '周报耗时记录',
-        reflections: '先对齐口径',
-        storytellingVersions: '一分钟版本',
-        unclassifiedNotes: '',
+        name: { value: '数据看板', provenance: 'source' as const, evidence: 'L6: # 数据看板' },
+        background: { value: '经营数据分散', provenance: 'source' as const, evidence: 'L7: 背景：经营数据分散' },
+        goal: { value: '建立统一指标体系', provenance: 'source' as const, evidence: 'L8: 目标：建立统一指标体系' },
+        role: { value: '产品经理', provenance: 'ai-rewrite' as const, evidence: 'L8: 目标：建立统一指标体系' },
+        keyDecisions: { value: '统一指标口径', provenance: 'ai-suggestion' as const, evidence: '' },
+        outcome: { value: '周报准备时间下降 60%', provenance: 'source' as const, evidence: 'L9: 结果：周报准备时间下降 60%' },
+        evidence: { value: '', provenance: 'ai-suggestion' as const, evidence: '' },
+        reflections: { value: '', provenance: 'ai-suggestion' as const, evidence: '' },
+        storytellingVersions: { value: '', provenance: 'ai-suggestion' as const, evidence: '' },
+        unclassifiedNotes: { value: '', provenance: 'ai-suggestion' as const, evidence: '' },
+        unusedContent: [],
       },
     ],
   };
@@ -93,6 +97,138 @@ function createHarness(options?: {
 }
 
 describe('AI-assisted project document import', () => {
+  it('returns a fact-grounded field audit with boundaries and unused content', async () => {
+    const harness = createHarness({
+      completeJsonImplementation: async () => ({
+        classification: 'valid-project',
+        projects: [{
+          startLine: 2,
+          name: { value: '智能客服', provenance: 'source', evidence: 'L2: # 智能客服' },
+          background: { value: '客服响应较慢', provenance: 'source', evidence: 'L3: 背景：客服响应较慢' },
+          goal: { value: '缩短响应时间', provenance: 'source', evidence: 'L4: 目标：缩短响应时间' },
+          role: { value: '负责推动方案落地', provenance: 'ai-rewrite', evidence: 'L4: 目标：缩短响应时间' },
+          keyDecisions: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          outcome: { value: '响应时间下降 40%', provenance: 'source', evidence: 'L5: 结果：响应时间下降 40%' },
+          evidence: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          reflections: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          storytellingVersions: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          unclassifiedNotes: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          unusedContent: [{ content: '我的项目档案', reason: '文档标题，不属于单个项目事实' }],
+        }],
+        explanation: '识别到一个项目。',
+      }),
+    });
+    try {
+      const result = await harness.preview({}, { file: file(), mode: 'ai' }) as {
+        classification: string;
+        segments: Array<{
+          boundaries: { startLine: number; endLine: number };
+          fields: { outcome: { provenance: string; evidence: string } };
+          missingFields: string[];
+          unusedContent: Array<{ reason: string }>;
+        }>;
+      };
+
+      expect(result.classification).toBe('valid-project');
+      expect(result.segments[0]?.boundaries).toEqual({ startLine: 2, endLine: 9 });
+      expect(result.segments[0]?.fields.outcome).toMatchObject({
+        provenance: 'source', evidence: 'L5: 结果：响应时间下降 40%',
+      });
+      expect(result.segments[0]?.missingFields).toContain('keyDecisions');
+      expect(result.segments[0]?.unusedContent[0]?.reason).toContain('文档标题');
+    } finally {
+      harness.database.close();
+    }
+  });
+
+  it('returns no-valid-project without saveable segments when AI rejects the document', async () => {
+    const harness = createHarness({
+      completeJsonImplementation: async () => ({
+        classification: 'no-valid-project',
+        projects: [],
+        explanation: '内容是会议纪要，未提供可区分的项目经历。',
+      }),
+    });
+    try {
+      const result = await harness.preview({}, { file: file('下周开会讨论招聘计划'), mode: 'ai' }) as {
+        classification: string;
+        explanation: string;
+        segments: unknown[];
+      };
+
+      expect(result).toMatchObject({
+        classification: 'no-valid-project',
+        explanation: '内容是会议纪要，未提供可区分的项目经历。',
+        segments: [],
+      });
+    } finally {
+      harness.database.close();
+    }
+  });
+
+  it('rejects valid-project output when it contains no grounded meaningful field', async () => {
+    const harness = createHarness({
+      completeJsonImplementation: async () => ({
+        classification: 'valid-project',
+        projects: [{
+          startLine: 2,
+          name: { value: 'Suggested only', provenance: 'ai-suggestion', evidence: '' },
+          background: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          goal: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          role: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          keyDecisions: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          outcome: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          evidence: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          reflections: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          storytellingVersions: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          unclassifiedNotes: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          unusedContent: [],
+        }],
+        explanation: 'A project was suggested without source facts.',
+      }),
+    });
+    try {
+      const result = await harness.preview({}, { file: file(), mode: 'ai' }) as { analysisMode: string };
+
+      expect(result.analysisMode).toBe('local-fallback');
+    } finally {
+      harness.database.close();
+    }
+  });
+
+  it('rejects source evidence whose line reference is outside its segment', async () => {
+    const harness = createHarness({
+      completeJsonImplementation: async () => ({
+        classification: 'valid-project',
+        projects: [{
+          startLine: 2,
+          name: { value: 'Suggested only', provenance: 'source', evidence: 'L6: # Suggested only' },
+          background: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          goal: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          role: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          keyDecisions: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          outcome: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          evidence: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          reflections: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          storytellingVersions: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          unclassifiedNotes: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          unusedContent: [],
+        }],
+        explanation: 'Evidence points outside the only segment.',
+      }),
+    });
+    try {
+      const result = await harness.preview({}, {
+        file: file('Header\nL6: # Suggested only'),
+        mode: 'ai',
+      }) as { analysisMode: string };
+
+      expect(result.analysisMode).toBe('local-fallback');
+    } finally {
+      harness.database.close();
+    }
+  });
+
   it('uses AI line boundaries and fields while retaining the document header', async () => {
     const harness = createHarness();
     try {
@@ -115,7 +251,8 @@ describe('AI-assisted project document import', () => {
           outcome: '响应时间下降 40%',
         },
       });
-      expect(result.segments[0]?.sourceText).toContain('我的项目档案');
+      expect(result.segments[0]?.sourceText).not.toContain('我的项目档案');
+      expect(result.segments[0]?.sourceText).toContain('# 智能客服');
       expect(result.segments[0]?.sourceText).not.toContain('# 数据看板');
       expect(result.segments[1]?.sourceText).toContain('# 数据看板');
 

@@ -142,6 +142,8 @@ function createLegacyBackup(path: string, version: 1 | 4): void {
       ALTER TABLE positions DROP COLUMN location;
       ALTER TABLE projects DROP COLUMN unclassified_notes;
       DROP TABLE ai_tasks;
+      DROP TABLE company_aliases;
+      DROP TABLE canonical_companies;
     `);
     if (version === 1) {
       db.exec(`
@@ -160,7 +162,8 @@ function createVersion5Backup(path: string): void {
   const db = openDatabase(path);
   try {
     db.exec(`
-      DELETE FROM prompt_templates WHERE kind = 'project-import';
+      DELETE FROM prompt_templates
+      WHERE kind IN ('project-import', 'position-image');
       ALTER TABLE prompt_templates RENAME TO prompt_templates_v6;
       CREATE TABLE prompt_templates (
         id TEXT PRIMARY KEY,
@@ -176,6 +179,8 @@ function createVersion5Backup(path: string): void {
       SELECT * FROM prompt_templates_v6;
       DROP TABLE prompt_templates_v6;
       DROP TABLE ai_tasks;
+      DROP TABLE company_aliases;
+      DROP TABLE canonical_companies;
       PRAGMA user_version = 5;
     `);
   } finally {
@@ -197,7 +202,7 @@ afterEach(async () => {
 });
 
 describe('local database backup', () => {
-  it('restores a V5 backup and adds the project import prompt on repository startup', async () => {
+  it('restores a V5 backup and adds current prompt templates on repository startup', async () => {
     const app = await fixture();
     const backupPath = join(app.directory, 'v5.jobloop');
     createVersion5Backup(backupPath);
@@ -206,8 +211,9 @@ describe('local database backup', () => {
 
     expect(app.database().prepare('PRAGMA user_version').get())
       .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
-    expect(createPromptsRepository(app.database()).get('project-import').name)
-      .toBe('项目文件导入');
+    const prompts = createPromptsRepository(app.database());
+    expect(prompts.get('project-import').name).toBeTruthy();
+    expect(prompts.get('position-image').name).toBeTruthy();
   });
 
   it('exports and restores the complete closed-loop records', async () => {

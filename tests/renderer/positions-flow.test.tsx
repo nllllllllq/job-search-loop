@@ -304,29 +304,55 @@ describe('positions flow', () => {
     await waitFor(() => expect(fake.positions.get).toHaveBeenCalledTimes(2));
   });
 
-  it('requires inline confirmation before permanently deleting a stage', async () => {
+  it('opens a dedicated confirmation from the hovered node delete action', async () => {
     let resolveRemoval: (value: ProcessStage[]) => void = () => undefined;
     const { fake, user } = renderAt(`#/positions/${positionId}`, (api) => {
       api.positions.removeStage.mockImplementation(() => new Promise((resolve) => {
         resolveRemoval = resolve;
       }));
     });
-    await user.click(await screen.findByRole('button', { name: /编辑流程阶段：面试/ }));
-    const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
-
-    await user.click(within(editor).getByRole('button', { name: '删除节点' }));
+    await user.click(await screen.findByRole('button', { name: '删除流程阶段：面试' }));
     expect(fake.positions.removeStage).not.toHaveBeenCalled();
-    expect(within(editor).getByText(/日期、反馈和备注/)).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: '确认删除节点' });
+    expect(within(dialog).getByText(/日期、反馈和备注/)).toBeInTheDocument();
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
-    await user.click(within(editor).getByRole('button', { name: '永久删除节点' }));
+    expect(screen.queryByRole('dialog', { name: '编辑流程阶段' })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: '确认删除节点' }));
 
     await waitFor(() => expect(fake.positions.removeStage).toHaveBeenCalledWith(
       positionId,
       interviewStageId,
     ));
-    expect(within(editor).getByRole('button', { name: '关闭对话框' })).toBeDisabled();
     resolveRemoval([]);
     await waitFor(() => expect(fake.positions.get).toHaveBeenCalledTimes(2));
+  });
+
+  it('opens the same delete confirmation from a stage context menu', async () => {
+    const { fake, user } = renderAt(`#/positions/${positionId}`);
+    const interviewNode = await screen.findByRole('button', { name: /编辑流程阶段：面试/ });
+
+    fireEvent.contextMenu(interviewNode, { clientX: 48, clientY: 64 });
+    const menu = screen.getByRole('menu', { name: '面试操作' });
+    await user.click(within(menu).getByRole('menuitem', { name: '删除节点' }));
+
+    const dialog = screen.getByRole('dialog', { name: '确认删除节点' });
+    await user.click(within(dialog).getByRole('button', { name: '确认删除节点' }));
+    await waitFor(() => expect(fake.positions.removeStage).toHaveBeenCalledWith(
+      positionId,
+      interviewStageId,
+    ));
+  });
+
+  it('dismisses a stage context menu with Escape without deleting', async () => {
+    const { fake } = renderAt(`#/positions/${positionId}`);
+    const interviewNode = await screen.findByRole('button', { name: /编辑流程阶段：面试/ });
+
+    fireEvent.contextMenu(interviewNode, { clientX: 48, clientY: 64 });
+    expect(screen.getByRole('menu', { name: '面试操作' })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('menu', { name: '面试操作' })).not.toBeInTheDocument();
+    expect(fake.positions.removeStage).not.toHaveBeenCalled();
   });
 
   it('shows only the add node when a position has no stages', async () => {

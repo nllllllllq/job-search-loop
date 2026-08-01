@@ -23,13 +23,20 @@ describe('positions repository', () => {
       expect(positions.list({ query: '上海' })).toEqual([
         expect.objectContaining({ id: created.id, location: '上海' }),
       ]);
-      expect(positions.listStages(created.id).map((stage) => stage.canonicalStage)).toEqual([
-        'interested',
+      const createdStages = positions.listStages(created.id);
+      expect(createdStages.map((stage) => stage.canonicalStage)).toEqual([
         'applied',
         'assessment',
         'interview',
         'offer',
       ]);
+      expect(createdStages[0]).toMatchObject({
+        canonicalStage: 'applied',
+        actualDate: created.createdAt.slice(0, 10),
+        expectedDate: null,
+      });
+      expect(createdStages.find((stage) => stage.canonicalStage === 'assessment')?.name).toBe('测评');
+      expect(positions.get(created.id).currentStage).toBe('applied');
     } finally {
       db.close();
     }
@@ -93,9 +100,9 @@ describe('positions repository', () => {
       expect(positions.get(created.id).currentStage).toBe('applied');
 
       const remaining = positions.removeStage(created.id, applied.id);
-      expect(remaining.map((stage) => stage.orderIndex)).toEqual([0, 1, 2, 3]);
+      expect(remaining.map((stage) => stage.orderIndex)).toEqual([0, 1, 2]);
       expect(remaining.some((stage) => stage.id === applied.id)).toBe(false);
-      expect(positions.get(created.id).currentStage).toBe('interested');
+      expect(positions.get(created.id).currentStage).toBe('assessment');
 
       for (const stage of remaining) {
         positions.removeStage(created.id, stage.id);

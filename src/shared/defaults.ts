@@ -7,11 +7,10 @@ export interface DefaultProcessStage {
 }
 
 export const DEFAULT_PROCESS_STAGES: readonly DefaultProcessStage[] = [
-  { name: '感兴趣', canonicalStage: 'interested', orderIndex: 0 },
-  { name: '已投递', canonicalStage: 'applied', orderIndex: 1 },
-  { name: '笔试', canonicalStage: 'assessment', orderIndex: 2 },
-  { name: '面试', canonicalStage: 'interview', orderIndex: 3 },
-  { name: 'Offer', canonicalStage: 'offer', orderIndex: 4 },
+  { name: '已投递', canonicalStage: 'applied', orderIndex: 0 },
+  { name: '测评', canonicalStage: 'assessment', orderIndex: 1 },
+  { name: '面试', canonicalStage: 'interview', orderIndex: 2 },
+  { name: 'Offer', canonicalStage: 'offer', orderIndex: 3 },
 ];
 
 export interface DefaultPromptTemplate {

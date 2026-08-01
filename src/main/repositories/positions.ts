@@ -174,7 +174,7 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
         );
         const insertStage = db.prepare(`
           INSERT INTO process_stages (${STAGE_COLUMNS})
-          VALUES (?, ?, ?, ?, NULL, NULL, '', '', ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, NULL, '', '', ?, ?, ?)
         `);
         for (const stage of DEFAULT_PROCESS_STAGES) {
           insertStage.run(
@@ -182,6 +182,7 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
             id,
             stage.name,
             stage.canonicalStage,
+            stage.canonicalStage === 'applied' ? now.slice(0, 10) : null,
             stage.orderIndex,
             now,
             now,

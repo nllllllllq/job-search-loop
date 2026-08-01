@@ -178,12 +178,18 @@ describe('preparation flow', () => {
     expect(fake.preparations.generate).not.toHaveBeenCalled();
   });
 
-  it('shows a payload summary before explicit confirmation and calls generate once', async () => {
+  it('starts preparation in the background and closes the modal after explicit confirmation', async () => {
     const { fake, user } = renderPreparation((api) => {
-      api.preparations.generate.mockResolvedValue(preparation);
-      api.preparations.list
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([preparation]);
+      api.preparations.start.mockResolvedValue({
+        id: '33333333-3333-4333-8333-333333333333',
+        kind: 'preparation',
+        positionId,
+        status: 'queued',
+        safeError: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        startedAt: null,
+        updatedAt: '2026-08-01T00:00:00.000Z',
+      });
     });
     await openPreparationTab(user);
     await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
@@ -247,14 +253,28 @@ describe('preparation flow', () => {
     ))).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: '确认生成' }));
-    await waitFor(() => expect(fake.preparations.generate).toHaveBeenCalledOnce());
-    expect(fake.preparations.generate).toHaveBeenCalledWith({
+    await waitFor(() => expect(fake.preparations.start).toHaveBeenCalledOnce());
+    expect(fake.preparations.start).toHaveBeenCalledWith({
       positionId,
       projectIds: [projectId],
       questionIds: [questionId],
     });
-    expect(await screen.findByRole('heading', { name: '负责把复杂需求整理为产品方案。' }))
-      .toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('keeps the modal open when a preparation task is already active', async () => {
+    const { fake, user } = renderPreparation((api) => {
+      api.preparations.start.mockRejectedValue({ code: 'CONFLICT' });
+    });
+    await openPreparationTab(user);
+    await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
+    const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
+    await user.click(within(dialog).getByRole('button', { name: '查看发送摘要' }));
+    await user.click(await within(dialog).findByRole('button', { name: '确认生成' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('已有准备材料正在生成');
+    expect(fake.preparations.start).toHaveBeenCalledOnce();
+    expect(screen.getByRole('dialog', { name: '生成准备材料' })).toBeInTheDocument();
   });
 
   it('locks selections while preview is pending', async () => {
@@ -283,7 +303,11 @@ describe('preparation flow', () => {
 
   it('discards an old preview after returning to change selection and generates exact previewed IDs', async () => {
     const { fake, user } = renderPreparation((api) => {
-      api.preparations.generate.mockResolvedValue(preparation);
+      api.preparations.start.mockResolvedValue({
+        id: '33333333-3333-4333-8333-333333333333', kind: 'preparation', positionId,
+        status: 'queued', safeError: null, createdAt: '2026-08-01T00:00:00.000Z',
+        startedAt: null, updatedAt: '2026-08-01T00:00:00.000Z',
+      });
     });
     await openPreparationTab(user);
     await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
@@ -309,7 +333,7 @@ describe('preparation flow', () => {
       projectIds: [],
       questionIds: [questionId],
     });
-    expect(fake.preparations.generate).toHaveBeenCalledWith({
+    expect(fake.preparations.start).toHaveBeenCalledWith({
       positionId,
       projectIds: [],
       questionIds: [questionId],
@@ -335,36 +359,44 @@ describe('preparation flow', () => {
     expect(fake.preparations.generate).not.toHaveBeenCalled();
   });
 
-  it('retains explicit selections after failure and retries without duplicate submission', async () => {
-    let rejectRequest!: (reason: unknown) => void;
-    const pending = new Promise<PreparationMaterial>((_resolve, reject) => {
-      rejectRequest = reject;
-    });
+  it('shows safe failed diagnostics and opens the selector for retry', async () => {
+    const failedTask = {
+      id: '33333333-3333-4333-8333-333333333333', kind: 'preparation' as const, positionId,
+      status: 'failed' as const,
+      safeError: { message: 'Provider request was rejected.', statusCode: 429, requestId: 'req-safe' },
+      createdAt: '2026-08-01T00:00:00.000Z', startedAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:01:00.000Z',
+    };
     const { fake, user } = renderPreparation((api) => {
-      api.preparations.generate
-        .mockReturnValueOnce(pending)
-        .mockResolvedValueOnce(preparation);
-      api.preparations.list
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([preparation]);
+      api.tasks.listByPosition.mockResolvedValue([failedTask]);
     });
     await openPreparationTab(user);
-    await user.click(await screen.findByRole('button', { name: '生成准备材料' }));
-    const dialog = screen.getByRole('dialog', { name: '生成准备材料' });
-    await user.click(within(dialog).getByRole('checkbox', { name: /项目：增长实验/ }));
-    await user.click(within(dialog).getByRole('button', { name: '查看发送摘要' }));
-    const confirm = within(dialog).getByRole('button', { name: '确认生成' });
-    await user.click(confirm);
-    await user.click(confirm);
-    expect(fake.preparations.generate).toHaveBeenCalledOnce();
-    rejectRequest({ code: 'AI_TIMEOUT', message: 'provider secret' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('准备材料生成失败');
+    await user.click(screen.getByText('查看服务诊断'));
+    expect(screen.getByText('Provider request was rejected.')).toBeInTheDocument();
+    expect(screen.getByText('req-safe')).toBeInTheDocument();
+    expect(screen.queryByText(/sk-[A-Za-z0-9]/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '重新生成' }));
+    expect(await screen.findByRole('dialog', { name: '生成准备材料' })).toBeInTheDocument();
+    expect(fake.preparations.start).not.toHaveBeenCalled();
+  });
 
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('请求超时');
-    await user.click(within(dialog).getByRole('button', { name: '返回选择' }));
-    expect(within(dialog).getByRole('checkbox', { name: /项目：增长实验/ })).toBeChecked();
-    await user.click(within(dialog).getByRole('button', { name: '查看发送摘要' }));
-    await user.click(within(dialog).getByRole('button', { name: '确认生成' }));
-    await waitFor(() => expect(fake.preparations.generate).toHaveBeenCalledTimes(2));
+  it('shows running and interrupted preparation task states', async () => {
+    const runningTask = {
+      id: '33333333-3333-4333-8333-333333333333', kind: 'preparation' as const, positionId,
+      status: 'running' as const, safeError: null,
+      createdAt: '2026-08-01T00:00:00.000Z', startedAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z',
+    };
+    const { fake, user } = renderPreparation((api) => {
+      api.tasks.listByPosition.mockResolvedValueOnce([runningTask]).mockResolvedValue([{
+        ...runningTask, status: 'interrupted' as const,
+      }]);
+    });
+    await openPreparationTab(user);
+    expect(await screen.findByRole('status')).toHaveTextContent('正在后台生成准备材料');
+    await waitFor(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 2600));
+      expect(screen.getByRole('status')).toHaveTextContent('上次生成已中断');
+    }, { timeout: 4000 });
   });
 
   it('renders newest history, all six output sections and safe snapshot text', async () => {

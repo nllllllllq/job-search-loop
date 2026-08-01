@@ -1138,6 +1138,23 @@ a {
   font-size: 0.76rem;
 }
 
+.preparation-task-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.preparation-task-badge--queued,
+.preparation-task-badge--running { color: var(--accent); }
+.preparation-task-badge--failed { color: var(--danger); }
+
 .position-table tbody th .position-location,
 .position-location {
   display: inline-flex;
@@ -2185,6 +2202,33 @@ a {
 .preparation-history {
   margin-top: var(--space-5);
 }
+
+.preparation-task {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: var(--space-4);
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+  font-size: 0.85rem;
+}
+
+.preparation-task--running { border-left: 3px solid var(--accent); }
+.preparation-task--failed { border-left: 3px solid var(--danger); }
+.preparation-task--interrupted { border-left: 3px solid var(--muted); }
+
+.preparation-task__mark {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.preparation-task details { color: var(--muted); }
+.preparation-task dl { display: grid; gap: 0.25rem; margin: 0.45rem 0 0; }
+.preparation-task dl div { display: grid; grid-template-columns: 6rem 1fr; gap: 0.5rem; }
+.preparation-task dd { margin: 0; overflow-wrap: anywhere; }
 
 .preparation-history {
   display: grid;

@@ -55,13 +55,12 @@ describe('AI tasks repository', () => {
       });
       const tasks = createAiTasksRepository(db);
       const queued = tasks.createPreparation(position.id);
-      const terminal = tasks.createPreparation(position.id);
 
       expect(() => tasks.markSucceeded(queued.id)).toThrow(expect.objectContaining({ code: 'CONFLICT' }));
-      tasks.markRunning(terminal.id);
-      tasks.markSucceeded(terminal.id);
-      expect(() => tasks.markRunning(terminal.id)).toThrow(expect.objectContaining({ code: 'CONFLICT' }));
-      expect(() => tasks.markFailed(terminal.id, {
+      tasks.markRunning(queued.id);
+      tasks.markSucceeded(queued.id);
+      expect(() => tasks.markRunning(queued.id)).toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+      expect(() => tasks.markFailed(queued.id, {
         message: 'late failure', statusCode: null, requestId: null,
       })).toThrow(expect.objectContaining({ code: 'CONFLICT' }));
     } finally {
@@ -162,10 +161,16 @@ describe('AI tasks repository', () => {
       const position = createPositionsRepository(db).create({
         company: 'Example Co', title: 'Product Manager', interest: 3, rawJd: 'JD',
       });
+      const secondPosition = createPositionsRepository(db).create({
+        company: 'Example Co', title: 'Designer', interest: 3, rawJd: 'JD',
+      });
+      const thirdPosition = createPositionsRepository(db).create({
+        company: 'Example Co', title: 'Analyst', interest: 3, rawJd: 'JD',
+      });
       const tasks = createAiTasksRepository(db);
       const queued = tasks.createPreparation(position.id);
-      const running = tasks.createPreparation(position.id);
-      const succeeded = tasks.createPreparation(position.id);
+      const running = tasks.createPreparation(secondPosition.id);
+      const succeeded = tasks.createPreparation(thirdPosition.id);
       tasks.markRunning(running.id);
       tasks.markRunning(succeeded.id);
       tasks.markSucceeded(succeeded.id);

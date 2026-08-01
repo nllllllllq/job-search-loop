@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type {
+  AiTask,
   PreparationGenerateInput,
-  PreparationMaterial,
   PreparationOutboundPreview,
 } from '../../../shared/domain';
 import type { AppError } from '../../../shared/ipc';
@@ -14,7 +14,7 @@ interface GeneratePreparationModalProps {
   open: boolean;
   positionId: string;
   onClose: () => void;
-  onGenerated: (preparation: PreparationMaterial) => Promise<void>;
+  onStarted: (task: AiTask) => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -26,6 +26,7 @@ function errorMessage(error: unknown): string {
   if (code === 'AI_RATE_LIMITED') return '请求过于频繁，请稍后重试。';
   if (code === 'AI_TIMEOUT') return '请求超时，所选内容已保留，可以重试。';
   if (code === 'AI_INVALID_OUTPUT') return 'AI 返回格式无效，请重试。';
+  if (code === 'CONFLICT') return '已有准备材料正在生成，请等待当前任务完成后再试。';
   if (code === 'VALIDATION_ERROR') return '所选资产已变化，请返回选择后重试。';
   return '生成失败，所选内容已保留，请稍后重试。';
 }
@@ -34,7 +35,7 @@ export function GeneratePreparationModal({
   open,
   positionId,
   onClose,
-  onGenerated,
+  onStarted,
 }: GeneratePreparationModalProps) {
   const toast = useToast();
   const resources = useAsyncResource(async () => {
@@ -101,8 +102,9 @@ export function GeneratePreparationModal({
     setSubmitted(true);
     setError(null);
     try {
-      const saved = await window.jobSearch.preparations.generate(previewPayload);
-      await onGenerated(saved);
+      const task = await window.jobSearch.preparations.start(previewPayload);
+      onStarted(task);
+      onClose();
     } catch (reason) {
       const message = errorMessage(reason);
       setError(message);

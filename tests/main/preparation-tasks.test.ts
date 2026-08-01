@@ -72,6 +72,29 @@ describe('background preparation tasks', () => {
     } finally { db.close(); }
   });
 
+  it('rejects a second queued preparation for the same position without scheduling duplicate work', () => {
+    const db = createTestDatabase();
+    try {
+      const position = createPositionsRepository(db).create({
+        company: 'Example Co', title: 'PM', interest: 3, rawJd: 'JD',
+      });
+      const scheduled: Array<() => void> = [];
+      const generate = vi.fn(async () => ({}) as never);
+      const runtime = createPreparationTaskRuntime({
+        tasks: createAiTasksRepository(db),
+        preparation: { generate },
+        schedule: (job) => scheduled.push(job),
+      });
+
+      const first = runtime.start({ ...input, positionId: position.id });
+      expect(() => runtime.start({ ...input, positionId: position.id }))
+        .toThrow(expect.objectContaining({ code: 'CONFLICT' }));
+      expect(runtime.get(first.id).status).toBe('queued');
+      expect(scheduled).toHaveLength(1);
+      expect(generate).not.toHaveBeenCalled();
+    } finally { db.close(); }
+  });
+
   it('keeps a benign provider diagnostic with its status and request ID', async () => {
     const db = createTestDatabase();
     try {

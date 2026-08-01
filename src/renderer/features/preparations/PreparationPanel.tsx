@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  AiTask,
   PreparationAssetsSnapshot,
   PreparationHistoricalOutput,
   PreparationMaterial,
@@ -76,6 +77,63 @@ function isCurrentOutput(
   output: PreparationHistoricalOutput,
 ): output is PreparationOutput {
   return 'competencyMap' in output;
+}
+
+function latestTask(tasks: AiTask[] | null): AiTask | null {
+  if (!tasks || tasks.length === 0) return null;
+  return [...tasks].sort(
+    (left, right) => sortableTime(right.updatedAt) - sortableTime(left.updatedAt),
+  )[0] ?? null;
+}
+
+function TaskStatus({
+  task,
+  onRetry,
+}: {
+  task: AiTask;
+  onRetry: () => void;
+}) {
+  if (task.status === 'queued' || task.status === 'running') {
+    return (
+      <div className="preparation-task preparation-task--running" role="status">
+        <span aria-hidden="true" className="preparation-task__mark" />
+        正在后台生成准备材料，你可以继续浏览或编辑其他内容。
+      </div>
+    );
+  }
+
+  if (task.status === 'interrupted') {
+    return (
+      <div className="preparation-task preparation-task--interrupted" role="status">
+        <strong>上次生成已中断</strong>
+        <span>应用关闭前未能完成，可重新生成。</span>
+        <button className="button button--quiet" onClick={onRetry} type="button">重新生成</button>
+      </div>
+    );
+  }
+
+  if (task.status === 'failed') {
+    const diagnostic = task.safeError;
+    return (
+      <div className="preparation-task preparation-task--failed" role="alert">
+        <strong>准备材料生成失败</strong>
+        <span>请查看服务诊断后重新生成。</span>
+        {diagnostic ? (
+          <details>
+            <summary>查看服务诊断</summary>
+            <dl>
+              <div><dt>错误信息</dt><dd>{diagnostic.message}</dd></div>
+              {diagnostic.statusCode !== null ? <div><dt>HTTP 状态码</dt><dd>{diagnostic.statusCode}</dd></div> : null}
+              {diagnostic.requestId ? <div><dt>Request ID</dt><dd>{diagnostic.requestId}</dd></div> : null}
+            </dl>
+          </details>
+        ) : null}
+        <button className="button button--quiet" onClick={onRetry} type="button">重新生成</button>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function PreparationVersion({ item }: { item: PreparationMaterial }) {
@@ -292,6 +350,24 @@ export function PreparationPanel({
     () => window.jobSearch.preparations.list(positionId),
     [positionId],
   );
+  const taskResource = useAsyncResource(
+    () => window.jobSearch.tasks.listByPosition(positionId),
+    [positionId],
+  );
+  const completedTaskIds = useRef(new Set<string>());
+  const task = latestTask(taskResource.data);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void taskResource.reload(), 2500);
+    return () => window.clearInterval(timer);
+  }, [positionId, taskResource.reload]);
+
+  useEffect(() => {
+    if (!task || task.status !== 'succeeded' || completedTaskIds.current.has(task.id)) return;
+    completedTaskIds.current.add(task.id);
+    void resource.reload();
+    toast.success('新的准备材料版本已保存');
+  }, [resource.reload, task, toast]);
   const history = useMemo(
     () => [...(resource.data ?? [])].sort(
       (left, right) => sortableTime(right.generatedAt) - sortableTime(left.generatedAt)
@@ -309,13 +385,12 @@ export function PreparationPanel({
     </button>
   );
 
-  const generated = async (saved: PreparationMaterial) => {
+  const started = (startedTask: AiTask) => {
     setGenerateOpen(false);
-    resource.setData((current) => [
-      saved,
-      ...(current ?? []).filter((item) => item.id !== saved.id),
+    taskResource.setData((current) => [
+      startedTask,
+      ...(current ?? []).filter((item) => item.id !== startedTask.id),
     ]);
-    toast.success('新的准备材料版本已保存');
   };
 
   return (
@@ -374,11 +449,12 @@ export function PreparationPanel({
           ) : null}
         </div>
       ) : null}
+      {task ? <TaskStatus onRetry={() => setGenerateOpen(true)} task={task} /> : null}
 
       {generateOpen ? (
         <GeneratePreparationModal
           onClose={() => setGenerateOpen(false)}
-          onGenerated={generated}
+          onStarted={started}
           open
           positionId={positionId}
         />

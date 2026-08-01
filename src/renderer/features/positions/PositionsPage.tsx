@@ -1,6 +1,6 @@
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { CanonicalStage, PositionInput } from '../../../shared/domain';
+import type { AiTask, CanonicalStage, PositionInput, PositionListItem } from '../../../shared/domain';
 import { EmptyState } from '../../components/EmptyState';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
@@ -22,6 +22,22 @@ interface PositionFilter {
   stage?: CanonicalStage;
 }
 
+function newestTask(tasks: AiTask[]): AiTask | null {
+  return [...tasks].sort((left, right) => (
+    new Date(right.updatedAt).valueOf() - new Date(left.updatedAt).valueOf()
+  ))[0] ?? null;
+}
+
+function PreparationTaskBadge({ task }: { task: AiTask | null }) {
+  if (!task || task.status === 'succeeded') return null;
+  const label = task.status === 'queued' || task.status === 'running'
+    ? '准备材料生成中'
+    : task.status === 'interrupted'
+      ? '准备材料已中断'
+      : '准备材料生成失败';
+  return <span aria-label={label} className={`preparation-task-badge preparation-task-badge--${task.status}`}>{label}</span>;
+}
+
 export function PositionsPage() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -34,6 +50,32 @@ export function PositionsPage() {
     () => window.jobSearch.positions.list(filter),
     [filterKey],
   );
+  const [preparationTasks, setPreparationTasks] = useState<Record<string, AiTask | null>>({});
+
+  useEffect(() => {
+    const positions = resource.data ?? [];
+    if (positions.length === 0) {
+      setPreparationTasks({});
+      return undefined;
+    }
+    let active = true;
+    const loadTasks = async () => {
+      const entries = await Promise.all(positions.map(async (position: PositionListItem) => {
+        try {
+          return [position.id, newestTask(await window.jobSearch.tasks.listByPosition(position.id))] as const;
+        } catch {
+          return [position.id, null] as const;
+        }
+      }));
+      if (active) setPreparationTasks(Object.fromEntries(entries));
+    };
+    void loadTasks();
+    const timer = window.setInterval(() => void loadTasks(), 2500);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [resource.data]);
 
   const countLabel = useMemo(() => {
     if (!resource.data) return '';
@@ -147,6 +189,7 @@ export function PositionsPage() {
                     <Link to={`/positions/${position.id}`}>
                       <strong>{position.company}</strong>
                       <span>{position.title}</span>
+                      <PreparationTaskBadge task={preparationTasks[position.id] ?? null} />
                       {position.location ? (
                         <small className="position-location">{position.location}</small>
                       ) : null}

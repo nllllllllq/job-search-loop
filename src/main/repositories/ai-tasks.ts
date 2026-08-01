@@ -87,13 +87,26 @@ export function createAiTasksRepository(db: DatabaseSync): AiTasksRepository {
   };
   return {
     createPreparation(positionId) {
-      const id = randomUUID();
-      const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO ai_tasks (id, kind, position_id, status, safe_error_json, created_at, started_at, updated_at)
-        VALUES (?, 'preparation', ?, 'queued', NULL, ?, NULL, ?)
-      `).run(id, positionId, now, now);
-      return get(id);
+      return transaction(db, () => {
+        const active = db.prepare(`
+          SELECT id FROM ai_tasks
+          WHERE position_id = ? AND kind = 'preparation' AND status IN ('queued', 'running')
+          LIMIT 1
+        `).get(positionId);
+        if (active !== undefined) {
+          throw new RepositoryError(
+            'CONFLICT',
+            'A preparation generation is already running for this position.',
+          );
+        }
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        db.prepare(`
+          INSERT INTO ai_tasks (id, kind, position_id, status, safe_error_json, created_at, started_at, updated_at)
+          VALUES (?, 'preparation', ?, 'queued', NULL, ?, NULL, ?)
+        `).run(id, positionId, now, now);
+        return get(id);
+      });
     },
     get,
     listByPosition(positionId) {

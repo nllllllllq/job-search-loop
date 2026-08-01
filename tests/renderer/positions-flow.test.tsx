@@ -191,6 +191,24 @@ describe('positions flow', () => {
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
+  it('shows a compact preparation task status on the matching position row', async () => {
+    const { fake } = renderAt('#/positions', (api) => {
+      api.tasks.listByPosition.mockResolvedValue([{
+        id: '33333333-3333-4333-8333-333333333333',
+        kind: 'preparation',
+        positionId,
+        status: 'running',
+        safeError: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        startedAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+      }]);
+    });
+
+    expect(await screen.findByLabelText('准备材料生成中')).toBeInTheDocument();
+    expect(fake.tasks.listByPosition).toHaveBeenCalledWith(positionId);
+  });
+
   it('shows the three compact node states and saves an edited interview stage', async () => {
     const emptyStage: ProcessStage = {
       ...stages[0],

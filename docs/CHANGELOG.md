@@ -61,6 +61,20 @@
 - 岗位详情改为 JD 前的可换行流程节点线，支持新增、编辑、排序和删除。
 - 新增位置字段、备份与恢复加固、总览抽屉等 V1.1 能力。
 
+### 设计演进
+
+- 将能力主题与待确认建议收进总览抽屉，减少独立导航入口。
+- 岗位详情直接显示完整 JD，以紧凑流程线承载投递推进。
+- 加入截图 OCR、DOCX/PDF/TXT/MD 项目导入，以及用户确认后的字段预填。
+- 项目导入支持 AI 辅助和本地规则回退，并使用独立 Prompt。
+- 加固数据库迁移、备份恢复、审计数据隔离和离线导入资源。
+
+相关文档：
+
+- [V1.1 体验与导入设计](superpowers/specs/2026-07-28-usability-import-hardening-design.md)
+- [V1.1 实施计划](superpowers/plans/2026-07-28-usability-import-hardening-implementation-plan.md)
+- [V1.1 加固待办](superpowers/plans/2026-07-27-v1-1-hardening-backlog.md)
+
 ## 从最初设计到首个可用版本 — 2026-07-27
 
 ### 产品定位与边界

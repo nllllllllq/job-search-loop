@@ -258,10 +258,10 @@ a {
 
 .workspace-header {
   display: flex;
-  min-height: 144px;
+  min-height: 96px;
   justify-content: space-between;
   align-items: flex-end;
-  padding: 2rem clamp(2rem, 5vw, 4.75rem) 1.65rem;
+  padding: 1.1rem clamp(1.5rem, 3vw, 3rem) 1rem;
   border-bottom: 1px solid var(--line);
   background: rgba(255, 253, 247, 0.74);
 }
@@ -287,14 +287,14 @@ a {
 .workspace-header h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(2rem, 3.2vw, 3.2rem);
+  font-size: clamp(1.7rem, 2.6vw, 2.55rem);
   line-height: 1.12;
   letter-spacing: 0.04em;
 }
 
 .workspace-header__folio {
   display: grid;
-  min-width: 5.4rem;
+  min-width: 4.6rem;
   grid-template-columns: auto auto;
   gap: 0.5rem;
   align-items: end;
@@ -310,7 +310,7 @@ a {
 }
 
 .workspace-header__folio strong {
-  font-size: 2.35rem;
+  font-size: 1.85rem;
   font-weight: 400;
   line-height: 1;
 }
@@ -318,7 +318,7 @@ a {
 .content-frame {
   width: 100%;
   max-width: 1180px;
-  padding: clamp(2rem, 5vw, 4.75rem);
+  padding: clamp(1.25rem, 2.5vw, 2.5rem);
 }
 
 .content-frame:focus {

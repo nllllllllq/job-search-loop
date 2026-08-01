@@ -17,6 +17,26 @@ export type PromptKind =
   | 'capability-analysis'
   | 'project-import';
 
+export type AiTaskKind = 'preparation';
+export type AiTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
+
+export interface AiTaskSafeError {
+  message: string;
+  statusCode: number | null;
+  requestId: string | null;
+}
+
+export interface AiTask {
+  id: string;
+  kind: AiTaskKind;
+  positionId: string;
+  status: AiTaskStatus;
+  safeError: AiTaskSafeError | null;
+  createdAt: string;
+  startedAt: string | null;
+  updatedAt: string;
+}
+
 export interface PositionInput {
   company: string;
   title: string;

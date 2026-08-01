@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
@@ -149,6 +149,18 @@ const CREATE_SCHEMA_V1 = `
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS ai_tasks (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('preparation')),
+    position_id TEXT NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'interrupted')),
+    safe_error_json TEXT,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS ai_tasks_position_updated_idx ON ai_tasks(position_id, updated_at DESC);
 `;
 
 function migrateProjectJson(raw: unknown, field: string): string {
@@ -426,6 +438,21 @@ export function migrate(db: DatabaseSync): void {
         SELECT id, kind, name, content, created_at, updated_at
         FROM prompt_templates_v5;
         DROP TABLE prompt_templates_v5;
+      `);
+    }
+    if (version < 7 && !hasTable(db, 'ai_tasks')) {
+      db.exec(`
+        CREATE TABLE ai_tasks (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK (kind IN ('preparation')),
+          position_id TEXT NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+          status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'interrupted')),
+          safe_error_json TEXT,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX ai_tasks_position_updated_idx ON ai_tasks(position_id, updated_at DESC);
       `);
     }
     db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);

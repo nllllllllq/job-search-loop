@@ -13,6 +13,8 @@ const promptKinds = [
   'capability-analysis',
   'project-import',
 ] as const;
+const aiTaskKinds = ['preparation'] as const;
+const aiTaskStatuses = ['queued', 'running', 'succeeded', 'failed', 'interrupted'] as const;
 
 const interestSchema = z.union([
   z.literal(1),
@@ -28,6 +30,23 @@ export const proposalTargetSchema = z.enum(proposalTargets);
 export const proposalOperationSchema = z.enum(proposalOperations);
 export const questionTypeSchema = z.enum(questionTypes);
 export const promptKindSchema = z.enum(promptKinds);
+export const aiTaskKindSchema = z.enum(aiTaskKinds);
+export const aiTaskStatusSchema = z.enum(aiTaskStatuses);
+export const aiTaskSafeErrorSchema = z.object({
+  message: z.string().trim().min(1).max(2_000),
+  statusCode: z.number().int().min(100).max(599).nullable(),
+  requestId: z.string().trim().min(1).max(500).nullable(),
+}).strict();
+export const aiTaskSchema = z.object({
+  id: z.string().uuid(),
+  kind: aiTaskKindSchema,
+  positionId: z.string().uuid(),
+  status: aiTaskStatusSchema,
+  safeError: aiTaskSafeErrorSchema.nullable(),
+  createdAt: z.string().datetime(),
+  startedAt: z.string().datetime().nullable(),
+  updatedAt: z.string().datetime(),
+}).strict();
 export const isoDateSchema = z.string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, '日期必须是 YYYY-MM-DD')
   .refine((value) => {

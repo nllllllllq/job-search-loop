@@ -24,6 +24,35 @@ function removeDatabaseFiles(path: string): void {
 }
 
 describe('database migrations', () => {
+  it('migrates V6 to a minimal AI task table without request payload columns', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`
+      CREATE TABLE positions (
+        id TEXT PRIMARY KEY,
+        company TEXT NOT NULL,
+        title TEXT NOT NULL,
+        interest INTEGER NOT NULL,
+        raw_jd TEXT NOT NULL,
+        current_stage TEXT,
+        final_result TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        location TEXT NOT NULL DEFAULT ''
+      ) STRICT;
+      PRAGMA user_version = 6;
+    `);
+
+    try {
+      migrate(db);
+      expect(db.prepare('PRAGMA table_info(ai_tasks)').all().map((column) => column.name)).toEqual([
+        'id', 'kind', 'position_id', 'status', 'safe_error_json', 'created_at', 'started_at', 'updated_at',
+      ]);
+      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
+    } finally {
+      db.close();
+    }
+  });
+
   it('migrates V5 prompt templates to allow project imports without losing custom prompts', () => {
     const db = new DatabaseSync(':memory:');
     db.exec(`
@@ -50,7 +79,7 @@ describe('database migrations', () => {
       migrate(db);
 
       expect(db.prepare('PRAGMA user_version').get())
-        .toEqual({ user_version: 6 });
+        .toEqual({ user_version: 7 });
       expect(db.prepare(
         "SELECT content FROM prompt_templates WHERE kind = 'preparation'",
       ).get()).toEqual({ content: '我的定制内容' });
@@ -78,6 +107,7 @@ describe('database migrations', () => {
       ).all().map((row) => String(row.name)).filter((name) => !name.startsWith('sqlite_'));
 
       expect(tables).toEqual([
+        'ai_tasks',
         'asset_versions',
         'capabilities',
         'capability_analysis_runs',
@@ -142,7 +172,7 @@ describe('database migrations', () => {
       const definitions = db.prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
       ).all();
-      expect(definitions).toHaveLength(13);
+      expect(definitions).toHaveLength(14);
       for (const definition of definitions) {
         expect(String(definition.sql).trim()).toMatch(/\) STRICT;?$/);
       }

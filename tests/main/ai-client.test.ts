@@ -97,6 +97,99 @@ describe('OpenAI-compatible AI client', () => {
     expect(String((error as Error).message)).not.toContain('provider-body-with-secret');
   });
 
+  it('exposes bounded, safe diagnostics for provider errors', async () => {
+    const client = fixture(async () => new Response(JSON.stringify({
+      error: {
+        message: 'Vision input is unsupported by this model. Bearer secret-key',
+      },
+    }), {
+      status: 400,
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req_vision_123',
+      },
+    }));
+
+    const error = await client.completeJson(request, outputSchema).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toMatchObject({
+      code: 'AI_PROVIDER_ERROR',
+      providerMessage: 'Vision input is unsupported by this model.',
+      httpStatus: 400,
+      requestId: 'req_vision_123',
+    });
+    expect(JSON.stringify(error)).not.toContain('secret-key');
+    expect(JSON.stringify(error)).not.toContain('Bearer');
+  });
+
+  it.each([
+    'The model "example-model" does not exist or you do not have access to it.',
+    'You exceeded your current quota. Please check your plan and billing details.',
+  ])('preserves ordinary provider diagnostics: %s', async (providerMessage) => {
+    const client = fixture(async () => new Response(JSON.stringify({
+      error: { message: providerMessage },
+    }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    await expect(client.completeJson(request, outputSchema)).rejects.toMatchObject({
+      code: 'AI_PROVIDER_ERROR',
+      providerMessage,
+      httpStatus: 400,
+    });
+  });
+
+  it('redacts OpenAI-style API keys from ordinary provider diagnostics', async () => {
+    const apiKey = 'sk-proj-very-secret-provider-key';
+    const client = fixture(async () => new Response(JSON.stringify({
+      error: { message: `Invalid API key ${apiKey}` },
+    }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    const error = await client.completeJson(request, outputSchema).catch(
+      (caught: unknown) => caught,
+    );
+    const serialized = JSON.stringify(error);
+
+    expect(error).toMatchObject({
+      code: 'AI_AUTH_FAILED',
+      providerMessage: 'Invalid API key [redacted]',
+      httpStatus: 401,
+    });
+    expect(serialized).not.toContain(apiKey);
+  });
+
+  it('does not expose provider errors that echo submitted content', async () => {
+    const echoedJd = 'Build the confidential hiring platform for Example Corp';
+    const echoedAsset = 'data:image/png;base64,very-private-image-content';
+    const client = fixture(async () => new Response(JSON.stringify({
+      error: {
+        message: `Invalid request: {"messages":[{"content":"${echoedJd}"}],"asset":"${echoedAsset}","authorization":"Bearer secret-key"}`,
+      },
+    }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    const error = await client.completeJson(request, outputSchema).catch(
+      (caught: unknown) => caught,
+    );
+    const serialized = JSON.stringify(error);
+
+    expect(error).toMatchObject({
+      code: 'AI_PROVIDER_ERROR',
+      httpStatus: 400,
+    });
+    expect(serialized).not.toContain(echoedJd);
+    expect(serialized).not.toContain(echoedAsset);
+    expect(serialized).not.toContain('secret-key');
+  });
+
   it('maps network failures and missing choices to AI_PROVIDER_ERROR', async () => {
     const network = fixture(async () => {
       throw new Error('socket exposed detail');

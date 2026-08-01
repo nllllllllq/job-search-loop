@@ -161,6 +161,9 @@ export interface AppError {
     | 'BACKUP_INVALID'
     | 'BACKUP_FAILED';
   message: string;
+  providerMessage?: string;
+  httpStatus?: number;
+  requestId?: string;
 }
 
 export interface JobSearchApi {

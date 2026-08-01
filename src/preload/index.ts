@@ -72,6 +72,15 @@ function parseAppError(value: unknown): AppError | null {
   return {
     code: candidate.code as AppError['code'],
     message: candidate.message,
+    providerMessage: typeof candidate.providerMessage === 'string'
+      ? candidate.providerMessage
+      : undefined,
+    httpStatus: typeof candidate.httpStatus === 'number'
+      ? candidate.httpStatus
+      : undefined,
+    requestId: typeof candidate.requestId === 'string'
+      ? candidate.requestId
+      : undefined,
   };
 }
 

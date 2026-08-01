@@ -36,6 +36,9 @@ export class AiServiceError extends Error {
   constructor(
     public readonly code: AppError['code'],
     message: string,
+    public readonly providerMessage?: string,
+    public readonly httpStatus?: number,
+    public readonly requestId?: string,
   ) {
     super(message);
     this.name = 'AiServiceError';

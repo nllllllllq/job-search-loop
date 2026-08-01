@@ -15,10 +15,18 @@ export class SafeIpcError extends Error implements AppError {
   constructor(
     public readonly code: AppError['code'],
     message: string,
+    diagnostics: Pick<AppError, 'providerMessage' | 'httpStatus' | 'requestId'> = {},
   ) {
-    super(`JOB_SEARCH_ERROR:${JSON.stringify({ code, message })}`);
+    super(`JOB_SEARCH_ERROR:${JSON.stringify({ code, message, ...diagnostics })}`);
     this.name = 'SafeIpcError';
+    this.providerMessage = diagnostics.providerMessage;
+    this.httpStatus = diagnostics.httpStatus;
+    this.requestId = diagnostics.requestId;
   }
+
+  public readonly providerMessage?: string;
+  public readonly httpStatus?: number;
+  public readonly requestId?: string;
 }
 
 function safeError(error: unknown): SafeIpcError {
@@ -30,7 +38,11 @@ function safeError(error: unknown): SafeIpcError {
     return new SafeIpcError(error.code, error.message);
   }
   if (error instanceof AiServiceError) {
-    return new SafeIpcError(error.code, error.message);
+    return new SafeIpcError(error.code, error.message, {
+      providerMessage: error.providerMessage,
+      httpStatus: error.httpStatus,
+      requestId: error.requestId,
+    });
   }
   if (error instanceof BackupServiceError) {
     return new SafeIpcError(error.code, error.message);

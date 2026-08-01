@@ -51,6 +51,108 @@ function providerError(): AiServiceError {
   );
 }
 
+const MAX_PROVIDER_MESSAGE_LENGTH = 1_000;
+const MAX_REQUEST_ID_LENGTH = 200;
+
+interface ProviderDiagnostics {
+  providerMessage?: string;
+  httpStatus?: number;
+  requestId?: string;
+}
+
+function redactProviderMessage(value: string): string | undefined {
+  const normalized = value
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (normalized.length === 0 || normalized.length > MAX_PROVIDER_MESSAGE_LENGTH) {
+    return undefined;
+  }
+
+  const redacted = normalized
+    .replace(/\bBearer\s+[^\s,;]+/gi, '')
+    .replace(/\b(?:api[_ -]?key|authorization)\s*[:=]\s*[^\s,;]+/gi, '')
+    .replace(/\bsk(?:-[A-Za-z0-9_]+)+\b/g, '[redacted]')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  if (
+    /\b(?:messages?|content|prompt|asset|attachments?|input)\b\s*["']?\s*[:=]/i.test(normalized)
+    || /\bdata:(?:image|application)\//i.test(normalized)
+    || /[{}\[\]]/.test(normalized)
+  ) {
+    return undefined;
+  }
+
+  if (
+    /\b(?:vision|image|file)\b/i.test(redacted)
+    && /\b(?:unsupported|not supported|not available|not enabled)\b/i.test(redacted)
+  ) {
+    return 'Vision input is unsupported by this model.';
+  }
+
+  return redacted.length > 0 ? redacted : undefined;
+}
+
+function providerMessageFromBody(body: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed !== null && typeof parsed === 'object') {
+      const record = parsed as Record<string, unknown>;
+      const nested = record.error;
+      if (nested !== null && typeof nested === 'object') {
+        const message = (nested as Record<string, unknown>).message;
+        if (typeof message === 'string') return redactProviderMessage(message);
+      }
+      if (typeof record.message === 'string') return redactProviderMessage(record.message);
+    }
+  } catch {
+    // Do not expose an unstructured provider response body.
+  }
+  return undefined;
+}
+
+async function providerDiagnostics(response: Response): Promise<ProviderDiagnostics> {
+  let body = '';
+  try {
+    body = await response.text();
+  } catch {
+    // Keep the generic error when the provider body cannot be read.
+  }
+  const requestId = response.headers.get('x-request-id')
+    ?? response.headers.get('request-id')
+    ?? undefined;
+  return {
+    providerMessage: body.length > 0 ? providerMessageFromBody(body) : undefined,
+    httpStatus: response.status,
+    requestId: requestId?.slice(0, MAX_REQUEST_ID_LENGTH),
+  };
+}
+
+function providerErrorWithDiagnostics(diagnostics: ProviderDiagnostics): AiServiceError {
+  return new AiServiceError(
+    'AI_PROVIDER_ERROR',
+    'External AI service could not complete the request.',
+    diagnostics.providerMessage,
+    diagnostics.httpStatus,
+    diagnostics.requestId,
+  );
+}
+
+function statusError(
+  code: 'AI_AUTH_FAILED' | 'AI_RATE_LIMITED',
+  message: string,
+  diagnostics: ProviderDiagnostics,
+): AiServiceError {
+  return new AiServiceError(
+    code,
+    message,
+    diagnostics.providerMessage,
+    diagnostics.httpStatus,
+    diagnostics.requestId,
+  );
+}
+
 export function createAiClient({
   fetch,
   getSettings,
@@ -91,6 +193,25 @@ export function createAiClient({
           throw new AiServiceError('AI_TIMEOUT', '请求超时，请稍后重试。');
         }
         throw providerError();
+      }
+
+      if (!response.ok) {
+        const diagnostics = await providerDiagnostics(response);
+        if (response.status === 401 || response.status === 403) {
+          throw statusError(
+            'AI_AUTH_FAILED',
+            'API key or access permission is invalid.',
+            diagnostics,
+          );
+        }
+        if (response.status === 429) {
+          throw statusError(
+            'AI_RATE_LIMITED',
+            'Too many requests. Please try again later.',
+            diagnostics,
+          );
+        }
+        throw providerErrorWithDiagnostics(diagnostics);
       }
 
       if (response.status === 401 || response.status === 403) {

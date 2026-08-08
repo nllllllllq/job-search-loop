@@ -116,6 +116,37 @@ describe('positions flow', () => {
     expect(fake.positions.listGrouped).toHaveBeenCalledWith({});
   });
 
+  it('shows role and location without repeating the company inside an expanded row', async () => {
+    const located = { ...listItem, title: 'AI 产品经理', location: '上海 · 混合办公' };
+    const { user } = renderAt('#/positions', (api) => {
+      api.positions.listGrouped.mockResolvedValue([
+        { canonicalName: located.company, members: [located] },
+      ]);
+    });
+
+    await user.click(await screen.findByRole('button', { name: /远山科技/ }));
+    const roleLink = screen.getByRole('link', { name: /AI 产品经理/ });
+    expect(within(roleLink).getByText('AI 产品经理')).toBeVisible();
+    expect(within(roleLink).getByText('上海 · 混合办公')).toBeVisible();
+    expect(within(roleLink).queryByText('远山科技')).not.toBeInTheDocument();
+  });
+
+  it('opens position intake on screenshot recognition without a premature save action', async () => {
+    const { user } = renderAt('#/positions');
+
+    await user.click(await screen.findByRole('button', { name: '录入岗位' }));
+    const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    expect(within(dialog).getByRole('tab', { name: '截图识别' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(within(dialog).queryByRole('button', { name: '保存岗位' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '开始 AI 识别' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('textbox', { name: /公司/ })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('tab', { name: '手动录入' }));
+    expect(within(dialog).getByRole('textbox', { name: /公司/ })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: '保存岗位' })).toBeVisible();
+  });
+
   it('creates a position, refreshes, and routes to the created record', async () => {
     const created = { ...detail, rawJd: '负责产品规划与用户研究' };
     const { fake, user } = renderAt('#/', (api) => {
@@ -129,6 +160,7 @@ describe('positions flow', () => {
     await user.click(screen.getByRole('link', { name: '岗位' }));
     await user.click((await screen.findAllByRole('button', { name: '录入岗位' }))[0]);
     const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    await user.click(within(dialog).getByRole('tab', { name: '手动录入' }));
     await user.type(within(dialog).getByRole('textbox', { name: /公司/ }), ' 远山科技 ');
     await user.type(within(dialog).getByRole('textbox', { name: /岗位名称/ }), '产品经理');
     await user.selectOptions(within(dialog).getByRole('combobox', { name: /兴趣度/ }), '5');
@@ -159,6 +191,7 @@ describe('positions flow', () => {
     });
 
     await user.click(await screen.findByRole('button', { name: '录入岗位' }));
+    await user.click(screen.getByRole('tab', { name: '手动录入' }));
     await user.click(screen.getByRole('button', { name: '保存岗位' }));
     expect(await screen.findAllByText('请输入 1–120 个字符')).toHaveLength(2);
     expect(screen.getByText('请输入原始 JD')).toBeInTheDocument();
@@ -467,6 +500,7 @@ describe('positions flow', () => {
     await screen.findByText('远山科技');
     await user.click(screen.getByRole('button', { name: '录入岗位' }));
     const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    await user.click(within(dialog).getByRole('tab', { name: '手动录入' }));
     await user.type(within(dialog).getByRole('textbox', { name: /公司/ }), '远山科技');
     await user.type(within(dialog).getByRole('textbox', { name: /岗位名称/ }), '产品经理');
     await user.type(within(dialog).getByRole('textbox', { name: /位置/ }), '上海');

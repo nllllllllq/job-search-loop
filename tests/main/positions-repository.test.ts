@@ -113,4 +113,51 @@ describe('positions repository', () => {
       db.close();
     }
   });
+
+  it('sorts company groups and their positions by furthest active progress', () => {
+    const db = createTestDatabase();
+
+    try {
+      const positions = createPositionsRepository(db);
+      const create = (company: string, title: string) => positions.create({
+        company,
+        title,
+        location: `${company}位置`,
+        interest: 3,
+        rawJd: `${title} JD`,
+      });
+      const interested = create('感兴趣公司', '候选岗位');
+      const applied = create('投递公司', '投递岗位');
+      const assessment = create('测评公司', '测评岗位');
+      const interview = create('面试公司', '面试岗位');
+      const offer = create('Offer 公司', 'Offer 岗位');
+      const secondInterview = create('Offer 公司', '同公司面试岗位');
+
+      const setStage = (id: string, stage: string, updatedAt: string) => {
+        db.prepare('UPDATE positions SET current_stage = ?, updated_at = ? WHERE id = ?')
+          .run(stage, updatedAt, id);
+      };
+      setStage(interested.id, 'interested', '2026-08-08T01:00:00.000Z');
+      setStage(applied.id, 'applied', '2026-08-08T02:00:00.000Z');
+      setStage(assessment.id, 'assessment', '2026-08-08T03:00:00.000Z');
+      setStage(interview.id, 'interview', '2026-08-08T04:00:00.000Z');
+      setStage(offer.id, 'offer', '2026-08-08T05:00:00.000Z');
+      setStage(secondInterview.id, 'interview', '2026-08-08T06:00:00.000Z');
+
+      const groups = positions.listGrouped?.() ?? [];
+      expect(groups.map((group) => group.canonicalName)).toEqual([
+        'Offer 公司',
+        '面试公司',
+        '测评公司',
+        '投递公司',
+        '感兴趣公司',
+      ]);
+      expect(groups[0]?.members.map((member) => member.currentStage)).toEqual([
+        'offer',
+        'interview',
+      ]);
+    } finally {
+      db.close();
+    }
+  });
 });

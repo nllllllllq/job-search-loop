@@ -16,6 +16,7 @@ import {
   positionInputSchema,
   processStageInputSchema,
 } from '../../shared/schemas';
+import { stagePriority } from '../../shared/stage-policy';
 import {
   integer,
   notFound,
@@ -264,8 +265,22 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
         if (group) group.members.push(member);
         else groups.set(member.company, { canonicalName: member.company, members: [member] });
       }
-      return [...groups.values()].sort((left, right) => (
-        right.members[0]!.updatedAt.localeCompare(left.members[0]!.updatedAt)
+      const grouped = [...groups.values()];
+      for (const group of grouped) {
+        group.members.sort((left, right) => (
+          stagePriority(left.currentStage) - stagePriority(right.currentStage)
+          || right.updatedAt.localeCompare(left.updatedAt)
+          || left.id.localeCompare(right.id)
+        ));
+      }
+      return grouped.sort((left, right) => (
+        stagePriority(left.members[0]?.currentStage) - stagePriority(right.members[0]?.currentStage)
+        || (right.members.reduce((latest, member) => (
+          member.updatedAt > latest ? member.updatedAt : latest
+        ), '')).localeCompare(left.members.reduce((latest, member) => (
+          member.updatedAt > latest ? member.updatedAt : latest
+        ), ''))
+        || left.canonicalName.localeCompare(right.canonicalName, 'zh-CN')
       ));
     },
 

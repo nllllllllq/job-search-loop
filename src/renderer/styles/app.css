@@ -1253,6 +1253,12 @@ a {
   font-size: 0.76rem;
 }
 
+.position-table tbody th .position-list-location {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
 .preparation-task-badge {
   display: inline-flex;
   width: fit-content;
@@ -1405,6 +1411,16 @@ a {
 
 .import-source > .button {
   justify-self: start;
+}
+
+.import-source__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.import-preview-missing {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 .project-import-ai-note {

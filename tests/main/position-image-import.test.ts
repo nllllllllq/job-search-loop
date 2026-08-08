@@ -120,4 +120,31 @@ describe('position image import service', () => {
     await expect(service.preview(images)).rejects.toMatchObject({ code: 'AI_INPUT_UNSUPPORTED' });
     expect(completeJson).toHaveBeenCalledOnce();
   });
+
+  it('keeps partial AI recognition results so the user can fill missing required fields', async () => {
+    const partial = {
+      company: '',
+      title: 'AI 产品经理',
+      location: '',
+      rawJd: '',
+      confidence: { company: 0, title: 0.9, location: 0, rawJd: 0 },
+      warnings: ['公司名称和完整 JD 未识别'],
+    };
+    const service = createPositionImageImportService({
+      ai: { completeJson: async () => partial },
+      getSettings: async () => ({
+        baseUrl: 'https://api.example.com/v1', model: 'vision-model', apiKey: 'secret',
+      }),
+      prompts: { get: () => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        kind: 'position-image',
+        name: '截图识别',
+        content: 'extract',
+        createdAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+      }) },
+    });
+
+    await expect(service.preview(images)).resolves.toEqual(partial);
+  });
 });

@@ -800,10 +800,10 @@ const importConfidenceSchema = z.number().min(0).max(1);
 // The AI response is intentionally narrower than the renderer's editable
 // import preview. It must not carry a session id or a ready-to-write position.
 export const positionImageRecognitionPreviewSchema = z.object({
-  company: z.string().trim().min(1).max(120),
-  title: z.string().trim().min(1).max(120),
+  company: z.string().trim().max(120),
+  title: z.string().trim().max(120),
   location: z.string().trim().max(200),
-  rawJd: z.string().trim().min(1).max(100_000),
+  rawJd: z.string().trim().max(100_000),
   confidence: z.object({
     company: importConfidenceSchema,
     title: importConfidenceSchema,

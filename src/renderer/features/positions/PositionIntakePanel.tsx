@@ -77,6 +77,12 @@ async function imageInputs(files: File[]): Promise<ImportedImageInput[]> {
 
 function imageErrorMessage(error: unknown): string {
   if (error instanceof ZodError) return error.issues[0]?.message ?? 'Invalid image input.';
+  if (error && typeof error === 'object' && 'code' in error) {
+    if (error.code === 'AI_INVALID_OUTPUT') return 'AI 返回格式不完整，请重新识别或改用手动录入';
+    if (error.code === 'AI_NOT_CONFIGURED') return '尚未配置 AI 服务，请先到设置完成配置';
+    if (error.code === 'AI_AUTH_FAILED') return 'AI 服务认证失败，请检查 API Key';
+    if (error.code === 'AI_TIMEOUT') return 'AI 识别超时，请稍后重试';
+  }
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
     return error.message;
   }
@@ -90,7 +96,7 @@ function confidenceLabel(value: number): string {
 }
 
 export function PositionIntakePanel({ open, onClose, onSave }: Props) {
-  const [tab, setTab] = useState<Tab>('manual');
+  const [tab, setTab] = useState<Tab>('images');
   const [text, setText] = useState('');
   const [images, setImages] = useState<File[]>([]);
   const [preview, setPreview] = useState<PositionImportPreview | null>(null);
@@ -102,7 +108,7 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setTab('manual');
+    setTab('images');
     setText('');
     setImages([]);
     setPreview(null);
@@ -121,6 +127,11 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
   const applyPreview = (next: PositionImportPreview) => {
     setPreview(next);
     setValue(next.suggested);
+    setErrors({
+      ...(!next.suggested.company.trim() ? { company: 'AI 未识别公司名称，请补充' } : {}),
+      ...(!next.suggested.title.trim() ? { title: 'AI 未识别岗位名称，请补充' } : {}),
+      ...(!next.suggested.rawJd.trim() ? { rawJd: 'AI 未识别完整 JD，请补充' } : {}),
+    });
   };
 
   const parseText = async () => {
@@ -221,9 +232,9 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
     <Modal
       closeDisabled={busy}
       dismissal="close-button-only"
-      footer={imageInputUnsupported ? null : (
+      footer={imageInputUnsupported || (tab !== 'manual' && !preview) ? null : (
         <button className="button button--primary" disabled={busy} form="position-intake-form" type="submit">
-          {busy ? '处理中…' : '保存岗位'}
+          {busy ? '处理中…' : preview ? '确认录入岗位' : '保存岗位'}
         </button>
       )}
       onClose={() => void close()}
@@ -282,9 +293,11 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
               </li>
             ))}
           </ol>
-          <button className="button button--primary" disabled={busy || !images.length} onClick={() => void parseImages()} type="button">
-            {busy ? 'AI 识别中…' : '开始 AI 识别'}
-          </button>
+          <div className="import-source__actions">
+            <button className="button button--primary" disabled={busy || !images.length} onClick={() => void parseImages()} type="button">
+              {busy ? 'AI 识别中…' : '开始 AI 识别'}
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -293,6 +306,15 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
           {preview ? (
             <div className="import-preview-meta">
               <strong>{preview.sourceSummary}</strong>
+              {(() => {
+                const missing = [
+                  !value.company.trim() ? '公司名称' : null,
+                  !value.title.trim() ? '岗位名称' : null,
+                  !value.rawJd.trim() ? '完整 JD' : null,
+                ].filter((item): item is string => item !== null);
+                return missing.length ? <span className="import-preview-missing" role="alert">缺少：{missing.join('、')}</span> : null;
+              })()}
+              {!value.location?.trim() ? <span>工作位置未识别，可稍后补充</span> : null}
               {preview.warnings.map((warning) => <span key={warning}>{warning}</span>)}
             </div>
           ) : null}
@@ -334,9 +356,9 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
       {error ? <p className="import-error" role="alert">{error}</p> : null}
       {imageInputUnsupported ? (
         <div className="import-error" role="alert">
-          <p>text fallback (local OCR then AI text structuring) or cancel</p>
-          <button className="button button--quiet" disabled={busy} onClick={() => void useTextFallback()} type="button">text fallback</button>
-          <button className="button button--quiet" disabled={busy} onClick={() => void close()} type="button">cancel</button>
+          <p>当前模型不支持直接读取图片，可以改用本地 OCR 提取文字后再由 AI 整理。</p>
+          <button className="button button--quiet" disabled={busy} onClick={() => void useTextFallback()} type="button">使用本地 OCR</button>
+          <button className="button button--quiet" disabled={busy} onClick={() => void close()} type="button">关闭</button>
         </div>
       ) : null}
     </Modal>

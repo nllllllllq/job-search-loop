@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { ProcessStage, ProcessStageInput } from '../../../shared/domain';
+import { stageDatePolicy } from '../../../shared/stage-policy';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../hooks/useToast';
 import { StageEditor } from './StageEditor';
@@ -72,9 +73,18 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
         {sortedStages.map((stage, index) => {
           const state = getNodeState(stage);
           const date = stage.actualDate ?? stage.expectedDate;
-          const accessibleStatus = stage.actualDate
-            ? `已记录实际日期 ${stage.actualDate}`
-            : stage.expectedDate ? `仅预计日期 ${stage.expectedDate}` : '未记录日期';
+          const policy = stageDatePolicy(stage.canonicalStage);
+          const accessibleStatus = policy.kind === 'notice-and-event'
+            ? (!stage.expectedDate && !stage.actualDate ? '未记录日期' : [
+              stage.expectedDate ? `${policy.expectedLabel} ${stage.expectedDate}` : null,
+              stage.actualDate
+                ? `${policy.actualLabel} ${stage.actualDate}`
+                : `尚未记录${policy.actualLabel}`,
+            ].filter(Boolean).join('，'))
+            : stage.actualDate ? `${policy.actualLabel} ${stage.actualDate}` : '未记录日期';
+          const dateText = date
+            ? `${stage.actualDate ? policy.actualLabel : policy.kind === 'notice-and-event' ? '通知' : policy.actualLabel} ${date}`
+            : '日期未记录';
           return (
             <li className="stage-flow__item" key={stage.id}>
               <button
@@ -86,7 +96,7 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
               >
                 <span className="stage-node__dot" aria-hidden="true" />
                 <strong className="stage-node__name">{stage.name}</strong>
-                <span className="stage-node__date">{date ? `${state === 'actual' ? '实际' : '预计'} ${date}` : '日期未记录'}</span>
+                <span className="stage-node__date">{dateText}</span>
               </button>
               <button
                 aria-label={`删除流程阶段：${stage.name}`}

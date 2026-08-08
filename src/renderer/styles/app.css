@@ -1720,8 +1720,8 @@ a {
 .stage-node__delete {
   position: absolute;
   z-index: 2;
-  top: -0.18rem;
-  right: 0.55rem;
+  top: -0.48rem;
+  left: 0.25rem;
   display: grid;
   width: 0.95rem;
   height: 0.95rem;

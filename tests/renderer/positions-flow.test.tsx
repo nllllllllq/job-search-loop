@@ -303,10 +303,10 @@ describe('positions flow', () => {
     });
 
     const actualNode = await screen.findByRole('button', {
-      name: '编辑流程阶段：已投递，已记录实际日期 2026-07-27',
+      name: '编辑流程阶段：已投递，投递时间 2026-07-27',
     });
     const expectedNode = screen.getByRole('button', {
-      name: '编辑流程阶段：面试，仅预计日期 2026-08-01',
+      name: '编辑流程阶段：面试，收到通知时间 2026-08-01，尚未记录面试进行时间',
     });
     expect(actualNode).toHaveAttribute('data-state', 'actual');
     expect(expectedNode).toHaveAttribute('data-state', 'expected');
@@ -317,8 +317,9 @@ describe('positions flow', () => {
 
     await user.click(expectedNode);
     const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
-    await user.clear(within(editor).getByLabelText('预计日期'));
-    await user.type(within(editor).getByLabelText('预计日期'), '2026-08-01');
+    expect(within(editor).getByLabelText('面试进行时间')).toBeVisible();
+    await user.clear(within(editor).getByLabelText('收到通知时间'));
+    await user.type(within(editor).getByLabelText('收到通知时间'), '2026-08-01');
     const order = within(editor).getByRole('spinbutton', { name: /显示顺序/ });
     await user.clear(order);
     await user.type(order, '1');
@@ -382,6 +383,18 @@ describe('positions flow', () => {
     });
     expect(screen.queryByText('更多流程设置')).not.toBeInTheDocument();
     await waitFor(() => expect(fake.positions.get).toHaveBeenCalledTimes(2));
+  });
+
+  it('uses fixed date inputs for offer stages instead of generic actual and expected dates', async () => {
+    const { user } = renderAt(`#/positions/${positionId}`);
+    await user.click(await screen.findByRole('button', { name: '新增流程阶段' }));
+    const editor = screen.getByRole('dialog', { name: '新增流程阶段' });
+    await user.selectOptions(within(editor).getByRole('combobox', { name: /标准阶段/ }), 'offer');
+
+    expect(within(editor).getByLabelText('收到 Offer 时间')).toBeVisible();
+    expect(within(editor).queryByLabelText('收到通知时间')).not.toBeInTheDocument();
+    expect(within(editor).queryByText('预计日期')).not.toBeInTheDocument();
+    expect(within(editor).queryByText('实际日期')).not.toBeInTheDocument();
   });
 
   it('opens a dedicated confirmation from the hovered node delete action', async () => {

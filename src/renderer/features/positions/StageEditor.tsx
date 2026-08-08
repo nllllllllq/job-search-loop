@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import type { CanonicalStage, ProcessStage, ProcessStageInput } from '../../../shared/domain';
 import { processStageInputSchema } from '../../../shared/schemas';
+import { stageDatePolicy } from '../../../shared/stage-policy';
 import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
 
@@ -35,11 +36,21 @@ const canonicalOptions: Array<{ label: string; value: CanonicalStage }> = [
   { label: '已撤回', value: 'withdrawn' },
 ];
 
+function localIsoDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function toFormValue(stage: ProcessStage | undefined, stageCount: number): StageFormValue {
+  const canonicalStage = stage?.canonicalStage ?? 'interested';
+  const policy = stageDatePolicy(canonicalStage);
   return {
     name: stage?.name ?? '',
-    canonicalStage: stage?.canonicalStage ?? 'interested',
-    actualDate: stage?.actualDate ?? '',
+    canonicalStage,
+    actualDate: stage?.actualDate ?? (policy.kind === 'single' && policy.autoToday ? localIsoDate() : ''),
     expectedDate: stage?.expectedDate ?? '',
     feedback: stage?.feedback ?? '',
     notes: stage?.notes ?? '',
@@ -58,6 +69,7 @@ export function StageEditor({
   const [value, setValue] = useState(() => toFormValue(initialValue, stageCount));
   const [errors, setErrors] = useState<StageErrors>({});
   const [saving, setSaving] = useState(false);
+  const datePolicy = stageDatePolicy(value.canonicalStage);
 
   useEffect(() => {
     if (!open) return;
@@ -91,7 +103,7 @@ export function StageEditor({
       name: value.name,
       canonicalStage: value.canonicalStage,
       actualDate: value.actualDate || null,
-      expectedDate: value.expectedDate || null,
+      expectedDate: datePolicy.kind === 'notice-and-event' ? value.expectedDate || null : null,
       feedback: value.feedback,
       notes: value.notes,
       orderIndex: displayOrder - 1,
@@ -144,15 +156,36 @@ export function StageEditor({
             <input maxLength={120} onChange={(event) => setField('name', event.target.value)} value={value.name} />
           </Field>
           <Field error={errors.canonicalStage} hint="用于统一筛选与状态展示。" label="标准阶段" required>
-            <select onChange={(event) => setField('canonicalStage', event.target.value as CanonicalStage)} value={value.canonicalStage}>
+            <select onChange={(event) => {
+              const canonicalStage = event.target.value as CanonicalStage;
+              const policy = stageDatePolicy(canonicalStage);
+              setValue((current) => {
+                const previousPolicy = stageDatePolicy(current.canonicalStage);
+                const seededToday = !initialValue
+                  && previousPolicy.kind === 'single'
+                  && previousPolicy.autoToday
+                  && current.actualDate === localIsoDate();
+                return {
+                  ...current,
+                  canonicalStage,
+                  expectedDate: policy.kind === 'single' ? '' : current.expectedDate,
+                  actualDate: seededToday
+                    ? (policy.kind === 'single' && policy.autoToday ? localIsoDate() : '')
+                    : current.actualDate || (policy.kind === 'single' && policy.autoToday ? localIsoDate() : ''),
+                };
+              });
+              setErrors((current) => ({ ...current, canonicalStage: undefined }));
+            }} value={value.canonicalStage}>
               {canonicalOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </Field>
-          <Field error={errors.actualDate} label="实际日期">
+          {datePolicy.kind === 'notice-and-event' ? (
+            <Field error={errors.expectedDate} label={datePolicy.expectedLabel}>
+              <input onChange={(event) => setField('expectedDate', event.target.value)} type="date" value={value.expectedDate} />
+            </Field>
+          ) : null}
+          <Field error={errors.actualDate} label={datePolicy.actualLabel}>
             <input onChange={(event) => setField('actualDate', event.target.value)} type="date" value={value.actualDate} />
-          </Field>
-          <Field error={errors.expectedDate} label="预计日期">
-            <input onChange={(event) => setField('expectedDate', event.target.value)} type="date" value={value.expectedDate} />
           </Field>
           <Field error={errors.orderIndex} hint={`输入 1–${initialValue ? stageCount : stageCount + 1}。`} label="显示顺序" required>
             <input max={initialValue ? stageCount : stageCount + 1} min={1} onChange={(event) => setField('orderIndex', event.target.value)} step={1} type="number" value={value.orderIndex} />

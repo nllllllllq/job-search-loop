@@ -62,7 +62,7 @@ export interface RepositoryBundle {
 
 export interface AiRuntime {
   settings: AiSettingsStore;
-  client: Pick<AiClient, 'testConnection' | 'completeJson'>;
+  client: Pick<AiClient, 'testConnection' | 'completeJson' | 'completeJsonWithWebSearch'>;
 }
 
 export interface MainRuntime {

@@ -33,6 +33,11 @@ export interface AiClient {
     outputSchema: ZodType<T>,
     settingsOverride?: PrivateAiSettings,
   ): Promise<T>;
+  completeJsonWithWebSearch<T>(
+    request: AiCompletionRequest,
+    outputSchema: ZodType<T>,
+    settingsOverride?: PrivateAiSettings,
+  ): Promise<T>;
   testConnection(): Promise<AiConnectionResult>;
 }
 
@@ -47,6 +52,33 @@ const providerResponseSchema = z.object({
 const connectionOutputSchema = z.object({
   ok: z.literal(true),
 });
+
+const responsesProviderSchema = z.object({
+  output_text: z.string().optional(),
+  output: z.array(z.object({
+    type: z.string().optional(),
+    content: z.array(z.object({
+      type: z.string().optional(),
+      text: z.string().optional(),
+    }).passthrough()).optional(),
+  }).passthrough()).optional(),
+}).passthrough();
+
+function responseOutputText(payload: unknown): string | null {
+  const parsed = responsesProviderSchema.safeParse(payload);
+  if (!parsed.success) return null;
+  if (parsed.data.output_text?.trim()) return parsed.data.output_text;
+  const texts = (parsed.data.output ?? []).flatMap((item) => item.content ?? [])
+    .filter((item) => item.type === 'output_text' && typeof item.text === 'string')
+    .map((item) => item.text as string);
+  return texts.at(-1) ?? null;
+}
+
+function stripOuterJsonFence(value: string): string {
+  const trimmed = value.trim();
+  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+  return match?.[1]?.trim() ?? trimmed;
+}
 
 function providerError(): AiServiceError {
   return new AiServiceError(
@@ -317,8 +349,86 @@ export function createAiClient({
     }
   };
 
+  const completeJsonWithWebSearch = async <T>(
+    request: AiCompletionRequest,
+    outputSchema: ZodType<T>,
+    settingsOverride?: PrivateAiSettings,
+  ): Promise<T> => {
+    const settings = settingsOverride ?? await getSettings();
+    const messages = mapMessages(request.messages, settings.capabilities);
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = scheduleTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 60_000);
+
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${settings.baseUrl.replace(/\/$/, '')}/responses`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${settings.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: settings.model,
+            input: messages,
+            tools: [{ type: 'web_search' }],
+            store: false,
+          }),
+          signal: controller.signal,
+        });
+      } catch {
+        if (timedOut || controller.signal.aborted) {
+          throw new AiServiceError('AI_TIMEOUT', '请求超时，请稍后重试。');
+        }
+        throw providerError();
+      }
+
+      if (!response.ok) {
+        const diagnostics = await providerDiagnostics(response);
+        if (response.status === 401 || response.status === 403) {
+          throw statusError('AI_AUTH_FAILED', 'API key or access permission is invalid.', diagnostics);
+        }
+        if (response.status === 429) {
+          throw statusError('AI_RATE_LIMITED', 'Too many requests. Please try again later.', diagnostics);
+        }
+        throw providerErrorWithDiagnostics(diagnostics);
+      }
+
+      let providerPayload: unknown;
+      try {
+        providerPayload = await response.json();
+      } catch {
+        if (timedOut || controller.signal.aborted) {
+          throw new AiServiceError('AI_TIMEOUT', '请求超时，请稍后重试。');
+        }
+        throw providerError();
+      }
+      const outputText = responseOutputText(providerPayload);
+      if (!outputText) throw providerError();
+
+      let decoded: unknown;
+      try {
+        decoded = JSON.parse(stripOuterJsonFence(outputText));
+      } catch {
+        throw new AiServiceError('AI_INVALID_OUTPUT', 'AI 返回的内容格式无效。');
+      }
+      const parsedOutput = outputSchema.safeParse(decoded);
+      if (!parsedOutput.success) {
+        throw new AiServiceError('AI_INVALID_OUTPUT', 'AI 返回的内容未通过本地校验。');
+      }
+      return parsedOutput.data;
+    } finally {
+      cancelTimeout(timer);
+    }
+  };
+
   return {
     completeJson,
+    completeJsonWithWebSearch,
     async testConnection() {
       await completeJson(
         {

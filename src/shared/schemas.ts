@@ -337,9 +337,9 @@ const nonBlankSnapshotText = (maximum: number) => z.string()
 
 export const preparationGenerateSchema = z.object({
   positionId: idSchema,
-  projectIds: z.array(idSchema).max(100),
-  questionIds: z.array(idSchema).max(200),
-}).strict();
+  projectIds: z.array(idSchema).max(100).optional(),
+  questionIds: z.array(idSchema).max(200).optional(),
+}).strict().transform(({ positionId }) => ({ positionId }));
 
 export const legacyPreparationOutputSchema = z.object({
   roleSummary: nonBlankSnapshotText(20_000),
@@ -375,7 +375,7 @@ export const starsStageSchema = z.enum([
   'Crisis',
 ]);
 
-export const preparationOutputSchema = legacyPreparationOutputSchema.extend({
+export const previousPreparationOutputSchema = legacyPreparationOutputSchema.extend({
   competencyMap: z.array(z.object({
     rank: competencyRankSchema,
     name: nonBlankSnapshotText(200),
@@ -419,8 +419,64 @@ export const preparationOutputSchema = legacyPreparationOutputSchema.extend({
   }).strict(),
 }).strict();
 
+export const preparationOutputSchema = z.object({
+  companyAndProductResearch: z.object({
+    businessAndUsers: nonBlankSnapshotText(30_000),
+    coreProducts: z.array(nonBlankSnapshotText(10_000)).min(1).max(30),
+    businessModel: nonBlankSnapshotText(30_000),
+    recentDirection: nonBlankSnapshotText(30_000),
+    roleProductHypothesis: nonBlankSnapshotText(30_000),
+    verificationNotes: z.array(nonBlankSnapshotText(10_000)).max(30),
+  }).strict(),
+  competencyMap: z.array(z.object({
+    rank: competencyRankSchema,
+    name: nonBlankSnapshotText(200),
+    jdEvidence: nonBlankSnapshotText(10_000),
+    roleUsage: nonBlankSnapshotText(20_000),
+    proofSuggestion: nonBlankSnapshotText(20_000),
+  }).strict()).length(5).superRefine((items, context) => {
+    items.forEach((item, index) => {
+      if (item.rank !== index + 1) {
+        context.addIssue({
+          code: 'custom',
+          path: [index, 'rank'],
+          message: '能力排名必须按 1 到 5 唯一且有序',
+        });
+      }
+    });
+  }),
+  companyMap: z.object({
+    stage: starsStageSchema,
+    summary: nonBlankSnapshotText(20_000),
+    priorities: z.array(nonBlankSnapshotText(10_000)).min(1).max(20),
+    culture: z.array(nonBlankSnapshotText(10_000)).min(1).max(20),
+  }).strict(),
+  dreamCandidateAvatar: z.object({
+    typicalDay: z.array(z.object({
+      time: nonBlankSnapshotText(80),
+      activity: nonBlankSnapshotText(10_000),
+      purpose: nonBlankSnapshotText(10_000),
+    }).strict()).min(1).max(24),
+    superpower: nonBlankSnapshotText(20_000),
+    successStory: nonBlankSnapshotText(40_000),
+    quote: nonBlankSnapshotText(20_000),
+    painProfile: nonBlankSnapshotText(40_000),
+  }).strict(),
+  actionGuide: z.object({
+    selfIntroTagline: nonBlankSnapshotText(20_000),
+    cultureFitPhrase: nonBlankSnapshotText(20_000),
+    questions: z.tuple([
+      nonBlankSnapshotText(20_000),
+      nonBlankSnapshotText(20_000),
+      nonBlankSnapshotText(20_000),
+    ]),
+    verificationChecklist: z.array(nonBlankSnapshotText(10_000)).max(30),
+  }).strict(),
+}).strict();
+
 export const preparationHistoricalOutputSchema = z.union([
   preparationOutputSchema,
+  previousPreparationOutputSchema,
   legacyPreparationOutputSchema,
 ]);
 

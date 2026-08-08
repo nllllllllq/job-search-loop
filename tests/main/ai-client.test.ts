@@ -38,6 +38,35 @@ function fixture(
 }
 
 describe('OpenAI-compatible AI client', () => {
+  it('uses Responses Web Search and parses fenced JSON output', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      output: [{
+        type: 'message',
+        content: [{ type: 'output_text', text: '```json\n{"answer":"researched"}\n```' }],
+      }],
+    }));
+    const client = fixture(fetch, {
+      getSettings: vi.fn(async () => ({
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/',
+        model: 'Doubao-Seed-2.0-mini',
+        apiKey: 'secret-key',
+      })),
+    });
+
+    await expect(client.completeJsonWithWebSearch(request, outputSchema))
+      .resolves.toEqual({ answer: 'researched' });
+    expect(fetch).toHaveBeenCalledWith(
+      'https://ark.cn-beijing.volces.com/api/v3/responses',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({
+      model: 'Doubao-Seed-2.0-mini',
+      input: request.messages,
+      tools: [{ type: 'web_search' }],
+      store: false,
+    });
+  });
+
   it('maps configured image input parts into an OpenAI-compatible request body', async () => {
     const imageBytes = new Uint8Array([1, 2, 3]);
     const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({

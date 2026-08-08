@@ -74,7 +74,7 @@ describe('local import UI', () => {
     fireEvent.click(screen.getByRole('button', { name: '解析文本' }));
 
     expect(await screen.findByDisplayValue('远山科技')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '保存岗位' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认录入岗位' }));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       company: '远山科技',
       title: 'AI 产品经理',
@@ -102,10 +102,10 @@ describe('local import UI', () => {
     fireEvent.change(screen.getByLabelText('选择岗位截图'), { target: { files: [file] } });
     fireEvent.click(screen.getByRole('button', { name: '开始 AI 识别' }));
 
-    expect(await screen.findByText('text fallback (local OCR then AI text structuring) or cancel')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'text fallback' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'cancel' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'text fallback' }));
+    expect(await screen.findByText('当前模型不支持直接读取图片，可以改用本地 OCR 提取文字后再由 AI 整理。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '使用本地 OCR' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '关闭' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '使用本地 OCR' }));
     await waitFor(() => expect(fake.imports.previewPositionFromImages).toHaveBeenLastCalledWith(
       expect.any(Array),
       'ocr-text',

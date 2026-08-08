@@ -102,7 +102,7 @@ describe('preload preparation contract', () => {
     expect(electronMocks.invoke).toHaveBeenCalledOnce();
   });
 
-  it('passes a real project-and-question preview through service, main and preload validation', async () => {
+  it('passes a position-only preview through service, main and preload validation', async () => {
     const database = createTestDatabase();
     try {
       const positions = createPositionsRepository(database);
@@ -165,8 +165,8 @@ describe('preload preparation contract', () => {
         questionIds: [question.id],
       });
 
-      expect(result.selectedAssets.projects).toEqual([project]);
-      expect(result.selectedAssets.questions).toEqual([question]);
+      expect(result.selectedAssets.projects).toEqual([]);
+      expect(result.selectedAssets.questions).toEqual([]);
       expect(result.jobDataJson).toContain(JSON.stringify(position.rawJd));
       expect(service.preview({
         positionId: position.id,

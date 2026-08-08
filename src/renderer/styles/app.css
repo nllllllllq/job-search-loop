@@ -258,10 +258,10 @@ a {
 
 .workspace-header {
   display: flex;
-  min-height: 96px;
+  min-height: 64px;
   justify-content: space-between;
-  align-items: flex-end;
-  padding: 1.1rem clamp(1.5rem, 3vw, 3rem) 1rem;
+  align-items: center;
+  padding: 0.65rem clamp(1.25rem, 2.4vw, 2.25rem);
   border-bottom: 1px solid var(--line);
   background: rgba(255, 253, 247, 0.74);
 }
@@ -284,16 +284,20 @@ a {
   color: var(--accent);
 }
 
+.workspace-header__kicker {
+  display: none;
+}
+
 .workspace-header h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.7rem, 2.6vw, 2.55rem);
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
   line-height: 1.12;
   letter-spacing: 0.04em;
 }
 
 .workspace-header__folio {
-  display: grid;
+  display: none;
   min-width: 4.6rem;
   grid-template-columns: auto auto;
   gap: 0.5rem;
@@ -318,7 +322,7 @@ a {
 .content-frame {
   width: 100%;
   max-width: 1180px;
-  padding: clamp(1.25rem, 2.5vw, 2.5rem);
+  padding: clamp(1rem, 2vw, 1.75rem);
 }
 
 .content-frame:focus {

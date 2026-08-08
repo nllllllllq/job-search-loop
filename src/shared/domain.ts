@@ -180,8 +180,10 @@ export interface PreparationMaterial {
 
 export interface PreparationGenerateInput {
   positionId: string;
-  projectIds: string[];
-  questionIds: string[];
+  /** @deprecated V1.5 preparation ignores personal assets. */
+  projectIds?: string[];
+  /** @deprecated V1.5 preparation ignores personal assets. */
+  questionIds?: string[];
 }
 
 export interface PreparationOutboundPreview {
@@ -242,7 +244,45 @@ export interface PreparationOutput extends LegacyPreparationOutput {
   };
 }
 
+export interface ConnectedPreparationOutput {
+  companyAndProductResearch: {
+    businessAndUsers: string;
+    coreProducts: string[];
+    businessModel: string;
+    recentDirection: string;
+    roleProductHypothesis: string;
+    verificationNotes: string[];
+  };
+  competencyMap: Array<{
+    rank: 1 | 2 | 3 | 4 | 5;
+    name: string;
+    jdEvidence: string;
+    roleUsage: string;
+    proofSuggestion: string;
+  }>;
+  companyMap: {
+    stage: StarsStage;
+    summary: string;
+    priorities: string[];
+    culture: string[];
+  };
+  dreamCandidateAvatar: {
+    typicalDay: Array<{ time: string; activity: string; purpose: string }>;
+    superpower: string;
+    successStory: string;
+    quote: string;
+    painProfile: string;
+  };
+  actionGuide: {
+    selfIntroTagline: string;
+    cultureFitPhrase: string;
+    questions: [string, string, string];
+    verificationChecklist: string[];
+  };
+}
+
 export type PreparationHistoricalOutput =
+  | ConnectedPreparationOutput
   | PreparationOutput
   | LegacyPreparationOutput;
 

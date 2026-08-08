@@ -39,6 +39,23 @@ export function createPromptsRepository(db: DatabaseSync): PromptsRepository {
       now,
     );
   }
+  const preparationDefault = DEFAULT_PROMPT_TEMPLATES.find(
+    (template) => template.kind === 'preparation',
+  );
+  if (preparationDefault) {
+    db.prepare(`
+      UPDATE prompt_templates
+      SET name = ?, content = ?, updated_at = ?
+      WHERE kind = 'preparation'
+        AND updated_at = created_at
+        AND content <> ?
+    `).run(
+      preparationDefault.name,
+      preparationDefault.content,
+      now,
+      preparationDefault.content,
+    );
+  }
 
   const get = (kind: PromptKind): PromptTemplate => {
     const parsedKind = promptKindSchema.parse(kind);

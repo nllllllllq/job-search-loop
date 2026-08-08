@@ -9,8 +9,6 @@ import { createTestDatabase } from '../helpers/database';
 
 const input = {
   positionId: '11111111-1111-4111-8111-111111111111',
-  projectIds: [],
-  questionIds: [],
 };
 
 describe('background preparation tasks', () => {

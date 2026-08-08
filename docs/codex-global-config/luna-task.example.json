@@ -1,0 +1,15 @@
+{
+  "objective": "Update the named unit test to cover the confirmed empty-state behavior.",
+  "workingDirectory": "C:\\absolute\\path\\to\\clean-worktree",
+  "allowedFiles": [
+    "tests/example.test.ts"
+  ],
+  "forbiddenScope": [
+    "Do not change production code.",
+    "Do not install dependencies.",
+    "Do not request permissions or perform external writes."
+  ],
+  "verificationCommands": [
+    "npm test -- tests/example.test.ts"
+  ]
+}

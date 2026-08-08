@@ -70,7 +70,7 @@ describe('dashboard overview aggregates', () => {
         interviewId: null,
       });
 
-      const summary = createDashboardRepository(db).getSummary();
+      const summary = createDashboardRepository(db, { today: () => '2026-08-03' }).getSummary();
 
       expect(summary.totalPositions).toBe(2);
       expect(summary.companyCount).toBe(2);
@@ -85,10 +85,6 @@ describe('dashboard overview aggregates', () => {
         dateType,
       }))).toEqual([
         { date: '2026-08-04', dateType: 'actual' },
-        { date: '2026-08-03', dateType: 'expected' },
-        { date: '2026-08-02', dateType: 'actual' },
-        { date: '2026-08-01', dateType: 'actual' },
-        { date: '2026-08-01', dateType: 'actual' },
       ]);
       expect(summary.recentPositions.map(({ id }) => id)).toEqual([
         second.id,

@@ -7,10 +7,10 @@ interface ProcessTimelineProps {
 
 export function ProcessTimeline({ events }: ProcessTimelineProps) {
   const visibleEvents = [...events]
-    .sort((left, right) => right.date.localeCompare(left.date))
+    .sort((left, right) => left.date.localeCompare(right.date))
     .slice(0, 10);
   if (visibleEvents.length === 0) {
-    return <p className="dashboard-panel__empty">还没有记录实际或预计流程日期。</p>;
+    return <p className="dashboard-panel__empty">近期没有待完成的测评或面试。</p>;
   }
   return (
     <ol className="process-date-line">
@@ -18,7 +18,7 @@ export function ProcessTimeline({ events }: ProcessTimelineProps) {
         <li key={`${event.positionId}-${event.stageName}-${event.dateType}-${event.date}-${index}`}>
           <time dateTime={event.date}>{event.date}</time>
           <span className="process-date-line__type" data-date-type={event.dateType}>
-            {event.dateType === 'actual' ? '实际日期' : '预计日期'}
+            {event.canonicalStage === 'assessment' ? '测评进行时间' : '面试进行时间'}
           </span>
           <div>
             <Link to={`/positions/${event.positionId}`}>{event.positionLabel}</Link>

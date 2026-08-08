@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type {
   CapabilityAnalysisPreview,
@@ -7,7 +7,6 @@ import type {
 } from '../../../shared/domain';
 import { EmptyState } from '../../components/EmptyState';
 import { Modal } from '../../components/Modal';
-import { StatusBadge } from '../../components/StatusBadge';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useToast } from '../../hooks/useToast';
 import { CapabilityFrequency } from './CapabilityFrequency';
@@ -224,7 +223,6 @@ export function DashboardPage() {
     capabilityFrequency: [],
     recentPositions: [],
   };
-  const recent = useMemo(() => data?.recentPositions ?? [], [data]);
   const drawer = searchParams.get('drawer');
   const openDrawer = useCallback((value: 'reviews' | 'capabilities') => {
     const next = new URLSearchParams(searchParams);
@@ -254,27 +252,6 @@ export function DashboardPage() {
         />
       ) : (
         <>
-      <header className="page-heading dashboard-heading">
-        <div>
-          <p className="section-label">LOOP OVERVIEW / 求职进度</p>
-          <h2>把分散的经历，收拢成可复用的判断。</h2>
-          <p>查看岗位阶段、流程日期与已经沉淀的能力证据。</p>
-        </div>
-        <button
-          className="button button--primary"
-          onClick={() => {
-            setAnalysisOpen(true);
-            setPositionOptions([]);
-            void window.jobSearch.positions.list()
-              .then(setPositionOptions)
-              .catch(() => toast.error('岗位列表读取失败，请关闭后重试。'));
-          }}
-          type="button"
-        >
-          分析共性能力
-        </button>
-      </header>
-
       <SummaryCards summary={data} />
 
       <section aria-label="总览快捷入口" className="dashboard-shortcuts">
@@ -323,9 +300,24 @@ export function DashboardPage() {
                   <p className="section-label">CAPABILITY SIGNALS</p>
                   <h3>能力频次</h3>
                 </div>
-                <button className="text-button" onClick={() => openDrawer('capabilities')} type="button">
-                  查看能力库
-                </button>
+                <div className="dashboard-panel__actions">
+                  <button className="text-button" onClick={() => openDrawer('capabilities')} type="button">
+                    查看能力库
+                  </button>
+                  <button
+                    className="button button--quiet"
+                    onClick={() => {
+                      setAnalysisOpen(true);
+                      setPositionOptions([]);
+                      void window.jobSearch.positions.list()
+                        .then(setPositionOptions)
+                        .catch(() => toast.error('岗位列表读取失败，请关闭后重试。'));
+                    }}
+                    type="button"
+                  >
+                    分析共性能力
+                  </button>
+                </div>
               </header>
               <CapabilityFrequency items={data.capabilityFrequency} />
             </article>
@@ -334,35 +326,12 @@ export function DashboardPage() {
           <section className="dashboard-panel dashboard-panel--wide">
             <header>
               <div>
-                <p className="section-label">PROCESS DATES</p>
-                <h3>流程日期线</h3>
+                <p className="section-label">UPCOMING SCHEDULE</p>
+                <h3>待完成安排</h3>
               </div>
-              <p>日期仅用于记录流程，不会创建提醒</p>
+              <p>只显示今天及未来的测评与面试进行时间</p>
             </header>
             <ProcessTimeline events={data.processEvents} />
-          </section>
-
-          <section className="dashboard-panel dashboard-panel--wide">
-            <header>
-              <div>
-                <p className="section-label">RECENT FILES</p>
-                <h3>近期岗位</h3>
-              </div>
-              <Link to="/positions">全部岗位</Link>
-            </header>
-            <ul className="recent-position-list">
-              {recent.map((position) => (
-                <li key={position.id}>
-                  <Link to={`/positions/${position.id}`}>
-                    <span>
-                      <strong>{position.company}</strong>
-                      <small>{position.title}</small>
-                    </span>
-                    <StatusBadge stage={position.currentStage ?? undefined} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
           </section>
         </>
       )}

@@ -7,7 +7,21 @@ export interface DashboardRepository {
   getSummary(): DashboardSummary;
 }
 
-export function createDashboardRepository(db: DatabaseSync): DashboardRepository {
+interface DashboardRepositoryOptions {
+  today?: () => string;
+}
+
+function localIsoDate(): string {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
+export function createDashboardRepository(
+  db: DatabaseSync,
+  options: DashboardRepositoryOptions = {},
+): DashboardRepository {
+  const today = options.today ?? localIsoDate;
   return {
     getSummary() {
       const totalPositions = integer(
@@ -43,20 +57,15 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
       const processEvents = db.prepare(`
         SELECT s.position_id, p.company, p.title, s.name, s.canonical_stage,
                s.id AS stage_id, s.order_index, s.actual_date AS event_date,
-               'actual' AS date_type, 0 AS date_type_order
+               'actual' AS date_type
         FROM process_stages s
         JOIN positions p ON p.id = s.position_id
-        WHERE s.actual_date IS NOT NULL
-        UNION ALL
-        SELECT s.position_id, p.company, p.title, s.name, s.canonical_stage,
-               s.id AS stage_id, s.order_index, s.expected_date AS event_date,
-               'expected' AS date_type, 1 AS date_type_order
-        FROM process_stages s
-        JOIN positions p ON p.id = s.position_id
-        WHERE s.expected_date IS NOT NULL
-        ORDER BY event_date DESC, date_type_order, order_index, stage_id
+        WHERE s.canonical_stage IN ('assessment', 'interview')
+          AND s.actual_date IS NOT NULL
+          AND s.actual_date >= ?
+        ORDER BY event_date ASC, order_index, stage_id
         LIMIT 10
-      `).all().map((value): DashboardSummary['processEvents'][number] => {
+      `).all(today()).map((value): DashboardSummary['processEvents'][number] => {
         const data = row(value, 'process event');
         const dateType = text(data.date_type, 'date_type');
         if (dateType !== 'actual' && dateType !== 'expected') {

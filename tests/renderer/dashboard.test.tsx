@@ -130,9 +130,10 @@ describe('dashboard page', () => {
     expect(within(summaryCards).getByText('完成复盘')).toBeInTheDocument();
     expect(within(summaryCards).getByText('待确认建议')).toBeInTheDocument();
     expect(within(summaryCards).getAllByText('2', { selector: '.dashboard-stat__value' })).toHaveLength(3);
-    expect(screen.getByText('实际日期')).toBeInTheDocument();
-    expect(screen.getByText('预计日期')).toBeInTheDocument();
-    expect(screen.getByText('日期仅用于记录流程，不会创建提醒')).toBeInTheDocument();
+    expect(screen.getAllByText('面试进行时间')).toHaveLength(2);
+    expect(screen.getByText('只显示今天及未来的测评与面试进行时间')).toBeInTheDocument();
+    expect(screen.queryByText('LOOP OVERVIEW / 求职进度')).not.toBeInTheDocument();
+    expect(screen.queryByText('近期岗位')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '分析共性能力' }));
     const checkboxes = await screen.findAllByRole('checkbox');
@@ -160,7 +161,7 @@ describe('dashboard page', () => {
     await waitFor(() => expect(fake.system.getDashboardSummary).toHaveBeenCalledTimes(2));
   });
 
-  it('shows only the ten newest process dates', () => {
+  it('shows only the ten nearest upcoming process dates', () => {
     const events = Array.from({ length: 11 }, (_, index) => ({
       positionId: `11111111-1111-4111-8111-11111111111${index}`,
       positionLabel: `公司${index} · 岗位`,
@@ -171,8 +172,8 @@ describe('dashboard page', () => {
     }));
     render(<MemoryRouter><ProcessTimeline events={events} /></MemoryRouter>);
     expect(screen.getAllByRole('listitem')).toHaveLength(10);
-    expect(screen.getByText('2026-08-11')).toBeInTheDocument();
-    expect(screen.queryByText('2026-08-01')).not.toBeInTheDocument();
+    expect(screen.getByText('2026-08-01')).toBeInTheDocument();
+    expect(screen.queryByText('2026-08-11')).not.toBeInTheDocument();
   });
 
   it('opens review pending/history in one drawer without per-card context IPC', async () => {

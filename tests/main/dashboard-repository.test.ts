@@ -63,7 +63,7 @@ describe('dashboard repository', () => {
     }
   });
 
-  it('sorts actual and expected process events globally by date', () => {
+  it('returns only upcoming assessment and interview event dates in ascending order', () => {
     const db = createTestDatabase();
 
     try {
@@ -77,18 +77,21 @@ describe('dashboard repository', () => {
       db.prepare(`
         UPDATE process_stages SET actual_date = ?, expected_date = ?
         WHERE position_id = ? AND canonical_stage = 'applied'
-      `).run('2026-08-01', '2026-08-03', first.id);
+      `).run('2026-08-10', '2026-08-11', first.id);
+      db.prepare(`
+        UPDATE process_stages SET actual_date = ?, expected_date = ?
+        WHERE position_id = ? AND canonical_stage = 'assessment'
+      `).run('2026-08-09', '2026-08-02', second.id);
       db.prepare(`
         UPDATE process_stages SET actual_date = ?
-        WHERE position_id = ? AND canonical_stage = 'assessment'
-      `).run('2026-08-02', second.id);
+        WHERE position_id = ? AND canonical_stage = 'interview'
+      `).run('2026-08-07', first.id);
 
-      const events = createDashboardRepository(db).getSummary().processEvents;
+      const events = createDashboardRepository(db, { today: () => '2026-08-08' })
+        .getSummary().processEvents;
 
       expect(events.map(({ date, dateType }) => ({ date, dateType }))).toEqual([
-        { date: '2026-08-03', dateType: 'expected' },
-        { date: '2026-08-02', dateType: 'actual' },
-        { date: '2026-08-01', dateType: 'actual' },
+        { date: '2026-08-09', dateType: 'actual' },
       ]);
     } finally {
       db.close();

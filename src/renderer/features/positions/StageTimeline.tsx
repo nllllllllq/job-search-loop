@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import type { ProcessStage, ProcessStageInput } from '../../../shared/domain';
-import { StatusBadge } from '../../components/StatusBadge';
+import type { Interview, ProcessStage, ProcessStageInput } from '../../../shared/domain';
+import { stageDatePolicy } from '../../../shared/stage-policy';
+import { Modal } from '../../components/Modal';
 import { useToast } from '../../hooks/useToast';
 import { StageEditor } from './StageEditor';
 
@@ -8,16 +9,22 @@ interface StageTimelineProps {
   onRefresh: () => Promise<unknown>;
   positionId: string;
   stages: ProcessStage[];
+  interviews: Interview[];
 }
 
-export function StageTimeline({ onRefresh, positionId, stages }: StageTimelineProps) {
+type StageNodeState = 'actual' | 'expected' | 'empty';
+function getNodeState(stage: ProcessStage): StageNodeState {
+  if (stage.actualDate) return 'actual';
+  if (stage.expectedDate) return 'expected';
+  return 'empty';
+}
+
+export function StageTimeline({ onRefresh, positionId, stages, interviews }: StageTimelineProps) {
   const toast = useToast();
   const [editing, setEditing] = useState<ProcessStage | 'new' | null>(null);
-  const [reordering, setReordering] = useState(false);
-  const sortedStages = useMemo(
-    () => [...stages].sort((a, b) => a.orderIndex - b.orderIndex),
-    [stages],
-  );
+  const [deleting, setDeleting] = useState<ProcessStage | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const sortedStages = useMemo(() => [...stages].sort((a, b) => a.orderIndex - b.orderIndex), [stages]);
 
   const saveStage = async (input: ProcessStageInput & { id?: string }) => {
     try {
@@ -31,21 +38,26 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
     }
   };
 
-  const move = async (index: number, direction: -1 | 1) => {
-    if (reordering) return;
-    const target = index + direction;
-    if (target < 0 || target >= sortedStages.length) return;
-    const orderedIds = sortedStages.map((stage) => stage.id);
-    [orderedIds[index], orderedIds[target]] = [orderedIds[target], orderedIds[index]];
-    setReordering(true);
+  const openDeleteConfirmation = (stage: ProcessStage) => {
+    setDeleting(stage);
+  };
+
+  const openEditor = (stage: ProcessStage | 'new') => {
+    setEditing(stage);
+  };
+
+  const removeStage = async () => {
+    if (!deleting || removing) return;
+    setRemoving(true);
     try {
-      await window.jobSearch.positions.reorderStages(positionId, orderedIds);
+      await window.jobSearch.positions.removeStage(positionId, deleting.id);
       await onRefresh();
-      toast.success('流程顺序已更新');
+      setDeleting(null);
+      toast.success('流程节点已删除');
     } catch {
-      toast.error('调整流程顺序失败，请稍后重试');
+      toast.error('删除流程节点失败，请稍后重试');
     } finally {
-      setReordering(false);
+      setRemoving(false);
     }
   };
 
@@ -53,92 +65,91 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
     <section className="process-panel" aria-labelledby="process-title">
       <header className="process-panel__header">
         <div>
-          <p className="section-label">流程轨迹 / PROCESS LOG</p>
           <h3 id="process-title">推进记录</h3>
-          <p>日期仅用于记录流程，不会创建提醒</p>
+          <p>点击节点编辑日期、反馈、备注或显示顺序。</p>
         </div>
-        <button className="button button--quiet" onClick={() => setEditing('new')} type="button">新增阶段</button>
       </header>
 
-      {sortedStages.length === 0 ? (
-        <p className="inline-empty">还没有流程阶段，可以先新增一条。</p>
-      ) : (
-        <ol className="stage-timeline">
-          {sortedStages.map((stage, index) => (
-            <li className="stage-card" key={stage.id}>
-              <div className="stage-card__rail" aria-hidden="true">
-                <span>{String(index + 1).padStart(2, '0')}</span>
-              </div>
-              <div className="stage-card__content">
-                <div className="stage-card__title">
-                  <div>
-                    <h4 className="stage-card__name">{stage.name}</h4>
-                    <StatusBadge stage={stage.canonicalStage} />
-                  </div>
-                  <div className="stage-card__actions">
-                    <button
-                      aria-label={`上移 ${stage.name}`}
-                      className="icon-button"
-                      disabled={index === 0 || reordering}
-                      onClick={() => void move(index, -1)}
-                      title="上移"
-                      type="button"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      aria-label={`下移 ${stage.name}`}
-                      className="icon-button"
-                      disabled={index === sortedStages.length - 1 || reordering}
-                      onClick={() => void move(index, 1)}
-                      title="下移"
-                      type="button"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      aria-label={`编辑 ${stage.name}`}
-                      className="text-button"
-                      onClick={() => setEditing(stage)}
-                      type="button"
-                    >
-                      编辑
-                    </button>
-                  </div>
-                </div>
-                <div className="stage-card__dates">
-                  {stage.actualDate ? (
-                    <span className="stage-date stage-date--actual">实际日期：{stage.actualDate}</span>
-                  ) : null}
-                  {stage.expectedDate ? (
-                    <span className="stage-date stage-date--expected">预计日期：{stage.expectedDate}</span>
-                  ) : null}
-                  {!stage.actualDate && !stage.expectedDate ? <span className="stage-date">日期：—</span> : null}
-                </div>
-                {stage.feedback ? (
-                  <p><strong>反馈</strong>{stage.feedback}</p>
-                ) : null}
-                {stage.notes ? (
-                  <p><strong>备注</strong>{stage.notes}</p>
-                ) : null}
-              </div>
+      <ol className="stage-flow" data-layout="wrapped-horizontal">
+        {sortedStages.map((stage, index) => {
+          const state = getNodeState(stage);
+          const date = stage.actualDate ?? stage.expectedDate;
+          const policy = stageDatePolicy(stage.canonicalStage);
+          const accessibleStatus = policy.kind === 'notice-and-event'
+            ? (!stage.expectedDate && !stage.actualDate ? '未记录日期' : [
+              stage.expectedDate ? `${policy.expectedLabel} ${stage.expectedDate}` : null,
+              stage.actualDate
+                ? `${policy.actualLabel} ${stage.actualDate}`
+                : `尚未记录${policy.actualLabel}`,
+            ].filter(Boolean).join('，'))
+            : stage.actualDate ? `${policy.actualLabel} ${stage.actualDate}` : '未记录日期';
+          const dateText = date
+            ? `${stage.actualDate ? policy.actualLabel : policy.kind === 'notice-and-event' ? '通知' : policy.actualLabel} ${date}`
+            : '日期未记录';
+          return (
+            <li className="stage-flow__item" key={stage.id}>
+              <button
+                aria-label={`编辑流程阶段：${stage.name}，${accessibleStatus}`}
+                className={`stage-node stage-node--${state}`}
+                data-state={state}
+                onClick={() => openEditor({ ...stage, orderIndex: index })}
+                type="button"
+              >
+                <span className="stage-node__dot" aria-hidden="true" />
+                <strong className="stage-node__name">{stage.name}</strong>
+                <span className="stage-node__date">{dateText}</span>
+              </button>
+              <button
+                aria-label={`删除流程阶段：${stage.name}`}
+                className="stage-node__delete"
+                onClick={() => openDeleteConfirmation(stage)}
+                type="button"
+              >
+                ×
+              </button>
             </li>
-          ))}
-        </ol>
-      )}
+          );
+        })}
+        <li className="stage-flow__item stage-flow__item--add">
+          <button aria-label="新增流程阶段" className="stage-node stage-node--add" data-state="add" onClick={() => openEditor('new')} type="button">
+            <span className="stage-node__dot stage-node__dot--add" aria-hidden="true">＋</span>
+            <strong className="stage-node__name">新增阶段</strong>
+            <span className="stage-node__date">添加到当前岗位</span>
+          </button>
+        </li>
+      </ol>
 
       <StageEditor
         initialValue={editing && editing !== 'new' ? editing : undefined}
-        nextOrderIndex={
-          sortedStages.length === 0
-            ? 0
-            : Math.max(...sortedStages.map((stage) => stage.orderIndex)) + 1
-        }
         onClose={() => setEditing(null)}
         onSave={saveStage}
         open={editing !== null}
+        interviews={interviews}
         positionId={positionId}
+        stageCount={sortedStages.length}
       />
+
+      <Modal
+        closeDisabled={removing}
+        footer={(
+          <>
+            <button className="button button--quiet" disabled={removing} onClick={() => setDeleting(null)} type="button">取消</button>
+            <button className="button button--danger" disabled={removing} onClick={() => void removeStage()} type="button">
+              {removing ? '删除中…' : '确认删除节点'}
+            </button>
+          </>
+        )}
+        onClose={() => {
+          if (!removing) setDeleting(null);
+        }}
+        open={deleting !== null}
+        title="确认删除节点"
+      >
+        <div className="stage-delete-confirmation" role="alert">
+          <strong>永久删除“{deleting?.name}”节点？</strong>
+          <p>该节点的日期、反馈和备注会一起删除，此操作无法撤销。</p>
+        </div>
+      </Modal>
     </section>
   );
 }

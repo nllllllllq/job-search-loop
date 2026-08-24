@@ -20,7 +20,10 @@ import { safeIpcHandler, type IpcMainRegistrar } from './common';
 
 export function registerReviewHandlers(
   ipcMain: IpcMainRegistrar,
-  interviews: InterviewsRepository,
+  interviews: Pick<
+    InterviewsRepository,
+    'create' | 'update' | 'get' | 'listByPosition' | 'saveSummary'
+  >,
   proposals: ProposalsRepository,
   review?: InterviewReviewService,
 ): void {

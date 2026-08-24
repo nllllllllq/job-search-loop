@@ -9,16 +9,22 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import type {
+  AiModelCapabilities,
   AiPublicSettings,
   AiSettingsSaveInput,
 } from '../../shared/domain';
-import { aiBaseUrlSchema, aiSettingsSaveSchema } from '../../shared/schemas';
+import {
+  aiBaseUrlSchema,
+  aiModelCapabilitiesSchema,
+  aiSettingsSaveSchema,
+} from '../../shared/schemas';
 import type { AppError } from '../../shared/ipc';
 
 const storedSettingsSchema = z.object({
   version: z.literal(1),
   baseUrl: aiBaseUrlSchema,
   model: z.string().trim().min(1).max(500),
+  capabilities: aiModelCapabilitiesSchema.optional(),
   encryptedApiKey: z.string().min(1).regex(
     /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/,
   ),
@@ -36,6 +42,9 @@ export class AiServiceError extends Error {
   constructor(
     public readonly code: AppError['code'],
     message: string,
+    public readonly providerMessage?: string,
+    public readonly httpStatus?: number,
+    public readonly requestId?: string,
   ) {
     super(message);
     this.name = 'AiServiceError';
@@ -46,6 +55,7 @@ interface StoredSettings {
   version: 1;
   baseUrl: string;
   model: string;
+  capabilities?: AiModelCapabilities;
   encryptedApiKey: string;
 }
 
@@ -53,6 +63,7 @@ export interface PrivateAiSettings {
   baseUrl: string;
   model: string;
   apiKey: string;
+  capabilities?: AiModelCapabilities;
 }
 
 export interface AiSettingsStore {
@@ -109,6 +120,7 @@ export function createAiSettingsStore({
     baseUrl: stored?.baseUrl ?? '',
     model: stored?.model ?? '',
     hasApiKey: Boolean(stored?.encryptedApiKey),
+    ...(stored?.capabilities === undefined ? {} : { capabilities: stored.capabilities }),
   });
 
   return {
@@ -138,6 +150,7 @@ export function createAiSettingsStore({
         baseUrl: stored.baseUrl,
         model: stored.model,
         apiKey,
+        ...(stored.capabilities === undefined ? {} : { capabilities: stored.capabilities }),
       };
     },
 
@@ -218,6 +231,9 @@ export function createAiSettingsStore({
         version: 1,
         baseUrl: parsed.baseUrl,
         model: parsed.model,
+        ...(parsed.capabilities === undefined && previous?.capabilities === undefined
+          ? {}
+          : { capabilities: parsed.capabilities ?? previous?.capabilities }),
         encryptedApiKey,
       };
       const directory = dirname(settingsPath);

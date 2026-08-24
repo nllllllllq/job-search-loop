@@ -25,6 +25,7 @@ const positionId = '55555555-5555-4555-8555-555555555555';
 const project: Project = {
   id: projectId,
   name: '增长实验',
+  projectTime: '2024–2025',
   background: '新用户不知道第一步该做什么',
   goal: '提升首周留存',
   role: '产品负责人',
@@ -33,6 +34,7 @@ const project: Project = {
   evidence: '实验数据与访谈记录',
   reflections: '应更早建立对照组',
   storytellingVersions: '业务面试两分钟版本',
+  unclassifiedNotes: '原始项目内容\n保留换行与空格。',
   createdAt: '2026-07-01T00:00:00.000Z',
   updatedAt: '2026-07-02T00:00:00.000Z',
 };
@@ -75,6 +77,7 @@ const position: PositionListItem = {
   id: positionId,
   company: '远山科技',
   title: '产品经理',
+  location: '',
   interest: 5,
   currentStage: 'interview',
   finalResult: null,
@@ -163,9 +166,32 @@ describe('reusable assets flow', () => {
 
     expect(await screen.findByRole('heading', { name: '增长实验' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '查看 增长实验' }));
+    const projectDetail = screen.getByRole('complementary', { name: '项目详情与历史' });
+    for (const [section, fields] of [
+      ['项目概述', [['背景', project.background], ['目标', project.goal], ['角色', project.role]]],
+      ['行动与决策', [['关键决策', project.keyDecisions]]],
+      ['结果与证据', [['结果', project.outcome], ['证据', project.evidence]]],
+      ['复盘与表达', [['反思', project.reflections], ['讲述版本（附加叙事）', project.storytellingVersions]]],
+    ] as const) {
+      const block = within(projectDetail).getByRole('region', { name: section });
+      for (const [label, content] of fields) {
+        expect(within(block).getByText(label)).toBeInTheDocument();
+        expect(within(block).getByText(content)).toBeInTheDocument();
+      }
+    }
+    expect(within(projectDetail).queryByRole('heading', { name: '讲述版本（附加叙事）' })).not.toBeInTheDocument();
+    const projectOverview = within(projectDetail).getByRole('region', { name: '项目概述' });
+    expect(within(projectOverview).getByText('项目时间')).toBeInTheDocument();
+    expect(within(projectOverview).getByText(project.projectTime!)).toBeInTheDocument();
+    const currentProjectContent = within(projectDetail).getByRole('region', { name: '项目内容' });
+    expect(within(currentProjectContent).getByText('项目内容')).toBeInTheDocument();
+    expect(currentProjectContent)
+      .toHaveTextContent('原始项目内容 保留换行与空格。');
+    expect(within(projectDetail).getByRole('button', { name: 'AI 整理' })).toBeInTheDocument();
     const historicalVersion = await screen.findByRole('article', { name: '历史版本 1' });
     for (const [label, content] of [
       ['项目名称', '增长实验·旧版'],
+      ['项目时间', project.projectTime!],
       ['背景', '旧背景'],
       ['目标', '旧目标'],
       ['角色', '旧角色'],
@@ -178,30 +204,66 @@ describe('reusable assets flow', () => {
       expect(within(historicalVersion).getByText(label)).toBeInTheDocument();
       expect(within(historicalVersion).getByText(content)).toBeInTheDocument();
     }
+    expect(within(historicalVersion).getByText('项目内容')).toBeInTheDocument();
+    expect(historicalVersion).toHaveTextContent('原始项目内容 保留换行与空格。');
     expect(screen.getByText('只读历史')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '编辑项目' }));
     const editor = screen.getByRole('dialog', { name: '编辑项目' });
-    for (const label of [
-      '项目名称', '背景', '目标', '角色', '关键决策', '结果', '证据', '反思',
-    ]) {
+    for (const label of ['项目名称', '角色', '项目时间', '项目内容']) {
       expect(within(editor).getByLabelText(new RegExp(label))).toBeInTheDocument();
     }
-    expect(within(editor).getByLabelText('讲述版本（附加叙事）'))
-      .toHaveValue('业务面试两分钟版本');
-    await user.clear(within(editor).getByLabelText(/背景/));
-    await user.type(within(editor).getByLabelText(/背景/), '新的项目背景');
+    for (const label of ['背景', '目标', '关键决策', '结果', '证据', '反思', '讲述版本（附加叙事）']) {
+      expect(within(editor).queryByLabelText(new RegExp(label))).not.toBeInTheDocument();
+    }
+    await user.clear(within(editor).getByLabelText(/项目内容/));
+    await user.type(within(editor).getByLabelText(/项目内容/), '新的原始项目内容');
     await user.click(within(editor).getByRole('button', { name: '保存项目' }));
 
     await waitFor(() => expect(fake.assets.projects.save).toHaveBeenCalledWith(
       expect.objectContaining({
         id: projectId,
-        background: '新的项目背景',
+        name: project.name,
+        role: project.role,
+        projectTime: project.projectTime,
+        unclassifiedNotes: '新的原始项目内容',
+        background: project.background,
         outcome: '首周留存提升 8%',
         evidence: '实验数据与访谈记录',
         storytellingVersions: '业务面试两分钟版本',
       }),
     ));
+  });
+
+  it('renders projects as full-width rows with background and outcome intros', async () => {
+    renderAt('#/projects');
+
+    const row = await screen.findByRole('article', { name: /PROJECT \/ 2026-07-02/ });
+    expect(row).toHaveClass('project-row');
+    expect(within(row).getByText(project.name)).toBeInTheDocument();
+    expect(within(row).getByText(project.background)).toBeInTheDocument();
+    expect(within(row).getByText(project.outcome)).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: `查看 ${project.name}` })).toBeInTheDocument();
+  });
+
+  it('shows simple project time, role, and raw content in the row summary', async () => {
+    const simpleProject: Project = {
+      ...project,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      name: '手工项目',
+      projectTime: '2025',
+      role: '项目经理',
+      background: '',
+      outcome: '',
+      unclassifiedNotes: '原始项目内容',
+    };
+    renderAt('#/projects', (api) => {
+      api.assets.projects.list.mockResolvedValue([simpleProject]);
+    });
+
+    const row = await screen.findByRole('article', { name: /PROJECT \/ 2026-07-02/ });
+    expect(within(row).getByText('2025 · 项目经理')).toBeInTheDocument();
+    expect(within(row).getByText('原始项目内容')).toBeInTheDocument();
   });
 
   it('keeps project form values after a failed create mutation', async () => {
@@ -212,7 +274,7 @@ describe('reusable assets flow', () => {
     await user.click(await screen.findByRole('button', { name: '新增项目' }));
     const editor = screen.getByRole('dialog', { name: '新增项目' });
     await user.type(within(editor).getByLabelText(/项目名称/), '新的证据项目');
-    await user.type(within(editor).getByLabelText(/背景/), '用户流失');
+    await user.type(within(editor).getByLabelText(/项目内容/), '用户流失');
     await user.click(within(editor).getByRole('button', { name: '保存项目' }));
 
     expect(await screen.findByText('保存项目失败，请稍后重试')).toBeInTheDocument();
@@ -336,11 +398,12 @@ describe('reusable assets flow', () => {
   it('shows and edits capability evidence, frequency, and gaps', async () => {
     const { fake, user } = renderAt('#/capabilities');
 
+    const drawer = await screen.findByRole('dialog', { name: '能力主题' });
     expect(await screen.findByRole('heading', { name: '用户研究' })).toBeInTheDocument();
     expect(screen.getByText('JD 频次 3')).toBeInTheDocument();
     expect(screen.getByText('完成 12 次访谈')).toBeInTheDocument();
-    expect(screen.getByText('缺少国际化样本')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '编辑能力 用户研究' }));
+    expect(screen.getByText(/缺少国际化样本/)).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: '编辑 用户研究' }));
     const editor = screen.getByRole('dialog', { name: '编辑能力' });
     await user.clear(within(editor).getByRole('spinbutton', { name: /JD 频次/ }));
     await user.type(within(editor).getByRole('spinbutton', { name: /JD 频次/ }), '4');
@@ -406,13 +469,11 @@ describe('reusable assets flow', () => {
   it.each([
     ['#/projects', 'projects', '项目档案载入失败'],
     ['#/questions', 'questions', '问题库载入失败'],
-    ['#/capabilities', 'capabilities', '能力主题载入失败'],
     ['#/insights', 'insights', '心得载入失败'],
   ] as const)('shows a safe route-isolated error at %s', async (hash, area, heading) => {
     const view = renderAt(hash, (api) => {
       if (area === 'projects') api.assets.projects.list.mockRejectedValue(new Error('SQL secret'));
       if (area === 'questions') api.assets.questions.list.mockRejectedValue(new Error('SQL secret'));
-      if (area === 'capabilities') api.assets.capabilities.list.mockRejectedValue(new Error('SQL secret'));
       if (area === 'insights') api.assets.insights.list.mockRejectedValue(new Error('SQL secret'));
     });
 
@@ -424,14 +485,12 @@ describe('reusable assets flow', () => {
   it.each([
     ['#/projects', 'projects', '正在读取项目档案…'],
     ['#/questions', 'questions', '正在读取问题库…'],
-    ['#/capabilities', 'capabilities', '正在读取能力主题…'],
     ['#/insights', 'insights', '正在读取心得…'],
   ] as const)('announces a route-isolated loading state at %s', (hash, area, label) => {
     const pending = new Promise<never>(() => undefined);
     const view = renderAt(hash, (api) => {
       if (area === 'projects') api.assets.projects.list.mockReturnValue(pending);
       if (area === 'questions') api.assets.questions.list.mockReturnValue(pending);
-      if (area === 'capabilities') api.assets.capabilities.list.mockReturnValue(pending);
       if (area === 'insights') api.assets.insights.list.mockReturnValue(pending);
     });
 
@@ -442,17 +501,42 @@ describe('reusable assets flow', () => {
   it.each([
     ['#/projects', 'projects', '还没有项目档案'],
     ['#/questions', 'questions', '还没有面试官问题'],
-    ['#/capabilities', 'capabilities', '还没有能力主题'],
     ['#/insights', 'insights', '还没有随想与心得'],
   ] as const)('offers a useful empty state at %s', async (hash, area, heading) => {
     const view = renderAt(hash, (api) => {
       if (area === 'projects') api.assets.projects.list.mockResolvedValue([]);
       if (area === 'questions') api.assets.questions.list.mockResolvedValue([]);
-      if (area === 'capabilities') api.assets.capabilities.list.mockResolvedValue([]);
       if (area === 'insights') api.assets.insights.list.mockResolvedValue([]);
     });
 
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
     view.unmount();
+  });
+
+  it('keeps capability loading, error, and empty states inside the dashboard drawer', async () => {
+    const loading = new Promise<never>(() => undefined);
+    const loadingView = renderAt('#/capabilities', (api) => {
+      api.assets.capabilities.list.mockReturnValue(loading);
+    });
+    const loadingDrawer = await screen.findByRole('dialog', { name: '能力主题' });
+    expect(within(loadingDrawer).getByRole('status')).toHaveTextContent('正在读取能力…');
+    loadingView.unmount();
+
+    const errorView = renderAt('#/capabilities', (api) => {
+      api.assets.capabilities.list.mockRejectedValue(new Error('SQL secret'));
+    });
+    const errorDrawer = await screen.findByRole('dialog', { name: '能力主题' });
+    expect(await within(errorDrawer).findByRole('alert')).toHaveTextContent(
+      '能力主题读取失败，请稍后重试。',
+    );
+    expect(screen.queryByText(/SQL secret/)).not.toBeInTheDocument();
+    errorView.unmount();
+
+    const emptyView = renderAt('#/capabilities', (api) => {
+      api.assets.capabilities.list.mockResolvedValue([]);
+    });
+    const emptyDrawer = await screen.findByRole('dialog', { name: '能力主题' });
+    expect(await within(emptyDrawer).findByText('还没有能力主题。')).toBeInTheDocument();
+    emptyView.unmount();
   });
 });

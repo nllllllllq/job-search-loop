@@ -3,11 +3,20 @@ import { z } from 'zod';
 const canonicalStages = [
   'interested', 'applied', 'assessment', 'interview', 'offer', 'rejected', 'withdrawn',
 ] as const;
+const positionInitialStages = ['interested', 'applied', 'assessment', 'interview', 'offer'] as const;
 const proposalStatuses = ['pending', 'accepted', 'ignored'] as const;
 const proposalTargets = ['project', 'question', 'capability', 'insight'] as const;
 const proposalOperations = ['create', 'update', 'merge'] as const;
 const questionTypes = ['interviewer', 'candidate'] as const;
-const promptKinds = ['preparation', 'interview-review', 'capability-analysis'] as const;
+const promptKinds = [
+  'preparation',
+  'interview-review',
+  'capability-analysis',
+  'project-import',
+  'position-image',
+] as const;
+const aiTaskKinds = ['preparation'] as const;
+const aiTaskStatuses = ['queued', 'running', 'succeeded', 'failed', 'interrupted'] as const;
 
 const interestSchema = z.union([
   z.literal(1),
@@ -17,12 +26,40 @@ const interestSchema = z.union([
   z.literal(5),
 ]);
 
+export function normalizeCompanyCandidate(value: string): string {
+  return value.trim().toLocaleLowerCase().replace(/[\s\p{P}]+/gu, '');
+}
+
+// Candidate normalization only supports an explicit user decision; it never
+// changes how positions are grouped by itself.
+export const companyIdentitySchema = z.string().trim().min(1).max(120)
+  .refine((value) => normalizeCompanyCandidate(value).length > 0, 'Company name cannot be only punctuation or whitespace');
+
 export const canonicalStageSchema = z.enum(canonicalStages);
+export const positionInitialStageSchema = z.enum(positionInitialStages);
 export const proposalStatusSchema = z.enum(proposalStatuses);
 export const proposalTargetSchema = z.enum(proposalTargets);
 export const proposalOperationSchema = z.enum(proposalOperations);
 export const questionTypeSchema = z.enum(questionTypes);
 export const promptKindSchema = z.enum(promptKinds);
+export const aiTaskKindSchema = z.enum(aiTaskKinds);
+export const aiTaskStatusSchema = z.enum(aiTaskStatuses);
+export const aiTaskSafeErrorSchema = z.object({
+  message: z.string().trim().min(1).max(2_000),
+  statusCode: z.number().int().min(100).max(599).nullable(),
+  requestId: z.string().trim().min(1).max(500).nullable(),
+}).strict();
+export const aiTaskSchema = z.object({
+  id: z.string().uuid(),
+  kind: aiTaskKindSchema,
+  positionId: z.string().uuid(),
+  status: aiTaskStatusSchema,
+  safeError: aiTaskSafeErrorSchema.nullable(),
+  createdAt: z.string().datetime(),
+  startedAt: z.string().datetime().nullable(),
+  updatedAt: z.string().datetime(),
+}).strict();
+export const aiTaskListSchema = z.array(aiTaskSchema);
 export const isoDateSchema = z.string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, '日期必须是 YYYY-MM-DD')
   .refine((value) => {
@@ -31,8 +68,9 @@ export const isoDateSchema = z.string()
   }, '日期必须是实际存在的 YYYY-MM-DD 日期');
 
 export const positionInputSchema = z.object({
-  company: z.string().trim().min(1).max(120),
+  company: companyIdentitySchema,
   title: z.string().trim().min(1).max(120),
+  location: z.string().trim().max(200).default(''),
   interest: interestSchema,
   rawJd: z.string()
     .min(1)
@@ -53,6 +91,7 @@ export const processStageInputSchema = z.object({
 
 const projectPayloadObjectSchema = z.object({
   name: z.string().trim().min(1).max(200),
+  projectTime: z.string().max(200).default(''),
   background: z.string().max(20_000).default(''),
   goal: z.string().max(20_000).default(''),
   role: z.string().max(20_000).default(''),
@@ -61,6 +100,7 @@ const projectPayloadObjectSchema = z.object({
   evidence: z.string().max(40_000).default(''),
   reflections: z.string().max(20_000).default(''),
   storytellingVersions: z.string().max(40_000).default(''),
+  unclassifiedNotes: z.string().max(100_000).default(''),
 });
 
 function normalizeLegacyProjectPayload(value: unknown): unknown {
@@ -122,6 +162,7 @@ export const insightPayloadSchema = z.object({
 // or silently stripped at an AI/write boundary.
 export const strictProjectProposalPayloadSchema = z.object({
   name: z.string().trim().min(1).max(200),
+  projectTime: z.string().max(200).default(''),
   background: z.string().max(20_000),
   goal: z.string().max(20_000),
   role: z.string().max(20_000),
@@ -130,6 +171,7 @@ export const strictProjectProposalPayloadSchema = z.object({
   evidence: z.string().max(40_000),
   reflections: z.string().max(20_000),
   storytellingVersions: z.string().max(40_000),
+  unclassifiedNotes: z.string().max(100_000),
 }).strict();
 
 export const strictQuestionProposalPayloadSchema = z.object({
@@ -159,23 +201,39 @@ export const strictInsightProposalPayloadSchema = z.object({
   capabilityId: z.string().uuid().nullable(),
 }).strict();
 
-export const proposalPayloadSchema = z.discriminatedUnion('targetType', [
-  z.object({ targetType: z.literal('project'), payload: projectPayloadSchema }),
-  z.object({ targetType: z.literal('question'), payload: questionPayloadSchema }),
-  z.object({ targetType: z.literal('capability'), payload: capabilityPayloadSchema }),
-  z.object({ targetType: z.literal('insight'), payload: insightPayloadSchema }),
-]);
-
-const changeProposalBaseSchema = z.object({
-  targetType: proposalTargetSchema,
+const strictProposalCommon = {
   targetId: z.string().uuid().nullable(),
   operation: proposalOperationSchema,
   rationale: z.string().trim().min(1).max(20_000),
   positionId: z.string().uuid().nullable(),
   interviewId: z.string().uuid().nullable(),
-}).and(proposalPayloadSchema);
+  analysisRunId: z.string().uuid().nullable().optional().default(null),
+};
 
-export const changeProposalInputSchema = changeProposalBaseSchema.superRefine((proposal, context) => {
+export const proposalPayloadSchema = z.discriminatedUnion('targetType', [
+  z.object({
+    ...strictProposalCommon,
+    targetType: z.literal('project'),
+    payload: strictProjectProposalPayloadSchema,
+  }).strict(),
+  z.object({
+    ...strictProposalCommon,
+    targetType: z.literal('question'),
+    payload: strictQuestionProposalPayloadSchema,
+  }).strict(),
+  z.object({
+    ...strictProposalCommon,
+    targetType: z.literal('capability'),
+    payload: strictCapabilityProposalPayloadSchema,
+  }).strict(),
+  z.object({
+    ...strictProposalCommon,
+    targetType: z.literal('insight'),
+    payload: strictInsightProposalPayloadSchema,
+  }).strict(),
+]);
+
+export const changeProposalInputSchema = proposalPayloadSchema.superRefine((proposal, context) => {
   if (proposal.operation === 'create' && proposal.targetId !== null) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -203,11 +261,50 @@ export const backupActionResultSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('exported') }).strict(),
   z.object({ status: z.literal('restored') }).strict(),
 ]);
+export const backupRestoreOptionsSchema = z.object({
+  deepCheck: z.boolean().optional(),
+}).strict().optional();
+export const backupProgressSchema = z.object({
+  operation: z.enum(['idle', 'export', 'restore', 'deep-check']),
+  phase: z.string().min(1).max(100),
+  percent: z.number().int().min(0).max(100),
+  cancellable: z.boolean(),
+  active: z.boolean(),
+}).strict();
+export const backupCancelResultSchema = z.object({
+  status: z.enum(['cancelled', 'not-cancellable']),
+}).strict();
+export const rollbackSummarySchema = z.object({
+  id: z.string().min(1).max(255),
+  label: z.string().min(1).max(500),
+  createdAt: z.iso.datetime(),
+  size: z.number().int().nonnegative(),
+  quickStatus: z.literal('valid'),
+  deepStatus: z.enum(['unchecked', 'valid']),
+}).strict();
+export const rollbackSummaryArraySchema = z.array(rollbackSummarySchema);
+export const rollbackCheckInputSchema = z.object({
+  id: z.string().min(1).max(255),
+  deep: z.boolean(),
+}).strict();
+export const rollbackIdSchema = z.string().min(1).max(255);
 
 export const positionListFilterSchema = z.object({
   query: z.string().max(500).optional(),
   stage: canonicalStageSchema.optional(),
 }).optional();
+
+export const companyAliasConfirmationSchema = z.object({
+  canonicalName: companyIdentitySchema,
+  alias: companyIdentitySchema,
+}).strict().refine(
+  (value) => value.canonicalName !== value.alias,
+  { message: 'Company alias must differ from its canonical name', path: ['alias'] },
+);
+
+export const companyAliasSchema = companyAliasConfirmationSchema.extend({
+  createdAt: z.string().datetime(),
+}).strict();
 
 export const positionUpdateSchema = z.object({
   id: idSchema,
@@ -222,6 +319,16 @@ export const reorderStagesSchema = z.object({
   positionId: idSchema,
   orderedIds: z.array(idSchema),
 });
+
+export const positionCreateInputSchema = positionInputSchema.extend({
+  initialStage: positionInitialStageSchema.optional(),
+  initialDate: isoDateSchema.optional(),
+});
+
+export const removeStageSchema = z.object({
+  positionId: idSchema,
+  stageId: idSchema,
+}).strict();
 
 const preparationStoredFieldsSchema = z.object({
   positionId: idSchema,
@@ -239,9 +346,9 @@ const nonBlankSnapshotText = (maximum: number) => z.string()
 
 export const preparationGenerateSchema = z.object({
   positionId: idSchema,
-  projectIds: z.array(idSchema).max(100),
-  questionIds: z.array(idSchema).max(200),
-}).strict();
+  projectIds: z.array(idSchema).max(100).optional(),
+  questionIds: z.array(idSchema).max(200).optional(),
+}).strict().transform(({ positionId }) => ({ positionId }));
 
 export const legacyPreparationOutputSchema = z.object({
   roleSummary: nonBlankSnapshotText(20_000),
@@ -277,7 +384,7 @@ export const starsStageSchema = z.enum([
   'Crisis',
 ]);
 
-export const preparationOutputSchema = legacyPreparationOutputSchema.extend({
+export const previousPreparationOutputSchema = legacyPreparationOutputSchema.extend({
   competencyMap: z.array(z.object({
     rank: competencyRankSchema,
     name: nonBlankSnapshotText(200),
@@ -321,8 +428,64 @@ export const preparationOutputSchema = legacyPreparationOutputSchema.extend({
   }).strict(),
 }).strict();
 
+export const preparationOutputSchema = z.object({
+  companyAndProductResearch: z.object({
+    businessAndUsers: nonBlankSnapshotText(30_000),
+    coreProducts: z.array(nonBlankSnapshotText(10_000)).min(1).max(30),
+    businessModel: nonBlankSnapshotText(30_000),
+    recentDirection: nonBlankSnapshotText(30_000),
+    roleProductHypothesis: nonBlankSnapshotText(30_000),
+    verificationNotes: z.array(nonBlankSnapshotText(10_000)).max(30),
+  }).strict(),
+  competencyMap: z.array(z.object({
+    rank: competencyRankSchema,
+    name: nonBlankSnapshotText(200),
+    jdEvidence: nonBlankSnapshotText(10_000),
+    roleUsage: nonBlankSnapshotText(20_000),
+    proofSuggestion: nonBlankSnapshotText(20_000),
+  }).strict()).length(5).superRefine((items, context) => {
+    items.forEach((item, index) => {
+      if (item.rank !== index + 1) {
+        context.addIssue({
+          code: 'custom',
+          path: [index, 'rank'],
+          message: '能力排名必须按 1 到 5 唯一且有序',
+        });
+      }
+    });
+  }),
+  companyMap: z.object({
+    stage: starsStageSchema,
+    summary: nonBlankSnapshotText(20_000),
+    priorities: z.array(nonBlankSnapshotText(10_000)).min(1).max(20),
+    culture: z.array(nonBlankSnapshotText(10_000)).min(1).max(20),
+  }).strict(),
+  dreamCandidateAvatar: z.object({
+    typicalDay: z.array(z.object({
+      time: nonBlankSnapshotText(80),
+      activity: nonBlankSnapshotText(10_000),
+      purpose: nonBlankSnapshotText(10_000),
+    }).strict()).min(1).max(24),
+    superpower: nonBlankSnapshotText(20_000),
+    successStory: nonBlankSnapshotText(40_000),
+    quote: nonBlankSnapshotText(20_000),
+    painProfile: nonBlankSnapshotText(40_000),
+  }).strict(),
+  actionGuide: z.object({
+    selfIntroTagline: nonBlankSnapshotText(20_000),
+    cultureFitPhrase: nonBlankSnapshotText(20_000),
+    questions: z.tuple([
+      nonBlankSnapshotText(20_000),
+      nonBlankSnapshotText(20_000),
+      nonBlankSnapshotText(20_000),
+    ]),
+    verificationChecklist: z.array(nonBlankSnapshotText(10_000)).max(30),
+  }).strict(),
+}).strict();
+
 export const preparationHistoricalOutputSchema = z.union([
   preparationOutputSchema,
+  previousPreparationOutputSchema,
   legacyPreparationOutputSchema,
 ]);
 
@@ -346,6 +509,7 @@ export const preparationAssetsSnapshotSchema = z.object({
 export const preparationOutboundPositionSchema = z.object({
   company: z.string().max(300),
   title: z.string().max(300),
+  location: z.string().max(200).default(''),
   rawJd: z.string().max(100_000),
 }).strict();
 
@@ -447,6 +611,7 @@ export const preparationMaterialListSchema = z.array(preparationMaterialSchema);
 
 const interviewBaseSchema = z.object({
   positionId: idSchema,
+  stageId: idSchema.nullable().default(null),
   roundName: z.string().trim().min(1).max(120),
   interviewDate: isoDateSchema.nullable(),
   transcript: z.string().max(1_000_000)
@@ -477,6 +642,19 @@ export const projectSaveSchema = z.preprocess(
 );
 export const questionSaveSchema = questionPayloadSchema.extend({ id: idSchema.optional() });
 export const capabilitySaveSchema = capabilityPayloadSchema.extend({ id: idSchema.optional() });
+export const capabilityMergeSchema = z.object({
+  sourceId: idSchema,
+  targetId: idSchema,
+}).strict();
+const capabilityRecordSchema = capabilityPayloadSchema.extend({
+  id: idSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+export const capabilityMergeResultSchema = z.object({
+  source: capabilityRecordSchema,
+  target: capabilityRecordSchema,
+}).strict();
 export const insightSaveSchema = insightPayloadSchema.extend({ id: idSchema.optional() });
 
 export const questionListSchema = z.object({
@@ -542,6 +720,30 @@ const interviewReviewProposalSchema = z.discriminatedUnion('targetType', [
 });
 
 export const interviewReviewOutputSchema = z.object({
+  overview: z.object({
+    round: nonBlankSnapshotText(120),
+    overall: nonBlankSnapshotText(20_000),
+    keyFacts: z.array(nonBlankSnapshotText(2_000)).max(20),
+  }).strict(),
+  questionAnswers: z.array(z.object({
+    question: nonBlankSnapshotText(10_000),
+    answerSummary: nonBlankSnapshotText(20_000),
+    quality: nonBlankSnapshotText(2_000),
+    improvement: nonBlankSnapshotText(10_000),
+  }).strict()).max(100),
+  strengthsAndRisks: z.object({
+    strengths: z.array(nonBlankSnapshotText(2_000)).max(20),
+    risks: z.array(nonBlankSnapshotText(2_000)).max(20),
+  }).strict(),
+  nextRoundPreparation: z.array(nonBlankSnapshotText(4_000)).max(50),
+  reusableItems: z.array(z.object({
+    targetType: proposalTargetSchema,
+    title: nonBlankSnapshotText(200),
+    content: nonBlankSnapshotText(40_000),
+  }).strict()).max(100),
+}).strict();
+
+const legacyInterviewReviewOutputSchema = z.object({
   summary: nonBlankSnapshotText(80_000),
   strengths: z.array(nonBlankSnapshotText(2_000)).max(20),
   gaps: z.array(nonBlankSnapshotText(2_000)).max(20),
@@ -554,19 +756,29 @@ export const interviewReviewSnapshotSchema = z.object({
   promptSnapshot: nonBlankSnapshotText(200_000),
   modelSnapshot: nonBlankSnapshotText(500),
   inputSnapshot: nonBlankSnapshotText(INTERVIEW_REVIEW_INPUT_SNAPSHOT_MAX_LENGTH),
-  output: interviewReviewOutputSchema,
+  output: z.union([interviewReviewOutputSchema, legacyInterviewReviewOutputSchema]),
   reviewedAt: z.string().datetime(),
 }).strict();
+
+export const interviewReviewAuditSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('none') }).strict(),
+  z.object({
+    status: z.literal('valid'),
+    snapshot: interviewReviewSnapshotSchema,
+  }).strict(),
+  z.object({ status: z.literal('invalid') }).strict(),
+]);
 
 export const interviewSchema = z.object({
   id: idSchema,
   positionId: idSchema,
+  stageId: idSchema.nullable(),
   roundName: z.string().trim().min(1).max(120),
   interviewDate: isoDateSchema.nullable(),
   transcript: z.string().max(1_000_000),
   personalNotes: z.string().max(100_000),
   summary: z.string().max(200_000).nullable(),
-  reviewSnapshot: interviewReviewSnapshotSchema.nullable(),
+  reviewSnapshot: interviewReviewAuditSchema,
   feedbackResult: z.string().max(20_000).nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -596,11 +808,22 @@ export const changeProposalSchema = z.object({
   rationale: nonBlankSnapshotText(20_000),
   positionId: idSchema.nullable(),
   interviewId: idSchema.nullable(),
+  analysisRunId: idSchema.nullable(),
   status: proposalStatusSchema,
   acceptedPayload: z.unknown().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   resolvedAt: z.string().datetime().nullable(),
+  context: z.object({
+    position: z.object({
+      company: z.string().max(120),
+      title: z.string().max(120),
+    }).strict().nullable(),
+    interview: z.object({
+      roundName: z.string().max(120),
+      interviewDate: isoDateSchema.nullable(),
+    }).strict().nullable(),
+  }).strict().optional(),
 }).strict().superRefine((proposal, context) => {
   if (!payloadForTarget(proposal.targetType, proposal.payload).success) {
     context.addIssue({
@@ -621,7 +844,139 @@ export const changeProposalSchema = z.object({
   }
 });
 
-export const changeProposalListSchema = z.array(changeProposalSchema);
+export const importedFileSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  type: z.string().max(200),
+  bytes: z.instanceof(Uint8Array),
+}).strict();
+
+export const POSITION_IMPORT_IMAGE_MAX_COUNT = 10;
+export const POSITION_IMPORT_IMAGE_MAX_BYTES = 12 * 1024 * 1024;
+export const POSITION_IMPORT_IMAGE_MAX_PIXELS = 40_000_000;
+
+export const importedImageSchema = importedFileSchema.extend({
+  type: z.enum(['image/png', 'image/jpeg'], {
+    message: 'Only PNG and JPEG images are supported.',
+  }),
+  bytes: z.instanceof(Uint8Array).refine(
+    (value) => value.byteLength <= POSITION_IMPORT_IMAGE_MAX_BYTES,
+    'Each image must be 12 MB or smaller.',
+  ),
+  width: z.number().int().positive().max(100_000),
+  height: z.number().int().positive().max(100_000),
+}).strict();
+
+export const positionImportTextSchema = z.object({
+  text: z.string().trim().min(1).max(100_000),
+}).strict();
+
+export const positionImportImagesSchema = z.object({
+  images: z.array(importedImageSchema)
+    .min(1, 'Select at least one image.')
+    .max(POSITION_IMPORT_IMAGE_MAX_COUNT, 'Select no more than 10 images.'),
+  mode: z.enum(['vision', 'ocr-text']).default('vision'),
+}).strict().superRefine(({ images }, context) => {
+  const pixels = images.reduce((total, image) => total + image.width * image.height, 0);
+  if (pixels > POSITION_IMPORT_IMAGE_MAX_PIXELS) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['images'],
+      message: 'Combined image resolution must not exceed 40 MP.',
+    });
+  }
+});
+
+const importConfidenceSchema = z.number().min(0).max(1);
+
+// The AI response is intentionally narrower than the renderer's editable
+// import preview. It must not carry a session id or a ready-to-write position.
+export const positionImageRecognitionPreviewSchema = z.object({
+  company: z.string().trim().max(120),
+  title: z.string().trim().max(120),
+  location: z.string().trim().max(200),
+  rawJd: z.string().trim().max(100_000),
+  confidence: z.object({
+    company: importConfidenceSchema,
+    title: importConfidenceSchema,
+    location: importConfidenceSchema,
+    rawJd: importConfidenceSchema,
+  }).strict(),
+  warnings: z.array(z.string().trim().min(1).max(1_000)).max(20),
+}).strict();
+
+export const projectImportDocumentSchema = z.object({
+  file: importedFileSchema,
+  mode: z.enum(['ai', 'local']),
+}).strict();
+
+export const projectSegmentUpdateSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('rename'),
+    tempId: z.string().uuid(),
+    name: z.string().trim().min(1).max(200),
+  }).strict(),
+  z.object({ type: z.literal('merge-next'), tempId: z.string().uuid() }).strict(),
+  z.object({
+    type: z.literal('split'),
+    tempId: z.string().uuid(),
+    marker: z.string().trim().min(1).max(20_000),
+  }).strict(),
+  z.object({
+    type: z.literal('reorder'),
+    orderedIds: z.array(z.string().uuid()).min(1).max(30),
+  }).strict(),
+  z.object({ type: z.literal('remove'), tempId: z.string().uuid() }).strict(),
+]);
+
+export const projectSegmentsUpdateSchema = z.object({
+  sessionId: z.string().uuid(),
+  operation: projectSegmentUpdateSchema,
+}).strict();
+
+export const importCancelSchema = z.object({
+  sessionId: z.string().uuid(),
+}).strict();
+
+export const changeProposalArraySchema = z.array(changeProposalSchema);
+
+const changeProposalContextSchema = z.object({
+  position: z.object({
+    company: z.string().max(120),
+    title: z.string().max(120),
+  }).strict().nullable(),
+  interview: z.object({
+    roundName: z.string().max(120),
+    interviewDate: isoDateSchema.nullable(),
+  }).strict().nullable(),
+}).strict();
+
+export const changeProposalListItemSchema = changeProposalSchema.and(
+  z.object({ context: changeProposalContextSchema }).loose(),
+);
+
+export const corruptChangeProposalSchema = z.object({
+  id: z.string().max(500),
+  status: proposalStatusSchema.nullable(),
+  createdAt: z.string().datetime().nullable(),
+  code: z.literal('CORRUPT_PROPOSAL'),
+  message: z.string().max(500),
+  readOnly: z.literal(true),
+  context: changeProposalContextSchema,
+}).strict();
+
+export const changeProposalListSchema = z.object({
+  items: z.array(changeProposalListItemSchema),
+  corruptItems: z.array(corruptChangeProposalSchema),
+  corruptCount: z.number().int().nonnegative(),
+}).strict().superRefine((result, context) => {
+  if (result.corruptCount !== result.corruptItems.length) {
+    context.addIssue({
+      code: 'custom',
+      path: ['corruptCount'],
+      message: '损坏建议计数不一致',
+    });
+  }
+});
 
 const uniqueIdListSchema = z.array(idSchema).max(100)
   .refine((ids) => new Set(ids).size === ids.length, '资产 ID 不能重复');
@@ -676,9 +1031,10 @@ export const interviewReviewPreviewSchema = z.object({
       id: idSchema,
       company: z.string().max(120),
       title: z.string().max(120),
+      location: z.string().max(200),
       rawJd: z.string().max(100_000),
     }).strict(),
-    interview: interviewBaseSchema.extend({
+    interview: interviewBaseSchema.omit({ stageId: true }).extend({
       id: idSchema,
     }).strict(),
     prompt: nonBlankSnapshotText(200_000),
@@ -699,7 +1055,7 @@ export const interviewReviewPreviewSchema = z.object({
 
 export const interviewReviewResultSchema = z.object({
   interview: interviewSchema,
-  proposals: changeProposalListSchema,
+  proposals: changeProposalArraySchema,
 }).strict();
 
 export const capabilityAnalysisSelectionSchema = z.array(idSchema)
@@ -732,6 +1088,7 @@ const dashboardPositionSchema = z.object({
   id: idSchema,
   company: z.string().max(120),
   title: z.string().max(120),
+  location: z.string().max(200),
   interest: interestSchema,
   currentStage: canonicalStageSchema.nullable(),
   finalResult: z.string().max(20_000).nullable(),
@@ -740,6 +1097,7 @@ const dashboardPositionSchema = z.object({
 
 export const dashboardSummarySchema = z.object({
   totalPositions: z.number().int().nonnegative(),
+  companyCount: z.number().int().nonnegative(),
   stageDistribution: z.array(z.object({
     stage: canonicalStageSchema,
     count: z.number().int().nonnegative(),
@@ -829,22 +1187,86 @@ export const aiBaseUrlSchema = z.string().trim().min(1).max(2_000).transform(
   },
 );
 
+export const aiModelCapabilitiesSchema = z.object({
+  images: z.boolean(),
+  fileInputProtocol: z.literal('none').optional(),
+}).strict();
+
 export const aiSettingsSaveSchema = z.object({
   baseUrl: aiBaseUrlSchema,
   model: z.string().trim().min(1).max(500),
   apiKey: z.string().max(10_000).optional().default(''),
+  capabilities: aiModelCapabilitiesSchema.optional(),
 });
 
 export const aiPublicSettingsSchema = z.object({
   baseUrl: z.string(),
   model: z.string(),
   hasApiKey: z.boolean(),
+  capabilities: aiModelCapabilitiesSchema.optional(),
 });
 
 export const aiConnectionResultSchema = z.object({
   ok: z.literal(true),
   message: z.literal('连接成功，可以使用。'),
 });
+
+export const emailSettingsSaveSchema = z.object({
+  host: z.string().trim().min(1).max(255),
+  port: z.number().int().min(1).max(65_535),
+  secure: z.boolean(),
+  email: z.string().trim().email().max(320),
+  username: z.string().trim().min(1).max(320),
+  password: z.string().max(2_000),
+  enabled: z.boolean(),
+  intervalMinutes: z.number().int().min(1).max(1_440),
+}).strict();
+
+export const emailSettingsPublicSchema = z.object({
+  host: z.string(),
+  port: z.number().int().min(1).max(65_535),
+  secure: z.boolean(),
+  email: z.string(),
+  username: z.string(),
+  enabled: z.boolean(),
+  intervalMinutes: z.number().int().min(1).max(1_440),
+  hasPassword: z.boolean(),
+  lastUid: z.number().int().nonnegative(),
+  lastSyncAt: z.string().datetime().nullable(),
+  lastError: z.string().max(2_000).nullable(),
+}).strict();
+
+export const emailConnectionResultSchema = z.object({
+  ok: z.literal(true),
+  message: z.string().min(1).max(200),
+}).strict();
+
+export const emailSyncEventSchema = z.object({
+  id: idSchema,
+  messageKey: z.string().trim().min(1).max(500),
+  subject: z.string().max(500),
+  sender: z.string().max(500),
+  receivedAt: z.string().datetime(),
+  status: z.enum(['applied', 'pending']),
+  positionId: idSchema.nullable(),
+  canonicalStage: canonicalStageSchema.nullable(),
+  reason: z.string().max(2_000),
+  createdAt: z.string().datetime(),
+}).strict();
+
+export const emailSyncEventListSchema = z.array(emailSyncEventSchema).max(50);
+export const emailSyncResultSchema = z.object({
+  processed: z.number().int().nonnegative(),
+  applied: z.number().int().nonnegative(),
+  pending: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  lastUid: z.number().int().nonnegative(),
+  lastSyncAt: z.string().datetime().nullable(),
+  lastError: z.string().max(2_000).nullable(),
+}).strict();
+export const emailListRecentSchema = z.object({
+  limit: z.number().int().min(1).max(50).default(50),
+}).strict().optional();
 
 export const promptTemplateSchema = z.object({
   id: idSchema,

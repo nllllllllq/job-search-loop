@@ -45,30 +45,54 @@ const completeOutput = {
   },
 } as const;
 
+const connectedOutput = {
+  companyAndProductResearch: {
+    businessAndUsers: '面向企业用户提供 AI 产品。',
+    coreProducts: ['企业智能助手'],
+    businessModel: '企业订阅，具体定价待核实。',
+    recentDirection: '正在加强智能体能力，细节待核实。',
+    roleProductHypothesis: '岗位可能负责企业智能助手，需面试核实。',
+    verificationNotes: ['核实具体产品线和核心指标'],
+  },
+  competencyMap: [1, 2, 3, 4, 5].map((rank) => ({
+    rank: rank as 1 | 2 | 3 | 4 | 5,
+    name: `能力${rank}`,
+    jdEvidence: 'JD 明确强调。',
+    roleUsage: '用于岗位日常工作。',
+    proofSuggestion: '准备可核验的相关案例。',
+  })),
+  companyMap: completeOutput.companyMap,
+  dreamCandidateAvatar: completeOutput.dreamCandidateAvatar,
+  actionGuide: {
+    ...completeOutput.actionGuide,
+    verificationChecklist: ['核实岗位负责产品'],
+  },
+} as const;
+
 describe('preparation output schemas', () => {
   it('requires the complete framework with ordered Top 5 competencies and exactly 3 questions', () => {
-    expect(preparationOutputSchema.safeParse(completeOutput).success).toBe(true);
+    expect(preparationOutputSchema.safeParse(connectedOutput).success).toBe(true);
 
     expect(preparationOutputSchema.safeParse({
-      ...completeOutput,
-      competencyMap: completeOutput.competencyMap.slice(0, 4),
+      ...connectedOutput,
+      competencyMap: connectedOutput.competencyMap.slice(0, 4),
     }).success).toBe(false);
     expect(preparationOutputSchema.safeParse({
-      ...completeOutput,
-      competencyMap: completeOutput.competencyMap.map((item, index) => ({
+      ...connectedOutput,
+      competencyMap: connectedOutput.competencyMap.map((item, index) => ({
         ...item,
         rank: index === 4 ? 4 : item.rank,
       })),
     }).success).toBe(false);
     expect(preparationOutputSchema.safeParse({
-      ...completeOutput,
-      companyMap: { ...completeOutput.companyMap, stage: 'Growth' },
+      ...connectedOutput,
+      companyMap: { ...connectedOutput.companyMap, stage: 'Growth' },
     }).success).toBe(false);
     expect(preparationOutputSchema.safeParse({
-      ...completeOutput,
+      ...connectedOutput,
       actionGuide: {
-        ...completeOutput.actionGuide,
-        questions: completeOutput.actionGuide.questions.slice(0, 2),
+        ...connectedOutput.actionGuide,
+        questions: connectedOutput.actionGuide.questions.slice(0, 2),
       },
     }).success).toBe(false);
   });
@@ -85,5 +109,6 @@ describe('preparation output schemas', () => {
     expect(preparationOutputSchema.safeParse(legacyOutput).success).toBe(false);
     expect(preparationHistoricalOutputSchema.safeParse(legacyOutput).success).toBe(true);
     expect(preparationHistoricalOutputSchema.safeParse(completeOutput).success).toBe(true);
+    expect(preparationHistoricalOutputSchema.safeParse(connectedOutput).success).toBe(true);
   });
 });

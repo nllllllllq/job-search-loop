@@ -1,8 +1,12 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest';
+import { registerReviewHandlers } from '../../src/main/ipc/reviews';
 import { createAssetsRepository } from '../../src/main/repositories/assets';
+import { createInterviewsRepository } from '../../src/main/repositories/interviews';
+import { createPositionsRepository } from '../../src/main/repositories/positions';
 import { createProposalsRepository } from '../../src/main/repositories/proposals';
+import { CHANNELS } from '../../src/shared/ipc';
 import { createTestDatabase } from '../helpers/database';
 
 const originalProject = {
@@ -15,9 +19,220 @@ const originalProject = {
   evidence: '留存看板',
   reflections: '实验分层仍可优化',
   storytellingVersions: '',
+  unclassifiedNotes: '',
 };
 
 describe('proposals repository', () => {
+  it('isolates every invalid final DTO row and keeps the real list IPC usable', async () => {
+    const db = createTestDatabase();
+
+    try {
+      const proposals = createProposalsRepository(db);
+      const position = createPositionsRepository(db).create({
+        company: '上下文公司',
+        title: '上下文岗位',
+        interest: 5,
+        rawJd: '绝不能出现在建议列表的敏感 JD',
+      });
+      const interview = createInterviewsRepository(db).create({
+        positionId: position.id,
+        roundName: '业务面',
+        interviewDate: '2026-07-28',
+        transcript: '绝不能出现在建议列表的面试原文',
+        personalNotes: '绝不能出现在建议列表的个人笔记',
+        feedbackResult: null,
+      });
+      const valid = proposals.create({
+        targetType: 'project',
+        targetId: null,
+        operation: 'create',
+        payload: originalProject,
+        rationale: '有效建议',
+        positionId: position.id,
+        interviewId: interview.id,
+      });
+      const now = '2026-07-28T00:00:00.000Z';
+      const insertRaw = db.prepare(`
+        INSERT INTO change_proposals (
+          id, target_type, target_id, operation, payload_json, accepted_payload_json,
+          rationale, position_id, interview_id, status, created_at, updated_at, resolved_at
+        ) VALUES (?, 'project', NULL, 'create', ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+      `);
+      insertRaw.run(
+        'corrupt-proposal',
+        '{"apiKey":"must-not-leak"',
+        null,
+        '损坏建议',
+        null,
+        'pending',
+        now,
+        now,
+        null,
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666661',
+        JSON.stringify(originalProject),
+        null,
+        '损坏创建时间',
+        null,
+        'pending',
+        'not-a-timestamp',
+        now,
+        null,
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666662',
+        JSON.stringify(originalProject),
+        null,
+        '损坏更新时间',
+        null,
+        'pending',
+        now,
+        'not-a-timestamp',
+        null,
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666663',
+        JSON.stringify(originalProject),
+        JSON.stringify(originalProject),
+        '损坏处理时间',
+        null,
+        'accepted',
+        now,
+        now,
+        'not-a-timestamp',
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666664',
+        JSON.stringify(originalProject),
+        null,
+        '',
+        null,
+        'pending',
+        now,
+        now,
+        null,
+      );
+      const invalidContextInterviewId = '77777777-7777-4777-8777-777777777777';
+      db.prepare(`
+        INSERT INTO interviews (
+          id, position_id, round_name, interview_date, transcript, personal_notes,
+          summary, feedback_result, review_snapshot_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, '', '', NULL, NULL, NULL, ?, ?)
+      `).run(
+        invalidContextInterviewId,
+        position.id,
+        '二面',
+        '2026-99-99',
+        now,
+        now,
+      );
+      insertRaw.run(
+        '66666666-6666-4666-8666-666666666665',
+        JSON.stringify(originalProject),
+        null,
+        '损坏上下文日期',
+        invalidContextInterviewId,
+        'pending',
+        now,
+        now,
+        null,
+      );
+
+      const result = proposals.list();
+      expect(result.items).toEqual([{
+        ...valid,
+        context: {
+          position: { company: '上下文公司', title: '上下文岗位' },
+          interview: { roundName: '业务面', interviewDate: '2026-07-28' },
+        },
+      }]);
+      expect(result.corruptCount).toBe(6);
+      expect(result.corruptItems.map((item) => item.id)).toEqual(expect.arrayContaining([
+        'corrupt-proposal',
+        '66666666-6666-4666-8666-666666666661',
+        '66666666-6666-4666-8666-666666666662',
+        '66666666-6666-4666-8666-666666666663',
+        '66666666-6666-4666-8666-666666666664',
+        '66666666-6666-4666-8666-666666666665',
+      ]));
+      expect(result.corruptItems).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: 'corrupt-proposal',
+          code: 'CORRUPT_PROPOSAL',
+          readOnly: true,
+        }),
+        expect.objectContaining({
+          id: '66666666-6666-4666-8666-666666666665',
+          context: {
+            position: null,
+            interview: { roundName: '二面', interviewDate: null },
+          },
+        }),
+      ]));
+      expect(JSON.stringify(result)).not.toContain('must-not-leak');
+      expect(JSON.stringify(result)).not.toContain('敏感 JD');
+      expect(JSON.stringify(result)).not.toContain('面试原文');
+      expect(JSON.stringify(result)).not.toContain('个人笔记');
+      for (const operation of [
+        () => proposals.get('corrupt-proposal'),
+        () => proposals.accept('corrupt-proposal'),
+        () => proposals.ignore('corrupt-proposal'),
+      ]) {
+        expect(operation).toThrow(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+      }
+
+      const handlers = new Map<string, (event: unknown, payload?: unknown) => unknown>();
+      registerReviewHandlers(
+        {
+          handle(channel, handler) {
+            handlers.set(channel, handler);
+          },
+        },
+        createInterviewsRepository(db),
+        proposals,
+      );
+      await expect(
+        handlers.get(CHANNELS.reviews.proposals.list)!({}, undefined),
+      ).resolves.toMatchObject({
+        items: [{ id: valid.id }],
+        corruptCount: 6,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects missing and unknown fields at the current proposal write boundary', () => {
+    const db = createTestDatabase();
+
+    try {
+      const proposals = createProposalsRepository(db);
+      const { unclassifiedNotes: _missing, ...missingField } = originalProject;
+      expect(() => proposals.create({
+        targetType: 'project',
+        targetId: null,
+        operation: 'create',
+        payload: missingField,
+        rationale: '缺少当前字段',
+        positionId: null,
+        interviewId: null,
+      })).toThrow();
+      expect(() => proposals.create({
+        targetType: 'project',
+        targetId: null,
+        operation: 'create',
+        payload: { ...originalProject, unexpected: true },
+        rationale: '包含未知字段',
+        positionId: null,
+        interviewId: null,
+      })).toThrow();
+      expect(proposals.list()).toMatchObject({ items: [], corruptCount: 0 });
+    } finally {
+      db.close();
+    }
+  });
+
   it('accepts an update proposal after snapshotting exactly one prior asset version', () => {
     const db = createTestDatabase();
 
@@ -211,9 +426,13 @@ describe('proposals repository', () => {
         targetId: question.id,
         operation: 'update',
         payload: {
-          ...question,
+          type: question.type,
+          text: question.text,
+          answerDraft: question.answerDraft,
           projectIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
           capabilityIds: ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],
+          occurrenceCount: question.occurrenceCount,
+          status: question.status,
         },
         rationale: '关联复盘证据',
         positionId: null,

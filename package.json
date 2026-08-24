@@ -1,6 +1,6 @@
 {
   "name": "job-search-loop",
-  "version": "0.1.0",
+  "version": "1.7.1",
   "private": true,
   "description": "Local-first job-search planning and learning loop",
   "main": "dist-electron/main/index.js",
@@ -9,7 +9,7 @@
     "dev:electron": "npm run build:electron && concurrently -k \"tsc -p tsconfig.electron.json --watch\" \"vite build --config vite.preload.config.ts --watch\"",
     "dev:app": "wait-on tcp:5173 dist-electron/main/index.js && electron .",
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\" \"npm:dev:app\"",
-    "build:electron": "tsc -p tsconfig.electron.json && vite build --config vite.preload.config.ts",
+    "build:electron": "tsc -p tsconfig.electron.json && vite build --config vite.preload.config.ts && node scripts/copy-ocr-assets.mjs",
     "build": "npm run build:electron && vite build",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
@@ -17,12 +17,20 @@
     "test:build-output": "npm run build && vitest run --config vitest.build-output.config.ts",
     "test:e2e": "npm run build && playwright test",
     "smoke:win": "node scripts/smoke-win.mjs",
+    "verify:ocr-assets": "node scripts/verify-ocr-assets.mjs",
+    "smoke:ocr": "npm run build:electron && npm run verify:ocr-assets && node scripts/smoke-ocr.mjs",
     "package:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
+    "@tesseract.js-data/chi_sim": "1.0.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "imapflow": "^1.7.0",
+    "mammoth": "1.12.0",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.0.0",
+    "react-router-dom": "^7.18.2",
+    "tesseract.js": "7.0.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
@@ -37,7 +45,7 @@
     "@vitejs/plugin-react": "^6.0.0",
     "concurrently": "^9.0.0",
     "electron": "43.2.0",
-    "electron-builder": "^26.0.0",
+    "electron-builder": "26.15.3",
     "jsdom": "^26.0.0",
     "typescript": "^5.9.0",
     "vite": "^8.1.0",
@@ -49,11 +57,35 @@
     "productName": "求职闭环",
     "artifactName": "JobSearchLoop-Setup-${version}.${ext}",
     "asar": true,
+    "asarUnpack": [
+      "node_modules/tesseract.js-core/**/*",
+      "node_modules/tesseract.js/src/worker-script/**/*"
+    ],
     "electronDist": "node_modules/electron/dist",
-    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
-    "directories": { "output": "release" },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "!dist-electron/ocr/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "extraResources": [
+      {
+        "from": "dist-electron/ocr",
+        "to": "ocr"
+      }
+    ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

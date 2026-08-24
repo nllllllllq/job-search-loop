@@ -1,10 +1,5 @@
-import {
-  type MouseEvent,
-  type ReactNode,
-  useEffect,
-  useId,
-  useRef,
-} from 'react';
+import { type MouseEvent, type ReactNode, useEffect, useId, useRef } from 'react';
+import { lockBodyScroll } from '../utils/bodyScrollLock';
 
 interface ModalProps {
   open: boolean;
@@ -13,27 +8,7 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   closeDisabled?: boolean;
-}
-
-let bodyScrollLockCount = 0;
-let originalBodyOverflow = '';
-
-function lockBodyScroll() {
-  if (bodyScrollLockCount === 0) {
-    originalBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-  }
-  bodyScrollLockCount += 1;
-}
-
-function unlockBodyScroll() {
-  if (bodyScrollLockCount === 0) return;
-
-  bodyScrollLockCount -= 1;
-  if (bodyScrollLockCount === 0) {
-    document.body.style.overflow = originalBodyOverflow;
-    originalBodyOverflow = '';
-  }
+  dismissal?: 'close-button-only' | 'standard';
 }
 
 export function Modal({
@@ -43,6 +18,7 @@ export function Modal({
   children,
   footer,
   closeDisabled = false,
+  dismissal = 'standard',
 }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -66,16 +42,15 @@ export function Modal({
     }
   }, [open]);
 
+  const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
+    if (dismissal === 'standard' && !closeDisabled && event.target === event.currentTarget) onClose();
+  };
+
   useEffect(() => {
     if (!open) return;
 
-    lockBodyScroll();
-    return unlockBodyScroll;
+    return lockBodyScroll();
   }, [open]);
-
-  const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
-    if (!closeDisabled && event.target === event.currentTarget) onClose();
-  };
 
   return (
     <dialog
@@ -84,10 +59,10 @@ export function Modal({
       className="modal"
       onCancel={(event) => {
         event.preventDefault();
-        if (!closeDisabled) onClose();
+        if (dismissal === 'standard' && !closeDisabled) onClose();
       }}
       onClose={() => {
-        if (open) onClose();
+        if (dismissal === 'standard' && open) onClose();
       }}
       onClick={handleBackdropClick}
       ref={dialogRef}

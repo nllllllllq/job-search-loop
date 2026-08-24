@@ -2,14 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type {
   CapabilityAnalysisOutput,
   CapabilityAnalysisPreview,
-  ChangeProposal,
-  ChangeProposalInput,
   Position,
 } from '../../shared/domain';
 import {
   capabilityAnalysisOutputSchema,
   capabilityAnalysisSelectionSchema,
-  changeProposalInputSchema,
 } from '../../shared/schemas';
 import type { PositionsRepository } from '../repositories/positions';
 import type { PromptsRepository } from '../repositories/prompts';
@@ -28,13 +25,13 @@ interface BoundAnalysis {
 
 export interface CapabilityAnalysisService {
   preview(positionIds: string[]): Promise<CapabilityAnalysisPreview>;
-  confirm(token: string): Promise<ChangeProposal[]>;
+  confirm(token: string): Promise<CapabilityAnalysisOutput>;
 }
 
 export interface CapabilityAnalysisDependencies {
   positions: Pick<PositionsRepository, 'get'>;
   prompts: Pick<PromptsRepository, 'get'>;
-  proposals: Pick<ProposalsRepository, 'create'>;
+  proposals: Pick<ProposalsRepository, 'commitCapabilityAnalysis'>;
   ai: {
     completeJson(
       request: AiCompletionRequest,
@@ -205,38 +202,24 @@ export function createCapabilityAnalysisService({
         );
       }
 
+      const request = buildRequest(bound);
       const candidate = await ai.completeJson(
-        buildRequest(bound),
+        request,
         capabilityAnalysisOutputSchema,
         settings,
       );
       const output = validateOutput(candidate, bound.positions.length);
       const sourcePositionIds = bound.positions.map((position) => position.id);
-      const proposalInputs: ChangeProposalInput[] = output.capabilities.map(
-        (capability) => ({
-          targetType: 'capability',
-          targetId: null,
-          operation: 'create',
-          payload: {
-            name: capability.name,
-            jdFrequency: capability.jdFrequency,
-            evidence: capability.evidence.join('\n'),
-            gaps: capability.gaps.join('\n'),
-            mergedIntoId: null,
-          },
-          rationale: [
-            `共性能力分析：基于 ${sourcePositionIds.length} 个已选择岗位。`,
-            `来源岗位：${sourcePositionIds.join(', ')}`,
-            `模型：${bound.model}`,
-          ].join('\n'),
-          positionId: sourcePositionIds[0] ?? null,
-          interviewId: null,
-        }),
-      );
-
-      // Validate the complete AI result before the first database write.
-      proposalInputs.forEach((input) => changeProposalInputSchema.parse(input));
-      return proposalInputs.map((input) => proposals.create(input));
+      proposals.commitCapabilityAnalysis({
+        selectedPositionIds: sourcePositionIds,
+        promptSnapshot: bound.prompt,
+        providerOrigin: bound.provider,
+        model: bound.model,
+        input: request,
+        output,
+        createdAt: new Date(nowMs()).toISOString(),
+      }, []);
+      return output;
     },
   };
 }

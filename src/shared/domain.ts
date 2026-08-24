@@ -11,14 +11,184 @@ export type ProposalStatus = 'pending' | 'accepted' | 'ignored';
 export type ProposalTarget = 'project' | 'question' | 'capability' | 'insight';
 export type ProposalOperation = 'create' | 'update' | 'merge';
 export type QuestionType = 'interviewer' | 'candidate';
-export type PromptKind = 'preparation' | 'interview-review' | 'capability-analysis';
+export type PromptKind =
+  | 'preparation'
+  | 'interview-review'
+  | 'capability-analysis'
+  | 'project-import'
+  | 'position-image';
+
+export type AiTaskKind = 'preparation';
+export type AiTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
+
+export interface AiTaskSafeError {
+  message: string;
+  statusCode: number | null;
+  requestId: string | null;
+}
+
+export interface AiTask {
+  id: string;
+  kind: AiTaskKind;
+  positionId: string;
+  status: AiTaskStatus;
+  safeError: AiTaskSafeError | null;
+  createdAt: string;
+  startedAt: string | null;
+  updatedAt: string;
+}
 
 export interface PositionInput {
   company: string;
   title: string;
+  location?: string;
   interest: 1 | 2 | 3 | 4 | 5;
   rawJd: string;
 }
+
+export type PositionInitialStage = Extract<CanonicalStage, 'interested' | 'applied' | 'assessment' | 'interview' | 'offer'>;
+
+export interface PositionCreateInput extends PositionInput {
+  initialStage?: PositionInitialStage;
+  initialDate?: string;
+}
+
+export type EmailSyncStatus = 'applied' | 'pending';
+
+export interface EmailSettingsPublic {
+  host: string;
+  port: number;
+  secure: boolean;
+  email: string;
+  username: string;
+  enabled: boolean;
+  intervalMinutes: number;
+  hasPassword: boolean;
+  lastUid: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
+export interface EmailSettingsPrivate extends EmailSettingsPublic {
+  password: string;
+}
+
+export interface EmailSettingsSaveInput {
+  host: string;
+  port: number;
+  secure: boolean;
+  email: string;
+  username: string;
+  password: string;
+  enabled: boolean;
+  intervalMinutes: number;
+}
+
+export interface EmailSyncEvent {
+  id: string;
+  messageKey: string;
+  subject: string;
+  sender: string;
+  receivedAt: string;
+  status: EmailSyncStatus;
+  positionId: string | null;
+  canonicalStage: CanonicalStage | null;
+  reason: string;
+  createdAt: string;
+}
+
+export interface EmailSyncResult {
+  processed: number;
+  applied: number;
+  pending: number;
+  skipped: number;
+  lastUid: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
+export interface EmailConnectionResult {
+  ok: true;
+  message: string;
+}
+
+export type ImportSessionId = string;
+
+export interface PositionImportPreview {
+  sessionId: ImportSessionId;
+  sourceSummary: string;
+  suggested: PositionInput;
+  confidence: {
+    company: number;
+    title: number;
+    location: number;
+    rawJd: number;
+  };
+  warnings: string[];
+}
+
+export interface PositionImageRecognitionPreview {
+  company: string;
+  title: string;
+  location: string;
+  rawJd: string;
+  confidence: {
+    company: number;
+    title: number;
+    location: number;
+    rawJd: number;
+  };
+  warnings: string[];
+}
+
+export interface ProjectSegmentPreview {
+  tempId: string;
+  name: string;
+  sourceText: string;
+  suggested: ProjectInput;
+  boundaries: { startLine: number; endLine: number };
+  fields: Record<ProjectImportField, ProjectImportFieldValue>;
+  missingFields: ProjectImportField[];
+  unusedContent: Array<{ content: string; reason: string }>;
+  warnings: string[];
+}
+
+export type ProjectImportField = keyof ProjectInput;
+export type ProjectImportProvenance = 'source' | 'ai-rewrite' | 'ai-suggestion';
+
+export interface ProjectImportFieldValue {
+  value: string;
+  provenance: ProjectImportProvenance;
+  evidence: string;
+}
+
+export interface ProjectImportPreview {
+  sessionId: ImportSessionId;
+  sourceSummary: string;
+  analysisMode: 'ai' | 'local' | 'local-fallback';
+  classification: 'valid-project' | 'no-valid-project';
+  explanation: string;
+  segments: ProjectSegmentPreview[];
+  warnings: string[];
+}
+
+export interface ImportedFileInput {
+  name: string;
+  type: string;
+  bytes: Uint8Array;
+}
+
+export interface ImportedImageInput extends ImportedFileInput {
+  width: number;
+  height: number;
+}
+
+export type ProjectSegmentUpdate =
+  | { type: 'rename'; tempId: string; name: string }
+  | { type: 'merge-next'; tempId: string }
+  | { type: 'split'; tempId: string; marker: string }
+  | { type: 'reorder'; orderedIds: string[] }
+  | { type: 'remove'; tempId: string };
 
 export interface ProcessStageInput {
   positionId: string;
@@ -31,8 +201,9 @@ export interface ProcessStageInput {
   orderIndex: number;
 }
 
-export interface Position extends PositionInput {
+export interface Position extends Omit<PositionInput, 'location'> {
   id: string;
+  location: string;
   currentStage: CanonicalStage | null;
   finalResult: string | null;
   createdAt: string;
@@ -43,6 +214,7 @@ export interface PositionListItem {
   id: string;
   company: string;
   title: string;
+  location: string;
   interest: 1 | 2 | 3 | 4 | 5;
   currentStage: CanonicalStage | null;
   finalResult: string | null;
@@ -74,8 +246,10 @@ export interface PreparationMaterial {
 
 export interface PreparationGenerateInput {
   positionId: string;
-  projectIds: string[];
-  questionIds: string[];
+  /** @deprecated V1.5 preparation ignores personal assets. */
+  projectIds?: string[];
+  /** @deprecated V1.5 preparation ignores personal assets. */
+  questionIds?: string[];
 }
 
 export interface PreparationOutboundPreview {
@@ -83,6 +257,7 @@ export interface PreparationOutboundPreview {
   position: {
     company: string;
     title: string;
+    location: string;
     rawJd: string;
   };
   selectedAssets: PreparationAssetsSnapshot;
@@ -135,7 +310,45 @@ export interface PreparationOutput extends LegacyPreparationOutput {
   };
 }
 
+export interface ConnectedPreparationOutput {
+  companyAndProductResearch: {
+    businessAndUsers: string;
+    coreProducts: string[];
+    businessModel: string;
+    recentDirection: string;
+    roleProductHypothesis: string;
+    verificationNotes: string[];
+  };
+  competencyMap: Array<{
+    rank: 1 | 2 | 3 | 4 | 5;
+    name: string;
+    jdEvidence: string;
+    roleUsage: string;
+    proofSuggestion: string;
+  }>;
+  companyMap: {
+    stage: StarsStage;
+    summary: string;
+    priorities: string[];
+    culture: string[];
+  };
+  dreamCandidateAvatar: {
+    typicalDay: Array<{ time: string; activity: string; purpose: string }>;
+    superpower: string;
+    successStory: string;
+    quote: string;
+    painProfile: string;
+  };
+  actionGuide: {
+    selfIntroTagline: string;
+    cultureFitPhrase: string;
+    questions: [string, string, string];
+    verificationChecklist: string[];
+  };
+}
+
 export type PreparationHistoricalOutput =
+  | ConnectedPreparationOutput
   | PreparationOutput
   | LegacyPreparationOutput;
 
@@ -147,18 +360,53 @@ export interface PreparationAssetsSnapshot {
 export interface Interview {
   id: string;
   positionId: string;
+  /** Null for historical interviews that were not linked to a process stage. */
+  stageId?: string | null;
   roundName: string;
   interviewDate: string | null;
   transcript: string;
   personalNotes: string;
   summary: string | null;
-  reviewSnapshot: InterviewReviewSnapshot | null;
+  reviewSnapshot: InterviewReviewAudit;
   feedbackResult: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface InterviewReviewOverview {
+  round: string;
+  overall: string;
+  keyFacts: string[];
+}
+
+export interface InterviewReviewQuestionAnswer {
+  question: string;
+  answerSummary: string;
+  quality: string;
+  improvement: string;
+}
+
+export interface InterviewReviewStrengthsAndRisks {
+  strengths: string[];
+  risks: string[];
+}
+
+export interface InterviewReviewReusableItem {
+  targetType: ProposalTarget;
+  title: string;
+  content: string;
+}
+
 export interface InterviewReviewOutput {
+  overview: InterviewReviewOverview;
+  questionAnswers: InterviewReviewQuestionAnswer[];
+  strengthsAndRisks: InterviewReviewStrengthsAndRisks;
+  nextRoundPreparation: string[];
+  reusableItems: InterviewReviewReusableItem[];
+}
+
+/** Historical snapshots remain readable but are never produced by new reviews. */
+export interface LegacyInterviewReviewOutput {
   summary: string;
   strengths: string[];
   gaps: string[];
@@ -171,11 +419,13 @@ export interface InterviewReviewOutput {
   }>;
 }
 
+export type InterviewReviewHistoricalOutput = InterviewReviewOutput | LegacyInterviewReviewOutput;
+
 export interface InterviewReviewSnapshot {
   promptSnapshot: string;
   modelSnapshot: string;
   inputSnapshot: string;
-  output: InterviewReviewOutput;
+  output: InterviewReviewHistoricalOutput;
   reviewedAt: string;
 }
 
@@ -199,7 +449,7 @@ export interface InterviewReviewSelectedAssets {
 }
 
 export interface InterviewReviewOutbound {
-  position: Pick<Position, 'id' | 'company' | 'title' | 'rawJd'>;
+  position: Pick<Position, 'id' | 'company' | 'title' | 'location' | 'rawJd'>;
   interview: Pick<
     Interview,
     | 'id'
@@ -237,6 +487,7 @@ export interface InterviewReviewResult {
 
 export interface ProjectInput {
   name: string;
+  projectTime?: string;
   background: string;
   goal: string;
   role: string;
@@ -245,10 +496,18 @@ export interface ProjectInput {
   evidence: string;
   reflections: string;
   storytellingVersions: string;
+  unclassifiedNotes?: string;
 }
 
-export interface Project extends ProjectInput {
+export type InterviewReviewAudit =
+  | { status: 'none' }
+  | { status: 'valid'; snapshot: InterviewReviewSnapshot }
+  | { status: 'invalid' };
+
+export interface Project extends Omit<ProjectInput, 'unclassifiedNotes'> {
   id: string;
+  projectTime?: string;
+  unclassifiedNotes: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -283,6 +542,25 @@ export interface Capability extends CapabilityInput {
   updatedAt: string;
 }
 
+export interface CompanyPositionGroup {
+  canonicalName: string;
+  members: PositionListItem[];
+}
+
+export interface CompanyAliasConfirmation {
+  canonicalName: string;
+  alias: string;
+}
+
+export interface CompanyAlias extends CompanyAliasConfirmation {
+  createdAt: string;
+}
+
+export interface CapabilityMergeResult {
+  source: Capability;
+  target: Capability;
+}
+
 export interface CapabilityEvidence {
   id: string;
   capabilityId: string;
@@ -315,15 +593,64 @@ export interface ChangeProposalInput {
   rationale: string;
   positionId: string | null;
   interviewId: string | null;
+  analysisRunId?: string | null;
 }
 
 export interface ChangeProposal extends ChangeProposalInput {
   id: string;
+  analysisRunId: string | null;
   status: ProposalStatus;
   acceptedPayload: unknown | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
+  context?: ChangeProposalContext;
+}
+
+export interface ChangeProposalContext {
+  position: { company: string; title: string } | null;
+  interview: { roundName: string; interviewDate: string | null } | null;
+}
+
+export interface ChangeProposalListItem extends ChangeProposal {
+  context: ChangeProposalContext;
+}
+
+export interface CorruptChangeProposal {
+  id: string;
+  status: ProposalStatus | null;
+  createdAt: string | null;
+  code: 'CORRUPT_PROPOSAL';
+  message: string;
+  readOnly: true;
+  context: ChangeProposalContext;
+}
+
+export interface ChangeProposalListResult {
+  items: ChangeProposalListItem[];
+  corruptItems: CorruptChangeProposal[];
+  corruptCount: number;
+}
+
+export interface CapabilityAnalysisRun {
+  id: string;
+  selectedPositionIds: string[];
+  promptSnapshot: string;
+  providerOrigin: string;
+  model: string;
+  input: unknown;
+  output: unknown;
+  createdAt: string;
+}
+
+export interface CapabilityAnalysisRunInput {
+  selectedPositionIds: string[];
+  promptSnapshot: string;
+  providerOrigin: string;
+  model: string;
+  input: unknown;
+  output: unknown;
+  createdAt: string;
 }
 
 export interface AssetVersion {
@@ -348,13 +675,45 @@ export interface AiPublicSettings {
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
+  capabilities?: AiModelCapabilities;
 }
+
+export interface AiModelCapabilities {
+  images: boolean;
+  fileInputProtocol?: 'none';
+}
+
+export const defaultAiModelCapabilities: AiModelCapabilities = {
+  images: false,
+  fileInputProtocol: 'none',
+};
 
 export interface AiSettingsSaveInput {
   baseUrl: string;
   model: string;
   apiKey: string;
+  capabilities?: AiModelCapabilities;
 }
+
+export interface AiTextInputPart {
+  type: 'text';
+  text: string;
+}
+
+export interface AiImageInputPart {
+  type: 'image';
+  mimeType: string;
+  bytes: Uint8Array;
+}
+
+export interface AiFileInputPart {
+  type: 'file';
+  name: string;
+  mimeType: string;
+  bytes: Uint8Array;
+}
+
+export type AiInputPart = AiTextInputPart | AiImageInputPart | AiFileInputPart;
 
 export interface AiConnectionResult {
   ok: true;
@@ -363,6 +722,7 @@ export interface AiConnectionResult {
 
 export interface DashboardSummary {
   totalPositions: number;
+  companyCount: number;
   stageDistribution: Array<{ stage: CanonicalStage; count: number }>;
   positionsWithInterviews: number;
   completedReviews: number;

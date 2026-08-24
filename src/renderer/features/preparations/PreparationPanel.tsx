@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  AiTask,
+  ConnectedPreparationOutput,
   PreparationAssetsSnapshot,
   PreparationHistoricalOutput,
   PreparationMaterial,
@@ -75,7 +77,138 @@ const STARS_STAGE_LABELS: Record<StarsStage, string> = {
 function isCurrentOutput(
   output: PreparationHistoricalOutput,
 ): output is PreparationOutput {
-  return 'competencyMap' in output;
+  return 'roleSummary' in output && 'competencyMap' in output;
+}
+
+function isConnectedOutput(
+  output: PreparationHistoricalOutput,
+): output is ConnectedPreparationOutput {
+  return 'companyAndProductResearch' in output;
+}
+
+function ConnectedOutputSections({ output }: { output: ConnectedPreparationOutput }) {
+  const research = output.companyAndProductResearch;
+  return (
+    <>
+      <OutputSection title="公司与产品调研">
+        <dl className="preparation-pairs">
+          <div><dt>业务与用户</dt><dd className="user-text">{research.businessAndUsers}</dd></div>
+          <div><dt>商业模式</dt><dd className="user-text">{research.businessModel}</dd></div>
+          <div><dt>近期方向</dt><dd className="user-text">{research.recentDirection}</dd></div>
+          <div><dt>岗位负责产品判断</dt><dd className="user-text">{research.roleProductHypothesis}</dd></div>
+        </dl>
+        <h5>核心产品</h5>
+        <ul>{research.coreProducts.map((item, index) => <li className="user-text" key={`${item}-${index}`}>{item}</li>)}</ul>
+        <h5>待核实信息</h5>
+        {research.verificationNotes.length > 0
+          ? <ul>{research.verificationNotes.map((item, index) => <li className="user-text" key={`${item}-${index}`}>{item}</li>)}</ul>
+          : <p>暂无</p>}
+      </OutputSection>
+      <OutputSection title="Map Competencies">
+        <table className="preparation-competency-table">
+          <caption className="sr-only">岗位核心能力 Top 5</caption>
+          <thead><tr><th>排名</th><th>能力</th><th>JD 证据</th><th>岗位应用</th><th>建议准备的证明</th></tr></thead>
+          <tbody>{output.competencyMap.map((item) => (
+            <tr key={item.rank}>
+              <th scope="row">{item.rank}</th>
+              <td className="user-text">{item.name}</td>
+              <td className="user-text">{item.jdEvidence}</td>
+              <td className="user-text">{item.roleUsage}</td>
+              <td className="user-text">{item.proofSuggestion}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </OutputSection>
+      <OutputSection title="Company Map">
+        <p className="preparation-stage"><strong>{output.companyMap.stage} · {STARS_STAGE_LABELS[output.companyMap.stage]}</strong></p>
+        <p className="user-text">{output.companyMap.summary}</p>
+        <div className="preparation-framework-columns">
+          <div><h5>优先事项</h5><ul>{output.companyMap.priorities.map((item, index) => <li className="user-text" key={`${item}-${index}`}>{item}</li>)}</ul></div>
+          <div><h5>文化信号</h5><ul>{output.companyMap.culture.map((item, index) => <li className="user-text" key={`${item}-${index}`}>{item}</li>)}</ul></div>
+        </div>
+      </OutputSection>
+      <OutputSection title="Dream Candidate Avatar">
+        <ol className="preparation-timeline" aria-label="Typical Day">
+          {output.dreamCandidateAvatar.typicalDay.map((entry, index) => (
+            <li key={`${entry.time}-${index}`}><span>{entry.time}</span><div><strong>{entry.activity}</strong><p>{entry.purpose}</p></div></li>
+          ))}
+        </ol>
+        <dl className="preparation-pairs">
+          <div><dt>Superpower</dt><dd>{output.dreamCandidateAvatar.superpower}</dd></div>
+          <div><dt>Success Story</dt><dd>{output.dreamCandidateAvatar.successStory}</dd></div>
+          <div><dt>Quote</dt><dd>{output.dreamCandidateAvatar.quote}</dd></div>
+          <div><dt>Pain Profile</dt><dd>{output.dreamCandidateAvatar.painProfile}</dd></div>
+        </dl>
+      </OutputSection>
+      <OutputSection title="Action Guide">
+        <dl className="preparation-pairs">
+          <div><dt>自我介绍 Tagline</dt><dd>{output.actionGuide.selfIntroTagline}</dd></div>
+          <div><dt>文化匹配表达</dt><dd>{output.actionGuide.cultureFitPhrase}</dd></div>
+        </dl>
+        <h5>面试收尾提问</h5>
+        <ol>{output.actionGuide.questions.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ol>
+        <h5>面试前核实清单</h5>
+        <ul>{output.actionGuide.verificationChecklist.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>
+      </OutputSection>
+    </>
+  );
+}
+
+function latestTask(tasks: AiTask[] | null): AiTask | null {
+  if (!tasks || tasks.length === 0) return null;
+  return [...tasks].sort(
+    (left, right) => sortableTime(right.updatedAt) - sortableTime(left.updatedAt),
+  )[0] ?? null;
+}
+
+function TaskStatus({
+  task,
+  onRetry,
+}: {
+  task: AiTask;
+  onRetry: () => void;
+}) {
+  if (task.status === 'queued' || task.status === 'running') {
+    return (
+      <div className="preparation-task preparation-task--running" role="status">
+        <span aria-hidden="true" className="preparation-task__mark" />
+        正在后台生成准备材料，你可以继续浏览或编辑其他内容。
+      </div>
+    );
+  }
+
+  if (task.status === 'interrupted') {
+    return (
+      <div className="preparation-task preparation-task--interrupted" role="status">
+        <strong>上次生成已中断</strong>
+        <span>应用关闭前未能完成，可重新生成。</span>
+        <button className="button button--quiet" onClick={onRetry} type="button">重新生成</button>
+      </div>
+    );
+  }
+
+  if (task.status === 'failed') {
+    const diagnostic = task.safeError;
+    return (
+      <div className="preparation-task preparation-task--failed" role="alert">
+        <strong>准备材料生成失败</strong>
+        <span>请查看服务诊断后重新生成。</span>
+        {diagnostic ? (
+          <details>
+            <summary>查看服务诊断</summary>
+            <dl>
+              <div><dt>错误信息</dt><dd>{diagnostic.message}</dd></div>
+              {diagnostic.statusCode !== null ? <div><dt>HTTP 状态码</dt><dd>{diagnostic.statusCode}</dd></div> : null}
+              {diagnostic.requestId ? <div><dt>Request ID</dt><dd>{diagnostic.requestId}</dd></div> : null}
+            </dl>
+          </details>
+        ) : null}
+        <button className="button button--quiet" onClick={onRetry} type="button">重新生成</button>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function PreparationVersion({ item }: { item: PreparationMaterial }) {
@@ -111,6 +244,8 @@ function PreparationVersion({ item }: { item: PreparationMaterial }) {
         </p>
       ) : (
         <>
+          {isConnectedOutput(output) ? <ConnectedOutputSections output={output} /> : (
+            <>
           <OutputSection title="岗位摘要">
             <h3 className="user-text">{output.roleSummary}</h3>
           </OutputSection>
@@ -269,12 +404,13 @@ function PreparationVersion({ item }: { item: PreparationMaterial }) {
               旧版结构 · 此历史版本仅包含基础六部分
             </p>
           )}
+            </>
+          )}
           <section className="preparation-input-snapshot">
             <h4>输入快照</h4>
             <p>
               原始 JD {item.rawJdSnapshot.length} 字符 ·
-              {assets.projects.length} 个项目 ·
-              {assets.questions.length} 个问题 · Prompt {item.promptSnapshot.length} 字符
+              公司与岗位调研 · Prompt {item.promptSnapshot.length} 字符
             </p>
           </section>
         </>
@@ -292,6 +428,24 @@ export function PreparationPanel({
     () => window.jobSearch.preparations.list(positionId),
     [positionId],
   );
+  const taskResource = useAsyncResource(
+    () => window.jobSearch.tasks.listByPosition(positionId),
+    [positionId],
+  );
+  const completedTaskIds = useRef(new Set<string>());
+  const task = latestTask(taskResource.data);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void taskResource.reload(), 2500);
+    return () => window.clearInterval(timer);
+  }, [positionId, taskResource.reload]);
+
+  useEffect(() => {
+    if (!task || task.status !== 'succeeded' || completedTaskIds.current.has(task.id)) return;
+    completedTaskIds.current.add(task.id);
+    void resource.reload();
+    toast.success('新的准备材料版本已保存');
+  }, [resource.reload, task, toast]);
   const history = useMemo(
     () => [...(resource.data ?? [])].sort(
       (left, right) => sortableTime(right.generatedAt) - sortableTime(left.generatedAt)
@@ -309,13 +463,12 @@ export function PreparationPanel({
     </button>
   );
 
-  const generated = async (saved: PreparationMaterial) => {
+  const started = (startedTask: AiTask) => {
     setGenerateOpen(false);
-    resource.setData((current) => [
-      saved,
-      ...(current ?? []).filter((item) => item.id !== saved.id),
+    taskResource.setData((current) => [
+      startedTask,
+      ...(current ?? []).filter((item) => item.id !== startedTask.id),
     ]);
-    toast.success('新的准备材料版本已保存');
   };
 
   return (
@@ -324,7 +477,7 @@ export function PreparationPanel({
         <div>
           <p className="section-label">PREPARATION ARCHIVE / 准备档案</p>
           <h3>每次生成都是独立的只读版本</h3>
-          <p>旧版本不会跟随 JD、项目或问题库的后续修改而变化。</p>
+          <p>旧版本不会跟随 JD 或岗位准备 Prompt 的后续修改而变化。</p>
         </div>
         {history.length > 0 ? generateButton : null}
       </header>
@@ -354,21 +507,32 @@ export function PreparationPanel({
       {!resource.loading && !resource.error && history.length === 0 ? (
         <EmptyState
           action={generateButton}
-          body="主动选择这次要复用的项目和问题，确认发送摘要后再调用外部 AI。"
+          body="基于岗位 JD、公司与产品联网调研生成准备材料，确认发送范围后再调用外部 AI。"
           icon="备"
           title="还没有准备材料"
         />
       ) : null}
       {!resource.loading && !resource.error && history.length > 0 ? (
         <div className="preparation-history">
-          {history.map((item) => <PreparationVersion item={item} key={item.id} />)}
+          <PreparationVersion item={history[0]} key={history[0].id} />
+          {history.length > 1 ? (
+            <details className="position-history">
+              <summary>历史准备材料（{history.length - 1}）</summary>
+              <div className="position-history__list">
+                {history.slice(1).map((item) => (
+                  <PreparationVersion item={item} key={item.id} />
+                ))}
+              </div>
+            </details>
+          ) : null}
         </div>
       ) : null}
+      {task ? <TaskStatus onRetry={() => setGenerateOpen(true)} task={task} /> : null}
 
       {generateOpen ? (
         <GeneratePreparationModal
           onClose={() => setGenerateOpen(false)}
-          onGenerated={generated}
+          onStarted={started}
           open
           positionId={positionId}
         />

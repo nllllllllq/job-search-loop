@@ -1,8 +1,14 @@
 import { vi, type Mock } from 'vitest';
 import type {
+  AiTask,
   Capability,
-  ChangeProposal,
+  CompanyPositionGroup,
+  ChangeProposalListItem,
   DashboardSummary,
+  EmailConnectionResult,
+  EmailSettingsPublic,
+  EmailSyncEvent,
+  EmailSyncResult,
   Insight,
   Interview,
   Position,
@@ -29,18 +35,34 @@ export interface JobSearchApiFake {
   };
   readonly positions: {
     list: ApiMock<JobSearchApi['positions']['list']>;
+    listGrouped: ApiMock<JobSearchApi['positions']['listGrouped']>;
     get: ApiMock<JobSearchApi['positions']['get']>;
     create: ApiMock<JobSearchApi['positions']['create']>;
     update: ApiMock<JobSearchApi['positions']['update']>;
     remove: ApiMock<JobSearchApi['positions']['remove']>;
     saveStage: ApiMock<JobSearchApi['positions']['saveStage']>;
     reorderStages: ApiMock<JobSearchApi['positions']['reorderStages']>;
+    removeStage: ApiMock<JobSearchApi['positions']['removeStage']>;
+  };
+  email?: {
+    readonly settings: {
+      get: ApiMock<NonNullable<JobSearchApi['email']>['settings']['get']>;
+      save: ApiMock<NonNullable<JobSearchApi['email']>['settings']['save']>;
+    };
+    testConnection: ApiMock<NonNullable<JobSearchApi['email']>['testConnection']>;
+    syncNow: ApiMock<NonNullable<JobSearchApi['email']>['syncNow']>;
+    listRecent: ApiMock<NonNullable<JobSearchApi['email']>['listRecent']>;
   };
   readonly preparations: {
     list: ApiMock<JobSearchApi['preparations']['list']>;
     get: ApiMock<JobSearchApi['preparations']['get']>;
     preview: ApiMock<JobSearchApi['preparations']['preview']>;
     generate: ApiMock<JobSearchApi['preparations']['generate']>;
+    start: ApiMock<JobSearchApi['preparations']['start']>;
+  };
+  readonly tasks: {
+    listByPosition: ApiMock<JobSearchApi['tasks']['listByPosition']>;
+    get: ApiMock<JobSearchApi['tasks']['get']>;
   };
   readonly assets: {
     readonly projects: {
@@ -57,6 +79,7 @@ export interface JobSearchApiFake {
       list: ApiMock<JobSearchApi['assets']['capabilities']['list']>;
       get: ApiMock<JobSearchApi['assets']['capabilities']['get']>;
       save: ApiMock<JobSearchApi['assets']['capabilities']['save']>;
+      merge: ApiMock<JobSearchApi['assets']['capabilities']['merge']>;
     };
     readonly insights: {
       list: ApiMock<JobSearchApi['assets']['insights']['list']>;
@@ -88,12 +111,24 @@ export interface JobSearchApiFake {
       ignore: ApiMock<JobSearchApi['reviews']['proposals']['ignore']>;
     };
   };
+  readonly imports: {
+    previewPositionFromText: ApiMock<JobSearchApi['imports']['previewPositionFromText']>;
+    previewPositionFromImages: ApiMock<JobSearchApi['imports']['previewPositionFromImages']>;
+    previewProjectsFromDocument: ApiMock<JobSearchApi['imports']['previewProjectsFromDocument']>;
+    updateProjectSegments: ApiMock<JobSearchApi['imports']['updateProjectSegments']>;
+    cancel: ApiMock<JobSearchApi['imports']['cancel']>;
+  };
   readonly system: {
     getDashboardSummary: ApiMock<JobSearchApi['system']['getDashboardSummary']>;
     previewCapabilityAnalysis: ApiMock<JobSearchApi['system']['previewCapabilityAnalysis']>;
     confirmCapabilityAnalysis: ApiMock<JobSearchApi['system']['confirmCapabilityAnalysis']>;
     exportBackup: ApiMock<JobSearchApi['system']['exportBackup']>;
     restoreBackup: ApiMock<JobSearchApi['system']['restoreBackup']>;
+    getBackupProgress: ApiMock<JobSearchApi['system']['getBackupProgress']>;
+    cancelBackup: ApiMock<JobSearchApi['system']['cancelBackup']>;
+    listRollbacks: ApiMock<JobSearchApi['system']['listRollbacks']>;
+    checkRollback: ApiMock<JobSearchApi['system']['checkRollback']>;
+    deleteRollback: ApiMock<JobSearchApi['system']['deleteRollback']>;
   };
 }
 
@@ -101,6 +136,7 @@ const emptyPosition: Position = {
   id: '11111111-1111-4111-8111-111111111111',
   company: '示例公司',
   title: '示例岗位',
+  location: '',
   interest: 3,
   rawJd: '示例 JD',
   currentStage: 'interested',
@@ -117,6 +153,7 @@ const emptyDetail: PositionDetail = {
 
 const dashboardSummary: DashboardSummary = {
   totalPositions: 0,
+  companyCount: 0,
   stageDistribution: [],
   positionsWithInterviews: 0,
   completedReviews: 0,
@@ -126,7 +163,19 @@ const dashboardSummary: DashboardSummary = {
   recentPositions: [],
 };
 
+const emptyAiTask: AiTask = {
+  id: '33333333-3333-4333-8333-333333333333',
+  kind: 'preparation',
+  positionId: emptyPosition.id,
+  status: 'queued',
+  safeError: null,
+  createdAt: '2026-08-01T00:00:00.000Z',
+  startedAt: null,
+  updatedAt: '2026-08-01T00:00:00.000Z',
+};
+
 export function createJobSearchFake(): JobSearchApiFake {
+  const list = vi.fn<JobSearchApi['positions']['list']>().mockResolvedValue([] as PositionListItem[]);
   return {
     version: '0.1.0',
     ai: {
@@ -145,7 +194,16 @@ export function createJobSearchFake(): JobSearchApiFake {
       ),
     },
     positions: {
-      list: vi.fn<JobSearchApi['positions']['list']>().mockResolvedValue([] as PositionListItem[]),
+      list,
+      listGrouped: vi.fn<JobSearchApi['positions']['listGrouped']>().mockImplementation(async (filter) => {
+        const groups = new Map<string, CompanyPositionGroup>();
+        for (const member of await list(filter)) {
+          const group = groups.get(member.company);
+          if (group) group.members.push(member);
+          else groups.set(member.company, { canonicalName: member.company, members: [member] });
+        }
+        return [...groups.values()];
+      }),
       get: vi.fn<JobSearchApi['positions']['get']>().mockResolvedValue(emptyDetail),
       create: vi.fn<JobSearchApi['positions']['create']>().mockResolvedValue(emptyPosition),
       update: vi.fn<JobSearchApi['positions']['update']>().mockResolvedValue(emptyPosition),
@@ -164,12 +222,18 @@ export function createJobSearchFake(): JobSearchApiFake {
         updatedAt: emptyPosition.updatedAt,
       } as ProcessStage),
       reorderStages: vi.fn<JobSearchApi['positions']['reorderStages']>().mockResolvedValue([]),
+      removeStage: vi.fn<JobSearchApi['positions']['removeStage']>().mockResolvedValue([]),
     },
     preparations: {
       list: vi.fn<JobSearchApi['preparations']['list']>().mockResolvedValue([] as PreparationMaterial[]),
       get: vi.fn<JobSearchApi['preparations']['get']>().mockRejectedValue(new Error('未设置准备材料')),
       preview: vi.fn<JobSearchApi['preparations']['preview']>().mockRejectedValue(new Error('未设置准备预览')),
       generate: vi.fn<JobSearchApi['preparations']['generate']>().mockRejectedValue(new Error('未设置准备材料')),
+      start: vi.fn<JobSearchApi['preparations']['start']>().mockResolvedValue(emptyAiTask),
+    },
+    tasks: {
+      listByPosition: vi.fn<JobSearchApi['tasks']['listByPosition']>().mockResolvedValue([]),
+      get: vi.fn<JobSearchApi['tasks']['get']>().mockResolvedValue(emptyAiTask),
     },
     assets: {
       projects: {
@@ -186,6 +250,7 @@ export function createJobSearchFake(): JobSearchApiFake {
         list: vi.fn<JobSearchApi['assets']['capabilities']['list']>().mockResolvedValue([] as Capability[]),
         get: vi.fn<JobSearchApi['assets']['capabilities']['get']>().mockRejectedValue(new Error('未设置能力')),
         save: vi.fn<JobSearchApi['assets']['capabilities']['save']>().mockRejectedValue(new Error('未设置能力')),
+        merge: vi.fn<JobSearchApi['assets']['capabilities']['merge']>().mockRejectedValue(new Error('未设置能力合并')),
       },
       insights: {
         list: vi.fn<JobSearchApi['assets']['insights']['list']>().mockResolvedValue([] as Insight[]),
@@ -212,10 +277,25 @@ export function createJobSearchFake(): JobSearchApiFake {
         cancelPreview: vi.fn<JobSearchApi['reviews']['review']['cancelPreview']>().mockResolvedValue(undefined),
       },
       proposals: {
-        list: vi.fn<JobSearchApi['reviews']['proposals']['list']>().mockResolvedValue([] as ChangeProposal[]),
+        list: vi.fn<JobSearchApi['reviews']['proposals']['list']>().mockResolvedValue({
+          items: [] as ChangeProposalListItem[],
+          corruptItems: [],
+          corruptCount: 0,
+        }),
         accept: vi.fn<JobSearchApi['reviews']['proposals']['accept']>().mockRejectedValue(new Error('未设置建议')),
         ignore: vi.fn<JobSearchApi['reviews']['proposals']['ignore']>().mockRejectedValue(new Error('未设置建议')),
       },
+    },
+    imports: {
+      previewPositionFromText: vi.fn<JobSearchApi['imports']['previewPositionFromText']>()
+        .mockRejectedValue(new Error('未配置文本导入')),
+      previewPositionFromImages: vi.fn<JobSearchApi['imports']['previewPositionFromImages']>()
+        .mockRejectedValue(new Error('未配置截图导入')),
+      previewProjectsFromDocument: vi.fn<JobSearchApi['imports']['previewProjectsFromDocument']>()
+        .mockRejectedValue(new Error('未配置文档导入')),
+      updateProjectSegments: vi.fn<JobSearchApi['imports']['updateProjectSegments']>()
+        .mockRejectedValue(new Error('未配置分段调整')),
+      cancel: vi.fn<JobSearchApi['imports']['cancel']>().mockResolvedValue(undefined),
     },
     system: {
       getDashboardSummary: vi.fn<JobSearchApi['system']['getDashboardSummary']>().mockResolvedValue(dashboardSummary),
@@ -227,7 +307,59 @@ export function createJobSearchFake(): JobSearchApiFake {
         .mockResolvedValue({ status: 'cancelled' }),
       restoreBackup: vi.fn<JobSearchApi['system']['restoreBackup']>()
         .mockResolvedValue({ status: 'cancelled' }),
+      getBackupProgress: vi.fn<JobSearchApi['system']['getBackupProgress']>()
+        .mockResolvedValue({
+          operation: 'idle',
+          phase: 'idle',
+          percent: 0,
+          cancellable: false,
+          active: false,
+        }),
+      cancelBackup: vi.fn<JobSearchApi['system']['cancelBackup']>()
+        .mockResolvedValue({ status: 'not-cancellable' }),
+      listRollbacks: vi.fn<JobSearchApi['system']['listRollbacks']>()
+        .mockResolvedValue([]),
+      checkRollback: vi.fn<JobSearchApi['system']['checkRollback']>()
+        .mockRejectedValue(new Error('未设置回滚副本')),
+      deleteRollback: vi.fn<JobSearchApi['system']['deleteRollback']>()
+        .mockResolvedValue(undefined),
     },
+  };
+}
+
+export function createEmailApiFake(): NonNullable<JobSearchApiFake['email']> {
+  const settings: EmailSettingsPublic = {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    email: 'user@example.com',
+    username: 'user@example.com',
+    enabled: false,
+    intervalMinutes: 15,
+    hasPassword: true,
+    lastUid: 0,
+    lastSyncAt: null,
+    lastError: null,
+  };
+  const syncResult: EmailSyncResult = {
+    processed: 0,
+    applied: 0,
+    pending: 0,
+    skipped: 0,
+    lastUid: settings.lastUid,
+    lastSyncAt: settings.lastSyncAt,
+    lastError: settings.lastError,
+  };
+  const connection: EmailConnectionResult = { ok: true, message: 'IMAP connection ok' };
+  const events: EmailSyncEvent[] = [];
+  return {
+    settings: {
+      get: vi.fn<NonNullable<JobSearchApi['email']>['settings']['get']>().mockResolvedValue(settings),
+      save: vi.fn<NonNullable<JobSearchApi['email']>['settings']['save']>().mockResolvedValue(settings),
+    },
+    testConnection: vi.fn<NonNullable<JobSearchApi['email']>['testConnection']>().mockResolvedValue(connection),
+    syncNow: vi.fn<NonNullable<JobSearchApi['email']>['syncNow']>().mockResolvedValue(syncResult),
+    listRecent: vi.fn<NonNullable<JobSearchApi['email']>['listRecent']>().mockResolvedValue(events),
   };
 }
 

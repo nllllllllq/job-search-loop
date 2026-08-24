@@ -7,11 +7,29 @@ export interface DashboardRepository {
   getSummary(): DashboardSummary;
 }
 
-export function createDashboardRepository(db: DatabaseSync): DashboardRepository {
+interface DashboardRepositoryOptions {
+  today?: () => string;
+}
+
+function localIsoDate(): string {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
+export function createDashboardRepository(
+  db: DatabaseSync,
+  options: DashboardRepositoryOptions = {},
+): DashboardRepository {
+  const today = options.today ?? localIsoDate;
   return {
     getSummary() {
       const totalPositions = integer(
         row(db.prepare('SELECT COUNT(*) AS count FROM positions').get(), 'position count').count,
+        'count',
+      );
+      const companyCount = integer(
+        row(db.prepare('SELECT COUNT(DISTINCT company) AS count FROM positions').get(), 'company count').count,
         'count',
       );
       const stageDistribution = db.prepare(`
@@ -39,19 +57,15 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
       const processEvents = db.prepare(`
         SELECT s.position_id, p.company, p.title, s.name, s.canonical_stage,
                s.id AS stage_id, s.order_index, s.actual_date AS event_date,
-               'actual' AS date_type, 0 AS date_type_order
+               'actual' AS date_type
         FROM process_stages s
         JOIN positions p ON p.id = s.position_id
-        WHERE s.actual_date IS NOT NULL
-        UNION ALL
-        SELECT s.position_id, p.company, p.title, s.name, s.canonical_stage,
-               s.id AS stage_id, s.order_index, s.expected_date AS event_date,
-               'expected' AS date_type, 1 AS date_type_order
-        FROM process_stages s
-        JOIN positions p ON p.id = s.position_id
-        WHERE s.expected_date IS NOT NULL
-        ORDER BY event_date, date_type_order, order_index, stage_id
-      `).all().map((value): DashboardSummary['processEvents'][number] => {
+        WHERE s.canonical_stage IN ('assessment', 'interview')
+          AND s.actual_date IS NOT NULL
+          AND s.actual_date >= ?
+        ORDER BY event_date ASC, order_index, stage_id
+        LIMIT 10
+      `).all(today()).map((value): DashboardSummary['processEvents'][number] => {
         const data = row(value, 'process event');
         const dateType = text(data.date_type, 'date_type');
         if (dateType !== 'actual' && dateType !== 'expected') {
@@ -71,7 +85,9 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
       const capabilityFrequency = db.prepare(`
         SELECT c.id, c.name, c.jd_frequency,
           (SELECT COUNT(*) FROM capability_evidence e WHERE e.capability_id = c.id) AS evidence_count
-        FROM capabilities c ORDER BY c.jd_frequency DESC, c.name
+        FROM capabilities c
+        WHERE c.merged_into_id IS NULL
+        ORDER BY c.jd_frequency DESC, c.name
       `).all().map((value) => {
         const data = row(value, 'capability frequency');
         return {
@@ -82,7 +98,7 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
         };
       });
       const recentPositions = db.prepare(`
-        SELECT id, company, title, interest, current_stage, final_result, updated_at
+        SELECT id, company, title, location, interest, current_stage, final_result, updated_at
         FROM positions
         ORDER BY updated_at DESC, created_at DESC, id DESC
         LIMIT 8
@@ -96,6 +112,7 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
           id: text(data.id, 'id'),
           company: text(data.company, 'company'),
           title: text(data.title, 'title'),
+          location: text(data.location, 'location'),
           interest: interest as 1 | 2 | 3 | 4 | 5,
           currentStage,
           finalResult: data.final_result === null
@@ -106,6 +123,7 @@ export function createDashboardRepository(db: DatabaseSync): DashboardRepository
       });
       return {
         totalPositions,
+        companyCount,
         stageDistribution,
         positionsWithInterviews,
         completedReviews,

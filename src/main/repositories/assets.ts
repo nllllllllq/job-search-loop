@@ -4,6 +4,7 @@ import type {
   AssetVersion,
   Capability,
   CapabilityInput,
+  CapabilityMergeResult,
   Insight,
   InsightInput,
   Project,
@@ -14,6 +15,7 @@ import type {
 } from '../../shared/domain';
 import {
   capabilitySaveSchema,
+  capabilityMergeSchema,
   insightSaveSchema,
   projectSaveSchema,
   proposalTargetSchema,
@@ -46,6 +48,7 @@ function decodeProject(value: unknown): Project {
   return {
     id: text(data.id, 'id'),
     name: text(data.name, 'name'),
+    projectTime: text(data.project_time, 'project_time'),
     background: text(data.background, 'background'),
     goal: text(data.goal, 'goal'),
     role: text(data.role, 'role'),
@@ -54,6 +57,7 @@ function decodeProject(value: unknown): Project {
     evidence: text(data.evidence, 'evidence'),
     reflections: text(data.reflections, 'reflections'),
     storytellingVersions: text(data.storytelling_versions, 'storytelling_versions'),
+    unclassifiedNotes: text(data.unclassified_notes, 'unclassified_notes'),
     createdAt: text(data.created_at, 'created_at'),
     updatedAt: text(data.updated_at, 'updated_at'),
   };
@@ -136,6 +140,7 @@ function insertVersion(
 
 function sameProjectNarrative(previous: Project, input: ProjectInput): boolean {
   return previous.name === input.name
+    && previous.projectTime === (input.projectTime ?? '')
     && previous.background === input.background
     && previous.goal === input.goal
     && previous.role === input.role
@@ -143,7 +148,8 @@ function sameProjectNarrative(previous: Project, input: ProjectInput): boolean {
     && previous.outcome === input.outcome
     && previous.evidence === input.evidence
     && previous.reflections === input.reflections
-    && previous.storytellingVersions === input.storytellingVersions;
+    && previous.storytellingVersions === input.storytellingVersions
+    && previous.unclassifiedNotes === (input.unclassifiedNotes ?? '');
 }
 
 function requireExistingIds(
@@ -174,6 +180,19 @@ function validateQuestionReferences(
   requireExistingIds(db, 'capabilities', capabilityIds);
 }
 
+function mergeParagraphs(primary: string, secondary: string): string {
+  const paragraphs = [primary, secondary]
+    .flatMap((value) => value.split(/\n\s*\n/))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return [...new Set(paragraphs)].join('\n\n');
+}
+
+function replaceCapabilityId(ids: string[], sourceId: string, targetId: string): string[] {
+  const rewritten = ids.map((id) => id === sourceId ? targetId : id);
+  return rewritten.filter((id, index) => rewritten.indexOf(id) === index);
+}
+
 export interface AssetsRepository {
   listProjects(): Project[];
   getProject(id: string): Project;
@@ -184,6 +203,7 @@ export interface AssetsRepository {
   listCapabilities(): Capability[];
   getCapability(id: string): Capability;
   saveCapability(input: SaveInput<CapabilityInput>): Capability;
+  mergeCapabilities(sourceId: string, targetId: string): CapabilityMergeResult;
   listInsights(): Insight[];
   getInsight(id: string): Insight;
   saveInsight(input: SaveInput<InsightInput>): Insight;
@@ -228,11 +248,12 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
           if (sameProjectNarrative(previous, parsed)) return previous;
           insertVersion(db, 'project', id, previous, now);
           db.prepare(`
-            UPDATE projects SET name = ?, background = ?, goal = ?, role = ?,
+            UPDATE projects SET name = ?, project_time = ?, background = ?, goal = ?, role = ?,
               key_decisions = ?, outcome = ?, evidence = ?, reflections = ?,
-              storytelling_versions = ?, updated_at = ? WHERE id = ?
+              storytelling_versions = ?, unclassified_notes = ?, updated_at = ? WHERE id = ?
           `).run(
             parsed.name,
+            parsed.projectTime,
             parsed.background,
             parsed.goal,
             parsed.role,
@@ -241,18 +262,20 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
             parsed.evidence,
             parsed.reflections,
             parsed.storytellingVersions,
+            parsed.unclassifiedNotes,
             now,
             id,
           );
         } else {
           db.prepare(`
             INSERT INTO projects (
-              id, name, background, goal, role, key_decisions, outcome,
-              evidence, reflections, storytelling_versions, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              id, name, project_time, background, goal, role, key_decisions, outcome,
+              evidence, reflections, storytelling_versions, unclassified_notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             id,
             parsed.name,
+            parsed.projectTime,
             parsed.background,
             parsed.goal,
             parsed.role,
@@ -261,6 +284,7 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
             parsed.evidence,
             parsed.reflections,
             parsed.storytellingVersions,
+            parsed.unclassifiedNotes,
             now,
             now,
           );
@@ -328,7 +352,11 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
     },
 
     listCapabilities() {
-      return db.prepare('SELECT * FROM capabilities ORDER BY updated_at DESC, created_at DESC')
+      return db.prepare(`
+        SELECT * FROM capabilities
+        WHERE merged_into_id IS NULL
+        ORDER BY updated_at DESC, created_at DESC
+      `)
         .all().map(decodeCapability);
     },
     getCapability,
@@ -369,6 +397,75 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
           );
         }
         return getCapability(id);
+      });
+    },
+    mergeCapabilities(sourceId, targetId) {
+      const parsed = capabilityMergeSchema.parse({ sourceId, targetId });
+      return transaction(db, () => {
+        if (parsed.sourceId === parsed.targetId) {
+          throw new RepositoryError(
+            'VALIDATION_ERROR',
+            'A capability cannot be merged into itself',
+          );
+        }
+        const source = getCapability(parsed.sourceId);
+        const target = getCapability(parsed.targetId);
+        if (source.mergedIntoId !== null || target.mergedIntoId !== null) {
+          throw new RepositoryError(
+            'CONFLICT',
+            'Capability merges require two active capabilities',
+          );
+        }
+
+        const now = new Date().toISOString();
+        insertVersion(db, 'capability', source.id, source, now);
+        insertVersion(db, 'capability', target.id, target, now);
+
+        const questionRows = db.prepare(
+          'SELECT id, capability_ids_json FROM questions ORDER BY created_at, id',
+        ).all();
+        for (const value of questionRows) {
+          const data = row(value, 'question capability references');
+          const ids = stringArray(data.capability_ids_json, 'capability_ids_json');
+          if (!ids.includes(source.id)) continue;
+          db.prepare(`
+            UPDATE questions SET capability_ids_json = ?, updated_at = ? WHERE id = ?
+          `).run(
+            JSON.stringify(replaceCapabilityId(ids, source.id, target.id)),
+            now,
+            text(data.id, 'id'),
+          );
+        }
+
+        db.prepare(`
+          UPDATE insights SET capability_id = ?, updated_at = ? WHERE capability_id = ?
+        `).run(target.id, now, source.id);
+        db.prepare(`
+          UPDATE capability_evidence SET capability_id = ? WHERE capability_id = ?
+        `).run(target.id, source.id);
+        db.prepare(`
+          UPDATE capabilities SET merged_into_id = ?, updated_at = ?
+          WHERE merged_into_id = ?
+        `).run(target.id, now, source.id);
+        db.prepare(`
+          UPDATE capabilities
+          SET jd_frequency = ?, evidence = ?, gaps = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+          target.jdFrequency + source.jdFrequency,
+          mergeParagraphs(target.evidence, source.evidence),
+          mergeParagraphs(target.gaps, source.gaps),
+          now,
+          target.id,
+        );
+        db.prepare(`
+          UPDATE capabilities SET merged_into_id = ?, updated_at = ? WHERE id = ?
+        `).run(target.id, now, source.id);
+
+        return {
+          source: getCapability(source.id),
+          target: getCapability(target.id),
+        };
       });
     },
 
@@ -436,4 +533,6 @@ export const assetRepositoryInternals = {
   decodeInsight,
   insertVersion,
   validateQuestionReferences,
+  mergeParagraphs,
+  replaceCapabilityId,
 };

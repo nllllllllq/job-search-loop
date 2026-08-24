@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { createDashboardRepository } from '../../src/main/repositories/dashboard';
+import { createAssetsRepository } from '../../src/main/repositories/assets';
 import { createInterviewsRepository } from '../../src/main/repositories/interviews';
 import { createPositionsRepository } from '../../src/main/repositories/positions';
 import { createTestDatabase } from '../helpers/database';
@@ -19,7 +20,50 @@ function createPosition(
 }
 
 describe('dashboard repository', () => {
-  it('sorts actual and expected process events globally by date', () => {
+  it('summarizes only active capabilities after a merge without losing frequency', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const source = assets.saveCapability({
+        name: '来源能力',
+        jdFrequency: 3,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      const target = assets.saveCapability({
+        name: '目标能力',
+        jdFrequency: 5,
+        evidence: '',
+        gaps: '',
+        mergedIntoId: null,
+      });
+      db.prepare(`
+        INSERT INTO capability_evidence (
+          id, capability_id, position_id, interview_id, evidence, created_at
+        ) VALUES (?, ?, NULL, NULL, ?, ?)
+      `).run(
+        '99999999-9999-4999-8999-999999999999',
+        source.id,
+        '来源证据',
+        '2026-07-28T00:00:00.000Z',
+      );
+
+      assets.mergeCapabilities(source.id, target.id);
+
+      expect(createDashboardRepository(db).getSummary().capabilityFrequency).toEqual([{
+        capabilityId: target.id,
+        name: target.name,
+        jdFrequency: 8,
+        evidenceCount: 1,
+      }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('returns only upcoming assessment and interview event dates in ascending order', () => {
     const db = createTestDatabase();
 
     try {
@@ -27,20 +71,27 @@ describe('dashboard repository', () => {
       const first = createPosition(positions, '远山科技');
       const second = createPosition(positions, '青川科技');
       db.prepare(`
+        UPDATE process_stages SET actual_date = NULL
+        WHERE position_id = ? AND canonical_stage = 'applied'
+      `).run(second.id);
+      db.prepare(`
         UPDATE process_stages SET actual_date = ?, expected_date = ?
         WHERE position_id = ? AND canonical_stage = 'applied'
-      `).run('2026-08-01', '2026-08-03', first.id);
+      `).run('2026-08-10', '2026-08-11', first.id);
+      db.prepare(`
+        UPDATE process_stages SET actual_date = ?, expected_date = ?
+        WHERE position_id = ? AND canonical_stage = 'assessment'
+      `).run('2026-08-09', '2026-08-02', second.id);
       db.prepare(`
         UPDATE process_stages SET actual_date = ?
-        WHERE position_id = ? AND canonical_stage = 'interested'
-      `).run('2026-08-02', second.id);
+        WHERE position_id = ? AND canonical_stage = 'interview'
+      `).run('2026-08-07', first.id);
 
-      const events = createDashboardRepository(db).getSummary().processEvents;
+      const events = createDashboardRepository(db, { today: () => '2026-08-08' })
+        .getSummary().processEvents;
 
       expect(events.map(({ date, dateType }) => ({ date, dateType }))).toEqual([
-        { date: '2026-08-01', dateType: 'actual' },
-        { date: '2026-08-02', dateType: 'actual' },
-        { date: '2026-08-03', dateType: 'expected' },
+        { date: '2026-08-09', dateType: 'actual' },
       ]);
     } finally {
       db.close();

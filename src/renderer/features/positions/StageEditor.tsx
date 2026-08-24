@@ -1,16 +1,19 @@
-import { type FormEvent, useEffect, useState } from 'react';
-import type { CanonicalStage, ProcessStage, ProcessStageInput } from '../../../shared/domain';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
+import type { CanonicalStage, Interview, ProcessStage, ProcessStageInput } from '../../../shared/domain';
 import { processStageInputSchema } from '../../../shared/schemas';
+import { stageDatePolicy } from '../../../shared/stage-policy';
 import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
+import { InterviewPanel } from '../interviews/InterviewPanel';
 
 interface StageEditorProps {
   initialValue?: ProcessStage;
-  nextOrderIndex: number;
   onClose: () => void;
   onSave: (input: ProcessStageInput & { id?: string }) => Promise<void>;
   open: boolean;
+  interviews: Interview[];
   positionId: string;
+  stageCount: number;
 }
 
 interface StageFormValue {
@@ -35,36 +38,60 @@ const canonicalOptions: Array<{ label: string; value: CanonicalStage }> = [
   { label: '已撤回', value: 'withdrawn' },
 ];
 
-function toFormValue(stage: ProcessStage | undefined, nextOrderIndex: number): StageFormValue {
+const canonicalStageNames: Record<CanonicalStage, string> = {
+  interested: '感兴趣',
+  applied: '已投递',
+  assessment: '测评',
+  interview: '面试',
+  offer: 'Offer',
+  rejected: '未通过',
+  withdrawn: '已撤回',
+};
+
+function localIsoDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function toFormValue(stage: ProcessStage | undefined, stageCount: number): StageFormValue {
+  const canonicalStage = stage?.canonicalStage ?? 'interested';
+  const policy = stageDatePolicy(canonicalStage);
   return {
-    name: stage?.name ?? '',
-    canonicalStage: stage?.canonicalStage ?? 'interested',
-    actualDate: stage?.actualDate ?? '',
-    expectedDate: stage?.expectedDate ?? '',
+    name: stage?.name ?? canonicalStageNames[canonicalStage],
+    canonicalStage,
+    actualDate: stage?.actualDate || localIsoDate(),
+    expectedDate: stage?.expectedDate || (policy.kind === 'notice-and-event' ? localIsoDate() : ''),
     feedback: stage?.feedback ?? '',
     notes: stage?.notes ?? '',
-    orderIndex: String(stage?.orderIndex ?? nextOrderIndex),
+    orderIndex: String((stage?.orderIndex ?? stageCount) + 1),
   };
 }
 
 export function StageEditor({
   initialValue,
-  nextOrderIndex,
   onClose,
   onSave,
   open,
+  interviews,
   positionId,
+  stageCount,
 }: StageEditorProps) {
-  const [value, setValue] = useState(() => toFormValue(initialValue, nextOrderIndex));
+  const [value, setValue] = useState(() => toFormValue(initialValue, stageCount));
   const [errors, setErrors] = useState<StageErrors>({});
   const [saving, setSaving] = useState(false);
+  const autoName = useRef(!initialValue);
+  const datePolicy = stageDatePolicy(value.canonicalStage);
 
   useEffect(() => {
     if (!open) return;
-    setValue(toFormValue(initialValue, nextOrderIndex));
+    autoName.current = !initialValue;
+    setValue(toFormValue(initialValue, stageCount));
     setErrors({});
     setSaving(false);
-  }, [initialValue, nextOrderIndex, open]);
+  }, [initialValue, stageCount, open]);
 
   const setField = <K extends keyof StageFormValue>(field: K, nextValue: StageFormValue[K]) => {
     setValue((current) => ({ ...current, [field]: nextValue }));
@@ -76,12 +103,13 @@ export function StageEditor({
     if (saving) return;
 
     if (value.orderIndex.trim() === '') {
-      setErrors((current) => ({ ...current, orderIndex: '请输入非负整数' }));
+      setErrors((current) => ({ ...current, orderIndex: '请输入有效的显示顺序' }));
       return;
     }
-    const orderIndex = Number(value.orderIndex);
-    if (!Number.isInteger(orderIndex) || orderIndex < 0) {
-      setErrors((current) => ({ ...current, orderIndex: '请输入非负整数' }));
+    const displayOrder = Number(value.orderIndex);
+    const maximumOrder = initialValue ? stageCount : stageCount + 1;
+    if (!Number.isInteger(displayOrder) || displayOrder < 1 || displayOrder > maximumOrder) {
+      setErrors((current) => ({ ...current, orderIndex: '请输入有效的显示顺序' }));
       return;
     }
 
@@ -90,10 +118,10 @@ export function StageEditor({
       name: value.name,
       canonicalStage: value.canonicalStage,
       actualDate: value.actualDate || null,
-      expectedDate: value.expectedDate || null,
+      expectedDate: datePolicy.kind === 'notice-and-event' ? value.expectedDate || null : null,
       feedback: value.feedback,
       notes: value.notes,
-      orderIndex,
+      orderIndex: displayOrder - 1,
     };
     const parsed = processStageInputSchema.safeParse(input);
     if (!parsed.success) {
@@ -101,8 +129,9 @@ export function StageEditor({
       for (const issue of parsed.error.issues) {
         const field = issue.path[0];
         if (typeof field === 'string' && field in value) {
-          nextErrors[field as keyof StageFormValue] =
-            field === 'name' ? '请输入 1–120 个字符' : issue.message;
+          nextErrors[field as keyof StageFormValue] = field === 'name'
+            ? '请输入 1–120 个字符'
+            : issue.message;
         }
       }
       setErrors(nextErrors);
@@ -111,13 +140,9 @@ export function StageEditor({
 
     setSaving(true);
     try {
-      await onSave({
-        ...parsed.data,
-        ...(initialValue ? { id: initialValue.id } : {}),
-      });
+      await onSave({ ...parsed.data, ...(initialValue ? { id: initialValue.id } : {}) });
     } catch {
-      // Mutation feedback is owned by the timeline; the editor intentionally
-      // remains open with the entered values.
+      // Mutation feedback is owned by the timeline; keep entered values visible.
     } finally {
       setSaving(false);
     }
@@ -125,14 +150,15 @@ export function StageEditor({
 
   return (
     <Modal
-      footer={
+      closeDisabled={saving}
+      footer={(
         <>
           <button className="button button--quiet" disabled={saving} onClick={onClose} type="button">取消</button>
           <button className="button button--primary" disabled={saving} form="stage-editor-form" type="submit">
             {saving ? '保存中…' : '保存阶段'}
           </button>
         </>
-      }
+      )}
       onClose={() => {
         if (!saving) onClose();
       }}
@@ -142,23 +168,49 @@ export function StageEditor({
       <form className="editor-form" id="stage-editor-form" noValidate onSubmit={submit}>
         <div className="editor-form__grid">
           <Field error={errors.name} label="阶段名称" required>
-            <input maxLength={120} onChange={(event) => setField('name', event.target.value)} value={value.name} />
+            <input
+              maxLength={120}
+              onChange={(event) => {
+                autoName.current = false;
+                setField('name', event.target.value);
+              }}
+              onFocus={() => {
+                if (!autoName.current) return;
+                autoName.current = false;
+                setField('name', '');
+              }}
+              value={value.name}
+            />
           </Field>
           <Field error={errors.canonicalStage} hint="用于统一筛选与状态展示。" label="标准阶段" required>
-            <select onChange={(event) => setField('canonicalStage', event.target.value as CanonicalStage)} value={value.canonicalStage}>
-              {canonicalOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
+            <select onChange={(event) => {
+              const canonicalStage = event.target.value as CanonicalStage;
+              const policy = stageDatePolicy(canonicalStage);
+              autoName.current = true;
+              setValue((current) => {
+                return {
+                  ...current,
+                  canonicalStage,
+                  name: canonicalStageNames[canonicalStage],
+                  expectedDate: policy.kind === 'single' ? '' : current.expectedDate || localIsoDate(),
+                  actualDate: current.actualDate || localIsoDate(),
+                };
+              });
+              setErrors((current) => ({ ...current, canonicalStage: undefined }));
+            }} value={value.canonicalStage}>
+              {canonicalOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </Field>
-          <Field error={errors.actualDate} label="实际日期">
+          {datePolicy.kind === 'notice-and-event' ? (
+            <Field error={errors.expectedDate} label={datePolicy.expectedLabel}>
+              <input onChange={(event) => setField('expectedDate', event.target.value)} type="date" value={value.expectedDate} />
+            </Field>
+          ) : null}
+          <Field error={errors.actualDate} label={datePolicy.actualLabel}>
             <input onChange={(event) => setField('actualDate', event.target.value)} type="date" value={value.actualDate} />
           </Field>
-          <Field error={errors.expectedDate} label="预计日期">
-            <input onChange={(event) => setField('expectedDate', event.target.value)} type="date" value={value.expectedDate} />
-          </Field>
-          <Field error={errors.orderIndex} hint="从 0 开始；保存后将插入对应位置。" label="顺序" required>
-            <input min={0} onChange={(event) => setField('orderIndex', event.target.value)} step={1} type="number" value={value.orderIndex} />
+          <Field error={errors.orderIndex} hint={`输入 1–${initialValue ? stageCount : stageCount + 1}。`} label="显示顺序" required>
+            <input max={initialValue ? stageCount : stageCount + 1} min={1} onChange={(event) => setField('orderIndex', event.target.value)} step={1} type="number" value={value.orderIndex} />
           </Field>
         </div>
         <Field error={errors.feedback} label="反馈">
@@ -168,6 +220,17 @@ export function StageEditor({
           <textarea maxLength={20_000} onChange={(event) => setField('notes', event.target.value)} rows={4} value={value.notes} />
         </Field>
       </form>
+      {initialValue?.canonicalStage === 'interview' ? (
+        <section aria-label="节点面试记录">
+          <InterviewPanel
+            compact
+            interviews={interviews}
+            positionId={positionId}
+            stageId={initialValue.id}
+            stageName={initialValue.name}
+          />
+        </section>
+      ) : null}
     </Modal>
   );
 }

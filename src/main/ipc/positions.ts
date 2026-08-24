@@ -2,11 +2,12 @@ import { CHANNELS } from '../../shared/ipc';
 import {
   idSchema,
   preparationGenerateSchema,
-  positionInputSchema,
+  positionCreateInputSchema,
   positionListFilterSchema,
   positionUpdateSchema,
   processStageSaveSchema,
   reorderStagesSchema,
+  removeStageSchema,
   preparationMaterialListSchema,
   preparationOutboundPreviewSchema,
   preparationReadableMaterialSchema,
@@ -23,11 +24,16 @@ export function registerPositionHandlers(
   ipcMain.handle(CHANNELS.positions.list, safeIpcHandler((_event, payload) => (
     positions.list(positionListFilterSchema.parse(payload))
   )));
+  if (positions.listGrouped) {
+    ipcMain.handle(CHANNELS.positions.listGrouped, safeIpcHandler((_event, payload) => (
+      positions.listGrouped!(positionListFilterSchema.parse(payload))
+    )));
+  }
   ipcMain.handle(CHANNELS.positions.get, safeIpcHandler((_event, payload) => (
     positions.getDetail(idSchema.parse(payload))
   )));
   ipcMain.handle(CHANNELS.positions.create, safeIpcHandler((_event, payload) => (
-    positions.create(positionInputSchema.parse(payload))
+    positions.create(positionCreateInputSchema.parse(payload))
   )));
   ipcMain.handle(CHANNELS.positions.update, safeIpcHandler((_event, payload) => {
     const parsed = positionUpdateSchema.parse(payload);
@@ -42,6 +48,10 @@ export function registerPositionHandlers(
   ipcMain.handle(CHANNELS.positions.reorderStages, safeIpcHandler((_event, payload) => {
     const parsed = reorderStagesSchema.parse(payload);
     return positions.reorderStages(parsed.positionId, parsed.orderedIds);
+  }));
+  ipcMain.handle(CHANNELS.positions.removeStage, safeIpcHandler((_event, payload) => {
+    const parsed = removeStageSchema.parse(payload);
+    return positions.removeStage(parsed.positionId, parsed.stageId);
   }));
 }
 

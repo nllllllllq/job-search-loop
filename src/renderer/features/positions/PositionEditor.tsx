@@ -16,6 +16,7 @@ type PositionErrors = Partial<Record<keyof PositionInput, string>>;
 const emptyValue: PositionInput = {
   company: '',
   title: '',
+  location: '',
   interest: 3,
   rawJd: '',
 };
@@ -55,6 +56,7 @@ export function PositionEditor({
         if (
           (field === 'company'
             || field === 'title'
+            || field === 'location'
             || field === 'interest'
             || field === 'rawJd')
           && !nextErrors[field]
@@ -83,15 +85,11 @@ export function PositionEditor({
 
   return (
     <Modal
+      dismissal="close-button-only"
       footer={
-        <>
-          <button className="button button--quiet" disabled={saving} onClick={onClose} type="button">
-            取消
-          </button>
-          <button className="button button--primary" disabled={saving} form="position-editor-form" type="submit">
-            {saving ? '保存中…' : '保存岗位'}
-          </button>
-        </>
+        <button className="button button--primary" disabled={saving} form="position-editor-form" type="submit">
+          {saving ? '保存中…' : '保存岗位'}
+        </button>
       }
       onClose={() => {
         if (!saving) onClose();
@@ -124,22 +122,36 @@ export function PositionEditor({
             />
           </Field>
         </div>
-        <Field error={errors.interest} hint="1 表示观望，5 表示重点跟进。" label="兴趣度" required>
-          <select
-            onChange={(event) => {
-              setValue((current) => ({
-                ...current,
-                interest: Number(event.target.value) as PositionInput['interest'],
-              }));
-              clearError('interest');
-            }}
-            value={value.interest}
-          >
-            {[1, 2, 3, 4, 5].map((interest) => (
-              <option key={interest} value={interest}>{interest}</option>
-            ))}
-          </select>
-        </Field>
+        <div className="editor-form__grid">
+          <Field error={errors.location} hint="城市、区域或远程方式均可" label="位置">
+            <input
+              maxLength={200}
+              onChange={(event) => {
+                setValue((current) => ({ ...current, location: event.target.value }));
+                clearError('location');
+              }}
+              placeholder="例如：上海 · 混合办公"
+              type="text"
+              value={value.location ?? ''}
+            />
+          </Field>
+          <Field error={errors.interest} hint="1 表示观望，5 表示重点跟进。" label="兴趣度" required>
+            <select
+              onChange={(event) => {
+                setValue((current) => ({
+                  ...current,
+                  interest: Number(event.target.value) as PositionInput['interest'],
+                }));
+                clearError('interest');
+              }}
+              value={value.interest}
+            >
+              {[1, 2, 3, 4, 5].map((interest) => (
+                <option key={interest} value={interest}>{interest}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
         <Field
           error={errors.rawJd}
           hint="保留招聘页面中的原始文字与换行，最多 100,000 字。"

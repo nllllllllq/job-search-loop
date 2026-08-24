@@ -1,13 +1,12 @@
 import { type ReactNode, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { QuickInsightButton } from './QuickInsightButton';
 
 export const navigation = [
-  { code: 'OV', label: '总览', shortLabel: '总览', to: '/' },
+  { code: 'OV', label: '首页', shortLabel: '首页', to: '/' },
   { code: 'PO', label: '岗位', shortLabel: '岗位', to: '/positions' },
-  { code: 'RV', label: '复盘中心', shortLabel: '复盘', to: '/reviews' },
   { code: 'PR', label: '项目档案', shortLabel: '项目', to: '/projects' },
   { code: 'QU', label: '问题库', shortLabel: '题库', to: '/questions' },
-  { code: 'CA', label: '能力主题', shortLabel: '能力', to: '/capabilities' },
   { code: 'IN', label: '随想与心得', shortLabel: '随想', to: '/insights' },
   { code: 'ST', label: '设置', shortLabel: '设置', to: '/settings' },
 ] as const;
@@ -26,7 +25,7 @@ export function AppShell({ children }: AppShellProps) {
   ));
   const title = currentPage?.label ?? '未找到页面';
   const documentTitle =
-    title === '总览' ? '求职闭环' : `${title} · 求职闭环`;
+    title === '首页' ? '求职闭环' : `${title} · 求职闭环`;
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -58,13 +57,9 @@ export function AppShell({ children }: AppShellProps) {
             <small>FIELD NOTES</small>
           </span>
         </NavLink>
-        <div className="sidebar__rule" aria-hidden="true">
-          <span>07</span>
-          <span>2026</span>
-        </div>
         <nav aria-label="工作区">
           <ul className="navigation-list">
-            {navigation.map(({ code, label, shortLabel, to }, index) => (
+            {navigation.map(({ label, shortLabel, to }) => (
               <li key={to}>
                 <NavLink
                   aria-label={label}
@@ -74,18 +69,12 @@ export function AppShell({ children }: AppShellProps) {
                   end={to === '/'}
                   to={to}
                 >
-                  <span className="navigation-index" aria-hidden="true">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
                   <span className="navigation-label">{label}</span>
                   <span
                     className="navigation-short-label"
                     aria-hidden="true"
                   >
                     {shortLabel}
-                  </span>
-                  <span className="navigation-code" aria-hidden="true">
-                    {code}
                   </span>
                 </NavLink>
               </li>
@@ -120,6 +109,7 @@ export function AppShell({ children }: AppShellProps) {
         >
           {children}
         </main>
+        <QuickInsightButton />
       </div>
     </div>
   );

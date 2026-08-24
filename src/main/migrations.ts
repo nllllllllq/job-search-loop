@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
@@ -46,6 +46,7 @@ const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS interviews (
     id TEXT PRIMARY KEY,
     position_id TEXT NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    stage_id TEXT REFERENCES process_stages(id) ON DELETE SET NULL,
     round_name TEXT NOT NULL,
     interview_date TEXT,
     transcript TEXT NOT NULL,
@@ -143,12 +144,25 @@ const CREATE_SCHEMA_V1 = `
 
   CREATE TABLE IF NOT EXISTS prompt_templates (
     id TEXT PRIMARY KEY,
-    kind TEXT NOT NULL UNIQUE CHECK (kind IN ('preparation', 'interview-review', 'capability-analysis')),
+    kind TEXT NOT NULL UNIQUE CHECK (kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import', 'position-image')),
     name TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   ) STRICT;
+  CREATE INDEX IF NOT EXISTS interviews_stage_idx ON interviews(stage_id);
+
+  CREATE TABLE IF NOT EXISTS ai_tasks (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('preparation')),
+    position_id TEXT NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'interrupted')),
+    safe_error_json TEXT,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS ai_tasks_position_updated_idx ON ai_tasks(position_id, updated_at DESC);
 `;
 
 function migrateProjectJson(raw: unknown, field: string): string {
@@ -176,12 +190,15 @@ function migrateProjectJson(raw: unknown, field: string): string {
     payload.outcome = '';
   }
   if (typeof payload.evidence !== 'string') payload.evidence = '';
+  if (typeof payload.unclassifiedNotes !== 'string') payload.unclassifiedNotes = '';
   if (
     typeof payload.storytellingVersions !== 'string'
     && typeof payload.storytelling_versions === 'string'
   ) {
     payload.storytellingVersions = payload.storytelling_versions;
   }
+  delete payload.outcomesAndEvidence;
+  delete payload.storytelling_versions;
   return JSON.stringify(payload);
 }
 
@@ -196,17 +213,25 @@ function migrateLegacyProjectJson(db: DatabaseSync): void {
     FROM change_proposals WHERE target_type = 'project'
   `).all();
   for (const proposal of proposals) {
-    const accepted = proposal.accepted_payload_json === null
-      ? null
-      : migrateProjectJson(
-        proposal.accepted_payload_json,
-        'change_proposals.accepted_payload_json',
+    let payload: string;
+    let accepted: string | null;
+    try {
+      accepted = proposal.accepted_payload_json === null
+        ? null
+        : migrateProjectJson(
+          proposal.accepted_payload_json,
+          'change_proposals.accepted_payload_json',
+        );
+      payload = migrateProjectJson(
+        proposal.payload_json,
+        'change_proposals.payload_json',
       );
-    updateProposal.run(
-      migrateProjectJson(proposal.payload_json, 'change_proposals.payload_json'),
-      accepted,
-      proposal.id,
-    );
+    } catch {
+      // Audit history is immutable evidence. Preserve an unreadable row
+      // byte-for-byte while continuing to migrate independent readable rows.
+      continue;
+    }
+    updateProposal.run(payload, accepted, proposal.id);
   }
 
   const updateVersion = db.prepare(`
@@ -216,11 +241,116 @@ function migrateLegacyProjectJson(db: DatabaseSync): void {
     SELECT id, snapshot_json FROM asset_versions WHERE asset_type = 'project'
   `).all();
   for (const version of versions) {
-    updateVersion.run(
-      migrateProjectJson(version.snapshot_json, 'asset_versions.snapshot_json'),
-      version.id,
-    );
+    let snapshot: string;
+    try {
+      snapshot = migrateProjectJson(
+        version.snapshot_json,
+        'asset_versions.snapshot_json',
+      );
+    } catch {
+      // A corrupt historical version must not block unrelated asset history.
+      continue;
+    }
+    updateVersion.run(snapshot, version.id);
   }
+}
+
+function migrateNestedProjectSnapshots(db: DatabaseSync): void {
+  if (hasTable(db, 'preparation_materials')) {
+    const update = db.prepare(
+      'UPDATE preparation_materials SET assets_snapshot = ? WHERE id = ?',
+    );
+    for (const item of db.prepare(
+      'SELECT id, assets_snapshot FROM preparation_materials',
+    ).all()) {
+      try {
+        if (typeof item.assets_snapshot !== 'string') continue;
+        const decoded = JSON.parse(item.assets_snapshot) as unknown;
+        if (
+          decoded === null
+          || Array.isArray(decoded)
+          || typeof decoded !== 'object'
+          || !('projects' in decoded)
+          || !Array.isArray(decoded.projects)
+        ) continue;
+        const migrated = {
+          ...(decoded as Record<string, unknown>),
+          projects: decoded.projects.map((project, index) => JSON.parse(
+            migrateProjectJson(
+              JSON.stringify(project),
+              `preparation_materials.assets_snapshot.projects[${index}]`,
+            ),
+          )),
+        };
+        update.run(JSON.stringify(migrated), item.id);
+      } catch {
+        // Preserve unreadable history; readable rows still migrate.
+      }
+    }
+  }
+
+  if (hasTable(db, 'interviews')) {
+    const update = db.prepare(
+      'UPDATE interviews SET review_snapshot_json = ? WHERE id = ?',
+    );
+    for (const item of db.prepare(`
+      SELECT id, review_snapshot_json FROM interviews
+      WHERE review_snapshot_json IS NOT NULL
+    `).all()) {
+      try {
+        if (typeof item.review_snapshot_json !== 'string') continue;
+        const decoded = JSON.parse(item.review_snapshot_json) as unknown;
+        if (
+          decoded === null
+          || Array.isArray(decoded)
+          || typeof decoded !== 'object'
+        ) continue;
+        const snapshot = decoded as Record<string, unknown>;
+        const output = snapshot.output;
+        if (
+          output === null
+          || Array.isArray(output)
+          || typeof output !== 'object'
+          || !('proposals' in output)
+          || !Array.isArray(output.proposals)
+        ) continue;
+        const proposals = output.proposals.map((proposal, index) => {
+          if (
+            proposal === null
+            || Array.isArray(proposal)
+            || typeof proposal !== 'object'
+          ) return proposal;
+          const record = proposal as Record<string, unknown>;
+          if (record.targetType !== 'project') return proposal;
+          return {
+            ...record,
+            payload: JSON.parse(migrateProjectJson(
+              JSON.stringify(record.payload),
+              `interviews.review_snapshot_json.output.proposals[${index}].payload`,
+            )),
+          };
+        });
+        update.run(JSON.stringify({
+          ...snapshot,
+          output: { ...(output as Record<string, unknown>), proposals },
+        }), item.id);
+      } catch {
+        // Preserve corrupt historical snapshots byte-for-byte. Repository
+        // decoding exposes only the typed invalid audit status.
+      }
+    }
+  }
+}
+
+function hasTable(db: DatabaseSync, name: string): boolean {
+  return db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+  ).get(name) !== undefined;
+}
+
+function hasColumn(db: DatabaseSync, table: string, name: string): boolean {
+  return db.prepare(`PRAGMA table_info(${table})`).all()
+    .some((column) => column.name === name);
 }
 
 export function migrate(db: DatabaseSync): void {
@@ -264,6 +394,137 @@ export function migrate(db: DatabaseSync): void {
       if (interviewsTable !== undefined) {
         db.exec('ALTER TABLE interviews ADD COLUMN review_snapshot_json TEXT;');
       }
+    }
+    if (version < 5) {
+      if (hasTable(db, 'positions')) {
+        db.exec("ALTER TABLE positions ADD COLUMN location TEXT NOT NULL DEFAULT '';");
+      }
+      if (hasTable(db, 'projects')) {
+        db.exec("ALTER TABLE projects ADD COLUMN unclassified_notes TEXT NOT NULL DEFAULT '';");
+      }
+      if (hasTable(db, 'change_proposals') && hasTable(db, 'asset_versions')) {
+        migrateLegacyProjectJson(db);
+      }
+      migrateNestedProjectSnapshots(db);
+      db.exec(`
+        CREATE TABLE capability_analysis_runs (
+          id TEXT PRIMARY KEY,
+          selected_position_ids_json TEXT NOT NULL,
+          prompt_snapshot TEXT NOT NULL,
+          provider_origin TEXT NOT NULL,
+          model TEXT NOT NULL,
+          input_json TEXT NOT NULL,
+          output_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        ) STRICT;
+      `);
+      if (hasTable(db, 'change_proposals')) {
+        db.exec(`
+          ALTER TABLE change_proposals
+            ADD COLUMN analysis_run_id TEXT
+            REFERENCES capability_analysis_runs(id) ON DELETE SET NULL;
+        `);
+      }
+    }
+    if (version < 6 && hasTable(db, 'prompt_templates')) {
+      db.exec(`
+        ALTER TABLE prompt_templates RENAME TO prompt_templates_v5;
+        CREATE TABLE prompt_templates (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL UNIQUE CHECK (
+            kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import', 'position-image')
+          ),
+          name TEXT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        INSERT INTO prompt_templates (
+          id, kind, name, content, created_at, updated_at
+        )
+        SELECT id, kind, name, content, created_at, updated_at
+        FROM prompt_templates_v5;
+        DROP TABLE prompt_templates_v5;
+      `);
+    }
+    if (version < 7 && !hasTable(db, 'ai_tasks')) {
+      db.exec(`
+        CREATE TABLE ai_tasks (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK (kind IN ('preparation')),
+          position_id TEXT NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+          status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'interrupted')),
+          safe_error_json TEXT,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX ai_tasks_position_updated_idx ON ai_tasks(position_id, updated_at DESC);
+      `);
+    }
+    if (version < 8) {
+      db.exec(`
+        CREATE TABLE canonical_companies (
+          id TEXT PRIMARY KEY,
+          canonical_name TEXT NOT NULL UNIQUE,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE company_aliases (
+          alias TEXT PRIMARY KEY,
+          canonical_company_id TEXT NOT NULL REFERENCES canonical_companies(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX company_aliases_canonical_company_idx
+          ON company_aliases(canonical_company_id);
+      `);
+    }
+    if (version < 9 && hasTable(db, 'prompt_templates')) {
+      db.exec(`
+        ALTER TABLE prompt_templates RENAME TO prompt_templates_v8;
+        CREATE TABLE prompt_templates (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL UNIQUE CHECK (
+            kind IN ('preparation', 'interview-review', 'capability-analysis', 'project-import', 'position-image')
+          ),
+          name TEXT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        INSERT INTO prompt_templates (id, kind, name, content, created_at, updated_at)
+        SELECT id, kind, name, content, created_at, updated_at FROM prompt_templates_v8;
+        DROP TABLE prompt_templates_v8;
+      `);
+    }
+    if (version < 10 && !hasTable(db, 'email_sync_events')) {
+      db.exec(`
+        CREATE TABLE email_sync_events (
+          id TEXT PRIMARY KEY,
+          message_key TEXT NOT NULL UNIQUE,
+          subject TEXT NOT NULL,
+          sender TEXT NOT NULL,
+          received_at TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('applied', 'pending')),
+          position_id TEXT REFERENCES positions(id) ON DELETE SET NULL,
+          canonical_stage TEXT CHECK (
+            canonical_stage IN ('interested', 'applied', 'assessment', 'interview', 'offer', 'rejected', 'withdrawn')
+            OR canonical_stage IS NULL
+          ),
+          reason TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX email_sync_events_created_idx ON email_sync_events(created_at DESC);
+      `);
+    }
+    if (version < 11 && hasTable(db, 'projects') && !hasColumn(db, 'projects', 'project_time')) {
+      db.exec("ALTER TABLE projects ADD COLUMN project_time TEXT NOT NULL DEFAULT '';");
+    }
+    if (version < 12 && hasTable(db, 'interviews')) {
+      if (!hasColumn(db, 'interviews', 'stage_id')) {
+        db.exec('ALTER TABLE interviews ADD COLUMN stage_id TEXT REFERENCES process_stages(id) ON DELETE SET NULL;');
+      }
+      db.exec('CREATE INDEX IF NOT EXISTS interviews_stage_idx ON interviews(stage_id);');
     }
     db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     db.exec('COMMIT');

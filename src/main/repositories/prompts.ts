@@ -2,7 +2,11 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { PromptKind, PromptTemplate } from '../../shared/domain';
 import { promptKindSchema, promptSaveSchema } from '../../shared/schemas';
 import { notFound, row, text } from './common';
-import { DEFAULT_PROMPT_TEMPLATES } from '../../shared/defaults';
+import {
+  DEFAULT_PROMPT_TEMPLATES,
+  LEGACY_PROJECT_IMPORT_PROMPT,
+  PREVIOUS_PROJECT_IMPORT_PROMPT,
+} from '../../shared/defaults';
 
 function decodePrompt(value: unknown): PromptTemplate {
   const data = row(value, 'prompt');
@@ -37,6 +41,39 @@ export function createPromptsRepository(db: DatabaseSync): PromptsRepository {
       template.content,
       now,
       now,
+    );
+  }
+  const preparationDefault = DEFAULT_PROMPT_TEMPLATES.find(
+    (template) => template.kind === 'preparation',
+  );
+  if (preparationDefault) {
+    db.prepare(`
+      UPDATE prompt_templates
+      SET name = ?, content = ?, updated_at = ?
+      WHERE kind = 'preparation'
+        AND updated_at = created_at
+        AND content <> ?
+    `).run(
+      preparationDefault.name,
+      preparationDefault.content,
+      now,
+      preparationDefault.content,
+    );
+  }
+  const projectImportDefault = DEFAULT_PROMPT_TEMPLATES.find(
+    (template) => template.kind === 'project-import',
+  );
+  if (projectImportDefault) {
+    db.prepare(`
+      UPDATE prompt_templates
+      SET name = ?, content = ?, updated_at = ?
+      WHERE kind = 'project-import' AND content IN (?, ?)
+    `).run(
+      projectImportDefault.name,
+      projectImportDefault.content,
+      now,
+      LEGACY_PROJECT_IMPORT_PROMPT,
+      PREVIOUS_PROJECT_IMPORT_PROMPT,
     );
   }
 

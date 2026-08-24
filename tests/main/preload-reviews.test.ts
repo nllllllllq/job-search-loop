@@ -89,6 +89,20 @@ describe('review IPC and preload contract', () => {
     );
   });
 
+  it('preserves AI_INPUT_UNSUPPORTED errors from IPC for the renderer', async () => {
+    electronMocks.invoke.mockRejectedValueOnce(new Error(
+      'Error invoking remote method: JOB_SEARCH_ERROR:' + JSON.stringify({
+        code: 'AI_INPUT_UNSUPPORTED',
+        message: 'The configured AI model does not support this input type.',
+      }),
+    ));
+
+    await expect(exposedApi().ai.settings.get()).rejects.toMatchObject({
+      code: 'AI_INPUT_UNSUPPORTED',
+      message: 'The configured AI model does not support this input type.',
+    });
+  });
+
   it('keeps direct acceptance distinct from edited acceptance at the bridge', async () => {
     const accepted = {
       id: token,
@@ -106,6 +120,7 @@ describe('review IPC and preload contract', () => {
       rationale: '沉淀心得',
       positionId: null,
       interviewId: null,
+      analysisRunId: null,
       status: 'accepted',
       acceptedPayload: {
         title: '复盘',
@@ -143,10 +158,11 @@ describe('review IPC and preload contract', () => {
       saveSummary: vi.fn(),
     };
     const proposals = {
-      list: vi.fn(() => []),
+      list: vi.fn(() => ({ items: [], corruptItems: [], corruptCount: 0 })),
       get: vi.fn(),
       create: vi.fn(),
       commitReview: vi.fn(),
+      commitCapabilityAnalysis: vi.fn(),
       accept: vi.fn(),
       ignore: vi.fn(),
     };
@@ -162,6 +178,7 @@ describe('review IPC and preload contract', () => {
           id: positionId,
           company: '远山科技',
           title: 'AI 产品经理',
+          location: '',
           rawJd: '负责 AI 产品。',
         },
         interview: {
@@ -218,10 +235,11 @@ describe('review IPC and preload contract', () => {
       saveSummary: vi.fn(),
     };
     const proposals = {
-      list: vi.fn(() => []),
+      list: vi.fn(() => ({ items: [], corruptItems: [], corruptCount: 0 })),
       get: vi.fn(),
       create: vi.fn(),
       commitReview: vi.fn(),
+      commitCapabilityAnalysis: vi.fn(),
       accept: vi.fn(),
       ignore: vi.fn(),
     };

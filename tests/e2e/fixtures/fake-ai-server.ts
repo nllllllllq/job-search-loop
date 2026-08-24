@@ -16,26 +16,21 @@ export interface FakeAiServer {
 
 const REUSABLE_QUESTION = '如何设计用户研究？';
 
-const preparationOutput = {
-  roleSummary: '这是一个需要用户研究、产品规划与跨团队协作的岗位。',
-  capabilityFocus: [
-    { name: '用户研究', reason: 'JD 将用户洞察列为核心职责。' },
-  ],
-  projectTalkingPoints: [],
-  likelyQuestions: [
-    {
-      question: REUSABLE_QUESTION,
-      answerOutline: '说明目标、样本、方法、结论与业务决策。',
-    },
-  ],
-  candidateQuestions: ['团队如何把用户洞察转化为产品优先级？'],
-  riskNotes: ['需要准备可验证的用户研究案例。'],
+export const preparationOutput = {
+  companyAndProductResearch: {
+    businessAndUsers: '面向企业用户提供 AI 产品。',
+    coreProducts: ['企业智能助手'],
+    businessModel: '企业订阅，具体定价待核实。',
+    recentDirection: '正在加强智能体能力，细节待核实。',
+    roleProductHypothesis: '岗位可能负责企业智能助手，需面试核实。',
+    verificationNotes: ['核实具体产品线'],
+  },
   competencyMap: [
-    { rank: 1, name: 'Problem Solving', evidence: 'JD 强调解决用户痛点。' },
-    { rank: 2, name: 'Communication', evidence: 'JD 强调跨团队协作。' },
-    { rank: 3, name: 'Strategic Thinking', evidence: 'JD 要求产品规划。' },
-    { rank: 4, name: 'Leadership', evidence: 'JD 要求推动项目落地。' },
-    { rank: 5, name: 'Execution', evidence: 'JD 强调结果与迭代。' },
+    { rank: 1, name: 'Problem Solving', jdEvidence: 'JD 强调解决用户痛点。', roleUsage: '识别产品问题。', proofSuggestion: '准备用户研究证据。' },
+    { rank: 2, name: 'Communication', jdEvidence: 'JD 强调跨团队协作。', roleUsage: '推动团队对齐。', proofSuggestion: '准备协作案例。' },
+    { rank: 3, name: 'Strategic Thinking', jdEvidence: 'JD 要求产品规划。', roleUsage: '规划产品方向。', proofSuggestion: '准备规划依据。' },
+    { rank: 4, name: 'Leadership', jdEvidence: 'JD 要求推动项目落地。', roleUsage: '推动关键决策。', proofSuggestion: '准备推动案例。' },
+    { rank: 5, name: 'Execution', jdEvidence: 'JD 强调结果与迭代。', roleUsage: '完成验证迭代。', proofSuggestion: '准备结果证据。' },
   ],
   companyMap: {
     stage: 'Realignment',
@@ -69,6 +64,7 @@ const preparationOutput = {
       '团队如何衡量用户研究对产品决策的影响？',
       '前三个月最重要的成功标准是什么？',
     ],
+    verificationChecklist: ['核实岗位负责产品'],
   },
 };
 
@@ -128,13 +124,19 @@ export async function startFakeAiServer(): Promise<FakeAiServer> {
         : body.includes('仅返回 JSON')
           ? { ok: true }
           : preparationOutput;
-      sendJson(res, {
-        choices: [{
-          message: {
-            content: JSON.stringify(output),
-          },
-        }],
-      });
+      if (req.url === '/v1/responses') {
+        sendJson(res, {
+          output_text: `\`\`\`json\n${JSON.stringify(output)}\n\`\`\``,
+        });
+      } else {
+        sendJson(res, {
+          choices: [{
+            message: {
+              content: JSON.stringify(output),
+            },
+          }],
+        });
+      }
     }).catch(() => {
       res.writeHead(500);
       res.end();

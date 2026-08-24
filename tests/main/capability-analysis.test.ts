@@ -15,12 +15,13 @@ const SETTINGS = {
 };
 
 describe('explicit capability analysis', () => {
-  it('previews exact selected data and creates pending proposals only after confirm', async () => {
+  it('previews exact selected data and stores only the structured analysis after confirm', async () => {
     const db = createTestDatabase();
     try {
       const positions = createPositionsRepository(db);
       const prompts = createPromptsRepository(db);
       const proposals = createProposalsRepository(db);
+      const commitSpy = vi.spyOn(proposals, 'commitCapabilityAnalysis');
       const assets = createAssetsRepository(db);
       const first = positions.create({
         company: '甲公司',
@@ -79,22 +80,89 @@ describe('explicit capability analysis', () => {
       expect(request.messages[1].content).toContain(first.rawJd);
       expect(request.messages[1].content).toContain(second.rawJd);
       expect(request.messages[1].content).not.toContain('不应发送的 JD');
-      expect(result).toHaveLength(1);
-      expect(proposals.list('pending')).toEqual([
-        expect.objectContaining({
-          targetType: 'capability',
-          operation: 'create',
-          positionId: first.id,
-          payload: {
-            name: '用户研究',
-            jdFrequency: 2,
-            evidence: 'JD-A 提及用户研究\nJD-B 提及用户研究',
-            gaps: '需要补充量化案例',
-            mergedIntoId: null,
-          },
-        }),
-      ]);
+      expect(result).toEqual({
+        capabilities: [{
+          name: '用户研究',
+          jdFrequency: 2,
+          evidence: ['JD-A 提及用户研究', 'JD-B 提及用户研究'],
+          gaps: ['需要补充量化案例'],
+        }],
+      });
+      expect(commitSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        [],
+      );
+      const run = db.prepare('SELECT * FROM capability_analysis_runs').get();
+      expect(run).toMatchObject({
+        selected_position_ids_json: JSON.stringify([first.id, second.id]),
+        prompt_snapshot: prompt.content,
+        provider_origin: 'https://api.example.com',
+        model: 'analysis-model',
+      });
+      expect(JSON.parse(String(run?.input_json))).toMatchObject({
+        messages: expect.any(Array),
+      });
+      expect(JSON.parse(String(run?.output_json))).toEqual({
+        capabilities: [{
+          name: '用户研究',
+          jdFrequency: 2,
+          evidence: ['JD-A 提及用户研究', 'JD-B 提及用户研究'],
+          gaps: ['需要补充量化案例'],
+        }],
+      });
+      expect(JSON.stringify(run)).not.toContain(SETTINGS.apiKey);
+      expect(proposals.list('pending').items).toEqual([]);
+      expect(db.prepare('SELECT COUNT(*) AS count FROM change_proposals').get())
+        .toEqual({ count: 0 });
       expect(assets.listCapabilities()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('stores multiple structured capabilities without creating proposals', async () => {
+    const db = createTestDatabase();
+    try {
+      const positions = createPositionsRepository(db);
+      const first = positions.create({
+        company: '甲公司',
+        title: '产品经理',
+        interest: 5,
+        rawJd: 'JD-A',
+      });
+      const second = positions.create({
+        company: '乙公司',
+        title: '产品经理',
+        interest: 4,
+        rawJd: 'JD-B',
+      });
+      const proposals = createProposalsRepository(db);
+      const service = createCapabilityAnalysisService({
+        positions,
+        prompts: createPromptsRepository(db),
+        proposals,
+        ai: {
+          completeJson: vi.fn().mockResolvedValue({
+            capabilities: [
+              { name: '策略', jdFrequency: 2, evidence: ['A'], gaps: [] },
+              { name: '沟通', jdFrequency: 2, evidence: ['B'], gaps: [] },
+            ],
+          }),
+        },
+        getSettings: async () => SETTINGS,
+      });
+      const preview = await service.preview([first.id, second.id]);
+      await expect(service.confirm(preview.token)).resolves.toEqual({
+        capabilities: [
+          { name: '策略', jdFrequency: 2, evidence: ['A'], gaps: [] },
+          { name: '沟通', jdFrequency: 2, evidence: ['B'], gaps: [] },
+        ],
+      });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM capability_analysis_runs').get())
+        .toEqual({ count: 1 });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM change_proposals').get())
+        .toEqual({ count: 0 });
+      expect(createAssetsRepository(db).listCapabilities()).toEqual([]);
     } finally {
       db.close();
     }
@@ -135,7 +203,7 @@ describe('explicit capability analysis', () => {
       await expect(service.confirm(preview.token)).rejects.toMatchObject({
         code: 'AI_INVALID_OUTPUT',
       });
-      expect(proposals.list()).toEqual([]);
+      expect(proposals.list().items).toEqual([]);
     } finally {
       db.close();
     }

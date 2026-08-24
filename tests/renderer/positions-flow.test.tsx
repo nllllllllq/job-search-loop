@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../src/renderer/App';
-import type { PositionDetail, PositionListItem, ProcessStage } from '../../src/shared/domain';
+import type { Interview, PositionDetail, PositionListItem, ProcessStage } from '../../src/shared/domain';
 import { installJobSearchFake, createJobSearchFake, type JobSearchApiFake } from '../helpers/bridge';
 
 const positionId = '4acdf6d3-9e22-4f0f-9684-0324cb8ecad5';
@@ -42,6 +42,7 @@ const detail: PositionDetail = {
   id: positionId,
   company: '远山科技',
   title: '产品经理',
+  location: '',
   interest: 5,
   rawJd: '负责产品规划\n与用户研究 <script>alert(1)</script>',
   currentStage: 'interview',
@@ -56,6 +57,7 @@ const listItem: PositionListItem = {
   id: positionId,
   company: detail.company,
   title: detail.title,
+  location: detail.location,
   interest: detail.interest,
   currentStage: detail.currentStage,
   finalResult: detail.finalResult,
@@ -83,6 +85,68 @@ describe('positions flow', () => {
     document.title = '';
   });
 
+  it('keeps original company names separate and collapses rows by default', async () => {
+    const aliasMember = {
+      ...listItem,
+      id: '8e4868e1-0da2-4fb7-b66f-5b55c5d5a212',
+      company: '远山',
+      title: '高级产品经理',
+      currentStage: null,
+    };
+    const { fake, user } = renderAt('#/positions', (api) => {
+      api.positions.listGrouped.mockResolvedValue([
+        { canonicalName: '远山科技', members: [listItem] },
+        { canonicalName: '远山', members: [aliasMember] },
+      ]);
+    });
+
+    const header = await screen.findByText('远山科技', { selector: '.position-group-header strong' });
+    expect(header.parentElement).toHaveTextContent('1 条记录');
+    expect(header.parentElement).toHaveTextContent('2026-07-27');
+    expect(within(header.closest('button')!).getByText('面试中')).toHaveClass('status-badge');
+    expect(header.parentElement).not.toHaveTextContent('interview');
+    expect(screen.queryByText('高级产品经理')).not.toBeInTheDocument();
+    expect(screen.getByText('远山')).toBeInTheDocument();
+    const unconfiguredHeader = screen.getByText('远山', { selector: '.position-group-header strong' });
+    expect(within(unconfiguredHeader.closest('button')!).getByText('未设置')).toHaveClass('status-badge');
+    await user.click(header.closest('button')!);
+    expect(await screen.findByText('产品经理')).toBeInTheDocument();
+    await user.click(header.closest('button')!);
+    expect(screen.queryByText('产品经理')).not.toBeInTheDocument();
+    expect(fake.positions.listGrouped).toHaveBeenCalledWith({});
+  });
+
+  it('shows role and location without repeating the company inside an expanded row', async () => {
+    const located = { ...listItem, title: 'AI 产品经理', location: '上海 · 混合办公' };
+    const { user } = renderAt('#/positions', (api) => {
+      api.positions.listGrouped.mockResolvedValue([
+        { canonicalName: located.company, members: [located] },
+      ]);
+    });
+
+    await user.click(await screen.findByRole('button', { name: /远山科技/ }));
+    const roleLink = screen.getByRole('link', { name: /AI 产品经理/ });
+    expect(within(roleLink).getByText('AI 产品经理')).toBeVisible();
+    expect(within(roleLink).getByText('上海 · 混合办公')).toBeVisible();
+    expect(within(roleLink).queryByText('远山科技')).not.toBeInTheDocument();
+  });
+
+  it('opens position intake on screenshot recognition without a premature save action', async () => {
+    const { user } = renderAt('#/positions');
+
+    await user.click(await screen.findByRole('button', { name: '录入岗位' }));
+    const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    expect(within(dialog).getByRole('tab', { name: '截图识别' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(within(dialog).queryByRole('button', { name: '保存岗位' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '开始 AI 识别' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('textbox', { name: /公司/ })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('tab', { name: '手动录入' }));
+    expect(within(dialog).getByRole('textbox', { name: /公司/ })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: '保存岗位' })).toBeVisible();
+  });
+
   it('creates a position, refreshes, and routes to the created record', async () => {
     const created = { ...detail, rawJd: '负责产品规划与用户研究' };
     const { fake, user } = renderAt('#/', (api) => {
@@ -94,8 +158,13 @@ describe('positions flow', () => {
     });
 
     await user.click(screen.getByRole('link', { name: '岗位' }));
-    await user.click(await screen.findByRole('button', { name: '录入岗位' }));
+    await user.click((await screen.findAllByRole('button', { name: '录入岗位' }))[0]);
     const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    await user.click(within(dialog).getByRole('tab', { name: '手动录入' }));
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    expect(within(dialog).getByRole('combobox', { name: '当前阶段' })).toHaveValue('applied');
+    expect(within(dialog).getByLabelText('投递时间')).toHaveValue(today);
     await user.type(within(dialog).getByRole('textbox', { name: /公司/ }), ' 远山科技 ');
     await user.type(within(dialog).getByRole('textbox', { name: /岗位名称/ }), '产品经理');
     await user.selectOptions(within(dialog).getByRole('combobox', { name: /兴趣度/ }), '5');
@@ -106,14 +175,40 @@ describe('positions flow', () => {
       expect(fake.positions.create).toHaveBeenCalledWith({
         company: '远山科技',
         title: '产品经理',
+        location: '',
         interest: 5,
         rawJd: '负责产品规划与用户研究',
+        initialStage: 'applied',
+        initialDate: expect.any(String),
       });
     });
     expect(fake.positions.list).toHaveBeenCalledTimes(2);
     expect(await screen.findByRole('heading', { name: '远山科技' })).toBeInTheDocument();
     expect(window.location.hash).toBe(`#/positions/${positionId}`);
     expect(screen.getByText('岗位记录已保存')).toBeInTheDocument();
+  });
+
+  it('uses the fixed date field for a selected intake stage', async () => {
+    const { fake, user } = renderAt('#/positions', (api) => {
+      api.positions.create.mockResolvedValue(detail);
+    });
+
+    await user.click(await screen.findByRole('button', { name: '录入岗位' }));
+    const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    await user.click(within(dialog).getByRole('tab', { name: '手动录入' }));
+    await user.type(within(dialog).getByRole('textbox', { name: /公司/ }), '远山科技');
+    await user.type(within(dialog).getByRole('textbox', { name: /岗位名称/ }), '产品经理');
+    await user.type(within(dialog).getByRole('textbox', { name: /原始 JD/ }), '负责产品规划');
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: '当前阶段' }), 'interview');
+    const date = within(dialog).getByLabelText('收到通知时间');
+    await user.clear(date);
+    await user.type(date, '2026-08-08');
+    await user.click(within(dialog).getByRole('button', { name: '保存岗位' }));
+
+    await waitFor(() => expect(fake.positions.create).toHaveBeenCalledWith(expect.objectContaining({
+      initialStage: 'interview',
+      initialDate: '2026-08-08',
+    })));
   });
 
   it('validates required values and keeps entered data after an API failure', async () => {
@@ -125,6 +220,7 @@ describe('positions flow', () => {
     });
 
     await user.click(await screen.findByRole('button', { name: '录入岗位' }));
+    await user.click(screen.getByRole('tab', { name: '手动录入' }));
     await user.click(screen.getByRole('button', { name: '保存岗位' }));
     expect(await screen.findAllByText('请输入 1–120 个字符')).toHaveLength(2);
     expect(screen.getByText('请输入原始 JD')).toBeInTheDocument();
@@ -135,7 +231,7 @@ describe('positions flow', () => {
     await user.type(screen.getByRole('textbox', { name: /原始 JD/ }), '  有意义的空白\n内容  ');
     await user.click(screen.getByRole('button', { name: '保存岗位' }));
 
-    expect(await screen.findByText('保存岗位失败，请稍后重试')).toBeInTheDocument();
+    expect(await screen.findByText('岗位记录保存失败，请稍后重试')).toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: '录入岗位' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /原始 JD/ })).toHaveValue('  有意义的空白\n内容  ');
     expect(screen.queryByText(/SQLITE/)).not.toBeInTheDocument();
@@ -144,14 +240,14 @@ describe('positions flow', () => {
   it('sends deterministic query and canonical-stage filters and shows missing dates as an em dash', async () => {
     const { fake, user } = renderAt('#/positions');
 
-    expect(await screen.findByText('远山科技')).toBeInTheDocument();
-    expect(screen.getByRole('cell', { name: '暂无最近流程日期' })).toHaveTextContent('—');
-    await user.type(screen.getByRole('searchbox', { name: '搜索岗位' }), '产品');
+    expect(await screen.findAllByText('远山科技')).toHaveLength(1);
+    expect(screen.getByText(/最近更新 2026-07-27/)).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '搜索岗位' }), '产品');
     await user.selectOptions(screen.getByRole('combobox', { name: '流程阶段' }), 'interview');
     await user.click(screen.getByRole('button', { name: '筛选' }));
 
     await waitFor(() => {
-      expect(fake.positions.list).toHaveBeenLastCalledWith({
+      expect(fake.positions.listGrouped).toHaveBeenLastCalledWith({
         query: '产品',
         stage: 'interview',
       });
@@ -160,7 +256,7 @@ describe('positions flow', () => {
 
   it('limits search input to the API schema maximum before filtering', async () => {
     const { fake, user } = renderAt('#/positions');
-    const search = await screen.findByRole('searchbox', { name: '搜索岗位' });
+    const search = await screen.findByRole('textbox', { name: '搜索岗位' });
     const overlongQuery = '岗'.repeat(501);
 
     expect(search).toHaveAttribute('maxlength', '500');
@@ -169,134 +265,223 @@ describe('positions flow', () => {
     await user.click(screen.getByRole('button', { name: '筛选' }));
 
     await waitFor(() => {
-      expect(fake.positions.list).toHaveBeenLastCalledWith({
+      expect(fake.positions.listGrouped).toHaveBeenLastCalledWith({
         query: '岗'.repeat(500),
       });
     });
   });
 
-  it('shows exact detail tabs and renders raw JD as safe text with line breaks', async () => {
+  it('renders raw JD directly as safe text with line breaks', async () => {
     renderAt(`#/positions/${positionId}`);
 
     expect(await screen.findByRole('heading', { name: '远山科技' })).toBeInTheDocument();
-    for (const tab of ['概况', '原始 JD', '流程', '准备材料', '面试记录']) {
-      expect(screen.getByRole('tab', { name: tab })).toBeInTheDocument();
-    }
-
-    await userEvent.click(screen.getByRole('tab', { name: '原始 JD' }));
+    const process = screen.getByRole('region', { name: '岗位流程' });
     const rawJd = screen.getByTestId('raw-jd');
+    expect(process.compareDocumentPosition(rawJd) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(rawJd).toHaveTextContent('负责产品规划 与用户研究 <script>alert(1)</script>');
     expect(rawJd).toHaveStyle({ whiteSpace: 'pre-wrap' });
     expect(document.querySelector('.raw-jd script')).toBeNull();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
-  it('supports roving focus and standard keyboard navigation across detail tabs', async () => {
-    const { user } = renderAt(`#/positions/${positionId}`);
-    const overview = await screen.findByRole('tab', { name: '概况' });
-    const rawJd = screen.getByRole('tab', { name: '原始 JD' });
-    const interviews = screen.getByRole('tab', { name: '面试记录' });
+  it('keeps position intake open until its labelled close button is used', async () => {
+    const { user } = renderAt('#/positions');
 
-    expect(overview).toHaveAttribute('tabindex', '0');
-    expect(rawJd).toHaveAttribute('tabindex', '-1');
-    overview.focus();
+    await user.click((await screen.findAllByRole('button', { name: '录入岗位' }))[0]);
+    const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    expect(within(dialog).queryByRole('button', { name: '取消' })).not.toBeInTheDocument();
 
-    await user.keyboard('{ArrowRight}');
-    expect(rawJd).toHaveFocus();
-    expect(rawJd).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(dialog);
+    fireEvent(dialog, new Event('cancel', { bubbles: false, cancelable: true }));
+    expect(dialog).toBeInTheDocument();
 
-    await user.keyboard('{End}');
-    expect(interviews).toHaveFocus();
-    expect(interviews).toHaveAttribute('aria-selected', 'true');
-
-    await user.keyboard('{ArrowRight}');
-    expect(overview).toHaveFocus();
-    await user.keyboard('{ArrowLeft}');
-    expect(interviews).toHaveFocus();
-    await user.keyboard('{Home}');
-    expect(overview).toHaveFocus();
-    expect(overview).toHaveAttribute('aria-selected', 'true');
+    await user.click(within(dialog).getByRole('button', { name: '关闭对话框' }));
+    expect(screen.queryByRole('dialog', { name: '录入岗位' })).not.toBeInTheDocument();
   });
 
-  it('labels expected and actual dates explicitly and saves an edited interview stage', async () => {
-    const { fake, user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('tab', { name: '流程' }));
+  it('shows a compact preparation task status on the matching position row', async () => {
+    const { fake } = renderAt('#/positions', (api) => {
+      api.tasks.listByPosition.mockResolvedValue([{
+        id: '33333333-3333-4333-8333-333333333333',
+        kind: 'preparation',
+        positionId,
+        status: 'running',
+        safeError: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        startedAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+      }]);
+    });
 
-    expect(screen.getByText('实际日期：2026-07-27')).toBeInTheDocument();
-    expect(screen.getByText('预计日期：2026-08-01')).toBeInTheDocument();
-    expect(screen.getByText('日期仅用于记录流程，不会创建提醒')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: /远山科技/ }));
+    expect(await screen.findByText('running')).toBeInTheDocument();
+    expect(fake.tasks.listByPosition).toHaveBeenCalledWith(positionId);
+  });
 
-    await user.click(screen.getByRole('button', { name: '编辑 面试' }));
+  it('shows the three compact node states and saves an edited interview stage', async () => {
+    const emptyStage: ProcessStage = {
+      ...stages[0],
+      id: '41281f0a-7d48-4c25-a41c-f3a765a7cb58',
+      name: '终面',
+      actualDate: null,
+      expectedDate: null,
+      orderIndex: 3,
+    };
+    const { fake, user } = renderAt(`#/positions/${positionId}`, (api) => {
+      api.positions.get.mockResolvedValue({ ...detail, stages: [...stages, emptyStage] });
+    });
+
+    const actualNode = await screen.findByRole('button', {
+      name: '编辑流程阶段：已投递，投递时间 2026-07-27',
+    });
+    const expectedNode = screen.getByRole('button', {
+      name: '编辑流程阶段：面试，收到通知时间 2026-08-01，尚未记录面试进行时间',
+    });
+    expect(actualNode).toHaveAttribute('data-state', 'actual');
+    expect(expectedNode).toHaveAttribute('data-state', 'expected');
+    expect(screen.getByRole('button', { name: '编辑流程阶段：终面，未记录日期' }))
+      .toHaveAttribute('data-state', 'empty');
+    expect(screen.getByRole('button', { name: '新增流程阶段' })).toHaveAttribute('data-state', 'add');
+    expect(screen.queryByText('已确认收到')).not.toBeInTheDocument();
+
+    await user.click(expectedNode);
     const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
-    await user.clear(within(editor).getByLabelText('预计日期'));
-    await user.type(within(editor).getByLabelText('预计日期'), '2026-08-01');
+    expect(within(editor).getByLabelText('面试进行时间')).toBeVisible();
+    await user.clear(within(editor).getByLabelText('收到通知时间'));
+    await user.type(within(editor).getByLabelText('收到通知时间'), '2026-08-01');
+    const order = within(editor).getByRole('spinbutton', { name: /显示顺序/ });
+    await user.clear(order);
+    await user.type(order, '1');
     await user.click(within(editor).getByRole('button', { name: '保存阶段' }));
 
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     await waitFor(() => {
       expect(fake.positions.saveStage).toHaveBeenCalledWith({
         id: interviewStageId,
         positionId,
         name: '面试',
         canonicalStage: 'interview',
-        actualDate: null,
+        actualDate: today,
         expectedDate: '2026-08-01',
         feedback: '',
         notes: '',
-        orderIndex: 2,
+        orderIndex: 0,
       });
     });
     expect(fake.positions.get).toHaveBeenCalledTimes(2);
   });
 
-  it('rejects an empty stage order without silently moving it to the first position', async () => {
-    const { fake, user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('tab', { name: '流程' }));
-    await user.click(screen.getByRole('button', { name: '编辑 面试' }));
+  it('defaults empty stage dates to local today while preserving existing dates', async () => {
+    const { user } = renderAt(`#/positions/${positionId}`);
+    await user.click(await screen.findByRole('button', { name: /^编辑流程阶段：面试/ }));
     const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
-    const order = within(editor).getByRole('spinbutton', { name: /顺序/ });
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const dateInputs = editor.querySelectorAll<HTMLInputElement>('input[type="date"]');
+
+    expect(dateInputs).toHaveLength(2);
+    expect(dateInputs[0]).toHaveValue('2026-08-01');
+    expect(dateInputs[1]).toHaveValue(today);
+  });
+
+  it('rejects an empty display order without silently moving it to the first position', async () => {
+    const { fake, user } = renderAt(`#/positions/${positionId}`);
+    await user.click(await screen.findByRole('button', { name: /编辑流程阶段：面试/ }));
+    const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
+    const order = within(editor).getByRole('spinbutton', { name: /显示顺序/ });
 
     expect(order).toBeRequired();
     await user.clear(order);
     await user.click(within(editor).getByRole('button', { name: '保存阶段' }));
 
-    expect(await within(editor).findByText('请输入非负整数')).toBeInTheDocument();
+    expect(await within(editor).findByText('请输入有效的显示顺序')).toBeInTheDocument();
     expect(order).toHaveValue(null);
     expect(fake.positions.saveStage).not.toHaveBeenCalled();
   });
 
-  it('uses a fixed visible edit label instead of repeating the stage name', async () => {
-    const { user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('tab', { name: '流程' }));
+  it('uses the whole stage node as the edit trigger', async () => {
+    renderAt(`#/positions/${positionId}`);
 
-    expect(screen.getByRole('button', { name: '编辑 面试' })).toHaveTextContent(/^编辑$/);
+    expect(await screen.findByRole('button', { name: /编辑流程阶段：面试/ }))
+      .toHaveClass('stage-node');
   });
 
-  it('adds stages, reorders existing stages, and refreshes detail after each mutation', async () => {
+  it('adds stages from the plus node and uses a 1-based display order', async () => {
     const { fake, user } = renderAt(`#/positions/${positionId}`);
-    await user.click(await screen.findByRole('tab', { name: '流程' }));
-
-    await user.click(screen.getByRole('button', { name: '新增阶段' }));
+    await user.click(await screen.findByRole('button', { name: '新增流程阶段' }));
     const editor = screen.getByRole('dialog', { name: '新增流程阶段' });
-    await user.type(within(editor).getByRole('textbox', { name: /阶段名称/ }), '业务复试');
     await user.selectOptions(within(editor).getByRole('combobox', { name: /标准阶段/ }), 'interview');
+    expect(within(editor).getByRole('textbox', { name: /阶段名称/ })).toHaveValue('面试');
+    await user.type(within(editor).getByRole('textbox', { name: /阶段名称/ }), '业务复试');
     await user.click(within(editor).getByRole('button', { name: '保存阶段' }));
 
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     expect(fake.positions.saveStage).toHaveBeenCalledWith({
       positionId,
       name: '业务复试',
       canonicalStage: 'interview',
-      actualDate: null,
-      expectedDate: null,
+      actualDate: today,
+      expectedDate: today,
       feedback: '',
       notes: '',
-      orderIndex: 3,
+      orderIndex: 2,
+    });
+    expect(screen.queryByText('更多流程设置')).not.toBeInTheDocument();
+    await waitFor(() => expect(fake.positions.get).toHaveBeenCalledTimes(2));
+  });
+
+  it('uses fixed date inputs for offer stages instead of generic actual and expected dates', async () => {
+    const { user } = renderAt(`#/positions/${positionId}`);
+    await user.click(await screen.findByRole('button', { name: '新增流程阶段' }));
+    const editor = screen.getByRole('dialog', { name: '新增流程阶段' });
+    await user.selectOptions(within(editor).getByRole('combobox', { name: /标准阶段/ }), 'offer');
+
+    expect(within(editor).getByLabelText('收到 Offer 时间')).toBeVisible();
+    expect(within(editor).queryByLabelText('收到通知时间')).not.toBeInTheDocument();
+    expect(within(editor).queryByText('预计日期')).not.toBeInTheDocument();
+    expect(within(editor).queryByText('实际日期')).not.toBeInTheDocument();
+  });
+
+  it('opens a dedicated confirmation from the hovered node delete action', async () => {
+    let resolveRemoval: (value: ProcessStage[]) => void = () => undefined;
+    const { fake, user } = renderAt(`#/positions/${positionId}`, (api) => {
+      api.positions.removeStage.mockImplementation(() => new Promise((resolve) => {
+        resolveRemoval = resolve;
+      }));
+    });
+    await user.click(await screen.findByRole('button', { name: '删除流程阶段：面试' }));
+    expect(fake.positions.removeStage).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: '确认删除节点' });
+    expect(within(dialog).getByText(/日期、反馈和备注/)).toBeInTheDocument();
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.queryByRole('dialog', { name: '编辑流程阶段' })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: '确认删除节点' }));
+
+    await waitFor(() => expect(fake.positions.removeStage).toHaveBeenCalledWith(
+      positionId,
+      interviewStageId,
+    ));
+    resolveRemoval([]);
+    await waitFor(() => expect(fake.positions.get).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not open a context menu for stage nodes', async () => {
+    const { fake } = renderAt(`#/positions/${positionId}`);
+    const interviewNode = await screen.findByRole('button', { name: /编辑流程阶段：面试/ });
+    fireEvent.contextMenu(interviewNode, { clientX: 48, clientY: 64 });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(fake.positions.removeStage).not.toHaveBeenCalled();
+  });
+
+  it('shows only the add node when a position has no stages', async () => {
+    renderAt(`#/positions/${positionId}`, (api) => {
+      api.positions.get.mockResolvedValue({ ...detail, currentStage: null, stages: [] });
     });
 
-    await user.click(screen.getByRole('button', { name: '上移 面试' }));
-    expect(fake.positions.reorderStages).toHaveBeenCalledWith(positionId, [
-      interviewStageId,
-      appliedStageId,
-    ]);
-    await waitFor(() => expect(fake.positions.get).toHaveBeenCalledTimes(3));
+    expect(await screen.findByRole('button', { name: '新增流程阶段' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /编辑流程阶段/ })).not.toBeInTheDocument();
   });
 
   it('edits a position without losing values when the API fails', async () => {
@@ -330,8 +515,9 @@ describe('positions flow', () => {
   it('shows safe loading errors and not-found states', async () => {
     const first = renderAt('#/positions', (api) => {
       api.positions.list.mockRejectedValue(new Error('SQL table positions'));
+      api.positions.listGrouped.mockRejectedValue(new Error('SQL table positions'));
     });
-    expect(await screen.findByRole('heading', { name: '岗位载入失败' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '岗位读取失败' })).toBeInTheDocument();
     expect(screen.queryByText(/SQL table/)).not.toBeInTheDocument();
     first.unmount();
 
@@ -346,5 +532,121 @@ describe('positions flow', () => {
     });
     expect(await screen.findByRole('heading', { name: '岗位详情载入失败' })).toBeInTheDocument();
     expect(screen.queryByText(/SQL secret/)).not.toBeInTheDocument();
+  });
+
+  it('retains Cancel and Confirm actions in the position delete confirmation', async () => {
+    const { fake, user } = renderAt(`#/positions/${positionId}`);
+
+    await user.click(await screen.findByRole('button', { name: '删除岗位' }));
+    const dialog = screen.getByRole('dialog', { name: '确认删除岗位' });
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '确认删除' })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: '取消' }));
+    expect(fake.positions.remove).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '确认删除岗位' })).not.toBeInTheDocument();
+  });
+
+  it('captures and displays a position location on the main path', async () => {
+    const locatedDetail = { ...detail, location: '上海 · 混合办公' };
+    const locatedItem = { ...listItem, location: locatedDetail.location };
+    const { fake, user } = renderAt('#/positions', (api) => {
+      api.positions.list.mockResolvedValue([locatedItem]);
+      api.positions.listGrouped.mockResolvedValue([{ canonicalName: locatedItem.company, members: [locatedItem] }]);
+      api.positions.create.mockResolvedValue(locatedDetail);
+      api.positions.get.mockResolvedValue(locatedDetail);
+    });
+
+    await screen.findByText('远山科技');
+    await user.click(screen.getByRole('button', { name: '录入岗位' }));
+    const dialog = screen.getByRole('dialog', { name: '录入岗位' });
+    await user.click(within(dialog).getByRole('tab', { name: '手动录入' }));
+    await user.type(within(dialog).getByRole('textbox', { name: /公司/ }), '远山科技');
+    await user.type(within(dialog).getByRole('textbox', { name: /岗位名称/ }), '产品经理');
+    await user.type(within(dialog).getByRole('textbox', { name: /位置/ }), '上海');
+    await user.type(within(dialog).getByRole('textbox', { name: /原始 JD/ }), '负责产品规划');
+    await user.click(within(dialog).getByRole('button', { name: '保存岗位' }));
+
+    await waitFor(() => expect(fake.positions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ location: '上海' }),
+    ));
+  });
+
+  it('opens a compact single-page workspace without duplicate interview sections', async () => {
+    renderAt(`#/positions/${positionId}`);
+
+    expect(await screen.findByTestId('raw-jd')).toHaveTextContent('负责产品规划');
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '推进记录' })).toBeInTheDocument();
+    expect(screen.getByText('准备材料')).toBeInTheDocument();
+    expect(screen.queryAllByRole('heading', { name: '节点面试记录' })).toHaveLength(0);
+    expect(screen.queryByRole('heading', { name: '面试记录' })).not.toBeInTheDocument();
+  });
+
+  it('renders a linked interview inside the interview stage editor and sends that stage on create', async () => {
+    const linkedInterview: Interview = {
+      id: '2f68e8a5-bf4b-4f24-9d7a-111111111111',
+      positionId,
+      stageId: interviewStageId,
+      roundName: '业务一面',
+      interviewDate: '2026-08-02',
+      transcript: '已记录的面试内容',
+      personalNotes: '',
+      summary: null,
+      reviewSnapshot: { status: 'none' },
+      feedbackResult: null,
+      createdAt: '2026-08-02T00:00:00.000Z',
+      updatedAt: '2026-08-02T00:00:00.000Z',
+    };
+    const { fake, user } = renderAt(`#/positions/${positionId}`, (api) => {
+      api.positions.get.mockResolvedValue({ ...detail, interviews: [linkedInterview] });
+      api.reviews.interviews.create.mockResolvedValue({
+        ...linkedInterview,
+        id: '3f68e8a5-bf4b-4f24-9d7a-222222222222',
+        roundName: '业务二面',
+        transcript: '新面试记录',
+      });
+    });
+
+    const stageItem = (await screen.findByRole('button', { name: /编辑流程阶段：面试/ }))
+      .closest('li');
+    if (!stageItem) throw new Error('Expected interview stage list item');
+    expect(within(stageItem).queryByText('节点面试记录')).not.toBeInTheDocument();
+
+    await user.click(within(stageItem).getByRole('button', { name: /编辑流程阶段：面试/ }));
+    const editor = screen.getByRole('dialog', { name: '编辑流程阶段' });
+    expect(within(editor).getByText('节点面试记录')).toBeInTheDocument();
+    expect(within(editor).getByRole('heading', { level: 4, name: '业务一面' }))
+      .toBeInTheDocument();
+
+    await user.click(within(editor).getByRole('button', { name: '新增面试记录' }));
+    expect(editor.querySelector('form form')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/轮次/), '业务二面');
+    await user.type(screen.getByLabelText(/已确认文字记录/), '新面试记录');
+    await user.click(screen.getByRole('button', { name: '保存面试记录' }));
+
+    await waitFor(() => expect(fake.reviews.interviews.create).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId: interviewStageId }),
+    ));
+  });
+
+  it('does not render interview records in non-interview or new stage editors', async () => {
+    const { user } = renderAt(`#/positions/${positionId}`);
+
+    await user.click(await screen.findByRole('button', { name: /编辑流程阶段：已投递/ }));
+    const appliedEditor = screen.getByRole('dialog', { name: '编辑流程阶段' });
+    expect(within(appliedEditor).queryByText('节点面试记录')).not.toBeInTheDocument();
+    await user.click(within(appliedEditor).getByRole('button', { name: '取消' }));
+
+    await user.click(screen.getByRole('button', { name: '新增流程阶段' }));
+    const newEditor = screen.getByRole('dialog', { name: '新增流程阶段' });
+    expect(within(newEditor).queryByText('节点面试记录')).not.toBeInTheDocument();
+  });
+
+  it('opens stage editing by clicking a stage card', async () => {
+    const { user } = renderAt(`#/positions/${positionId}`);
+
+    await user.click(await screen.findByRole('button', { name: /编辑流程阶段：面试/ }));
+    expect(screen.getByRole('dialog', { name: '编辑流程阶段' })).toBeInTheDocument();
   });
 });

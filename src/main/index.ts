@@ -10,9 +10,14 @@ import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database';
 import { createRepositoryBundle, registerIpcHandlers } from './ipc/register';
 import { createAiSettingsStore, AiServiceError } from './services/ai-settings';
+import { createEmailSettingsStore, EmailSettingsError } from './services/email-settings';
+import { createEmailSyncService } from './services/email-sync';
 import { createAiClient } from './services/ai-client';
+import type { EmailSettingsPublic } from '../shared/domain';
 import {
   createBackupService,
+  readRestoreMarker,
+  recoverInterruptedRestore,
   type LiveDatabaseController,
 } from './services/backup';
 
@@ -29,8 +34,8 @@ function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 980,
-    minHeight: 680,
+    minWidth: 1024,
+    minHeight: 700,
     backgroundColor: '#f7f4ed',
     title: '求职闭环',
     webPreferences: {
@@ -57,19 +62,57 @@ let database: DatabaseSync | null = null;
 let databaseClosed = false;
 let databaseRestarting = false;
 let databasePath = '';
+let emailSyncTimer: ReturnType<typeof setInterval> | null = null;
 
 function closeDatabaseOnce(): void {
+  if (emailSyncTimer !== null) {
+    clearInterval(emailSyncTimer);
+    emailSyncTimer = null;
+  }
   if (database === null || databaseClosed) return;
   databaseClosed = true;
   database.close();
   database = null;
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   databasePath = join(app.getPath('userData'), 'job-search-loop.sqlite');
+  try {
+    const interrupted = await readRestoreMarker(databasePath);
+    if (interrupted !== null) {
+      const result = await dialog.showMessageBox({
+        type: 'warning',
+        title: '发现未完成的数据恢复',
+        message: '上次恢复在替换数据库时中断。',
+        detail: '你可以继续安装已校验的备份、恢复到操作前副本，或保留现场后退出应用。',
+        buttons: ['继续恢复', '使用回滚副本', '保留现场并退出'],
+        defaultId: 1,
+        cancelId: 2,
+        noLink: true,
+      });
+      const choice = result.response === 0
+        ? 'continue'
+        : result.response === 1
+          ? 'rollback'
+          : 'preserve';
+      await recoverInterruptedRestore(databasePath, choice);
+      if (choice === 'preserve') {
+        app.exit(0);
+        return;
+      }
+    }
+  } catch {
+    dialog.showErrorBox(
+      '数据恢复无法继续',
+      '恢复现场未被修改。请保留应用数据目录并重新启动后选择回滚副本。',
+    );
+    app.exit(1);
+    return;
+  }
   database = openDatabase(databasePath);
   databaseClosed = false;
   const repositories = createRepositoryBundle(database);
+  repositories.aiTasks.interruptRunningOnStartup();
   const databaseController: LiveDatabaseController = {
     path: databasePath,
     current() {
@@ -109,6 +152,36 @@ app.whenReady().then(() => {
       return safeStorage.decryptString(value);
     },
   });
+  const emailSettings = createEmailSettingsStore({
+    settingsPath: join(app.getPath('userData'), 'email-settings.json'),
+    encrypt(value) {
+      if (!safeStorage.isEncryptionAvailable()) {
+        throw new EmailSettingsError('EMAIL_SETTINGS_UNAVAILABLE', '本机安全存储暂时不可用');
+      }
+      return safeStorage.encryptString(value);
+    },
+    decrypt(value) {
+      if (!safeStorage.isEncryptionAvailable()) {
+        throw new EmailSettingsError('EMAIL_SETTINGS_UNAVAILABLE', '本机安全存储暂时不可用');
+      }
+      return safeStorage.decryptString(value);
+    },
+  });
+  const emailService = createEmailSyncService({
+    events: repositories.emailSync!,
+    positions: repositories.positions,
+    settings: emailSettings,
+  });
+  const scheduleEmailSync = async (publicSettings?: EmailSettingsPublic): Promise<void> => {
+    if (emailSyncTimer !== null) clearInterval(emailSyncTimer);
+    emailSyncTimer = null;
+    const emailPublic = publicSettings ?? await emailSettings.getPublic().catch(() => null);
+    if (!emailPublic?.enabled) return;
+    void emailService.syncNow().catch(() => undefined);
+    emailSyncTimer = setInterval(() => {
+      void emailService.syncNow().catch(() => undefined);
+    }, emailPublic.intervalMinutes * 60_000);
+  };
   const aiClient = createAiClient({
     fetch: globalThis.fetch,
     getSettings: () => settings.getPrivate(),
@@ -122,6 +195,11 @@ app.whenReady().then(() => {
     },
     {
       isBlocked: () => databaseRestarting,
+      email: {
+        settings: emailSettings,
+        service: emailService,
+        onSettingsSaved: scheduleEmailSync,
+      },
       system: {
         backup,
         dialogs: {
@@ -156,6 +234,7 @@ app.whenReady().then(() => {
       },
     },
   );
+  void scheduleEmailSync().catch(() => undefined);
   createMainWindow();
 
   app.on('activate', () => {

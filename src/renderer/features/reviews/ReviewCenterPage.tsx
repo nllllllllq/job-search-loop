@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { ChangeProposal } from '../../../shared/domain';
+import type { ChangeProposal, ChangeProposalListItem } from '../../../shared/domain';
 import { EmptyState } from '../../components/EmptyState';
 import { ProposalCard } from '../../components/ProposalCard';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
@@ -12,7 +12,7 @@ export function ReviewCenterPage() {
     () => window.jobSearch.reviews.proposals.list(),
     [],
   );
-  const proposals = resource.data ?? [];
+  const proposals = resource.data?.items ?? [];
   const pending = useMemo(
     () => proposals.filter((item) => item.status === 'pending'),
     [proposals],
@@ -21,10 +21,15 @@ export function ReviewCenterPage() {
     () => proposals.filter((item) => item.status !== 'pending'),
     [proposals],
   );
-  const resolved = (proposal: ChangeProposal) => {
-    resource.setData((current) => (current ?? []).map(
-      (item) => item.id === proposal.id ? proposal : item,
-    ));
+  const resolved = (current: ChangeProposalListItem, proposal: ChangeProposal) => {
+    resource.setData((current) => current === null ? current : ({
+      ...current,
+      items: current.items.map(
+        (item) => item.id === proposal.id
+          ? { ...proposal, context: item.context }
+          : item,
+      ),
+    }));
   };
 
   return (
@@ -73,7 +78,7 @@ export function ReviewCenterPage() {
           <h3 id="pending-heading">待确认</h3>
           <div className="proposal-grid">
             {pending.map((proposal) => (
-              <ProposalCard key={proposal.id} onResolved={resolved} proposal={proposal} />
+              <ProposalCard key={proposal.id} onResolved={(result) => resolved(proposal, result)} proposal={proposal} />
             ))}
           </div>
         </section>
@@ -83,7 +88,7 @@ export function ReviewCenterPage() {
           <h3 id="history-heading">处理历史</h3>
           <div className="proposal-grid">
             {history.map((proposal) => (
-              <ProposalCard key={proposal.id} onResolved={resolved} proposal={proposal} />
+              <ProposalCard key={proposal.id} onResolved={(result) => resolved(proposal, result)} proposal={proposal} />
             ))}
           </div>
         </section>

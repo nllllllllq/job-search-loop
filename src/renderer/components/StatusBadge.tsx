@@ -38,7 +38,7 @@ export function StatusBadge({
   tone,
   label,
 }: StatusBadgeProps) {
-  const resolvedLabel = label ?? (stage ? stageLabels[stage] : '未标记');
+  const resolvedLabel = label ?? (stage ? stageLabels[stage] : '未设置');
   const resolvedTone = tone ?? (stage ? stageTones[stage] : 'neutral');
 
   return (

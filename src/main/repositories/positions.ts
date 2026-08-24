@@ -3,8 +3,9 @@ import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROCESS_STAGES } from '../../shared/defaults';
 import type {
   CanonicalStage,
-  Interview,
+  CompanyPositionGroup,
   Position,
+  PositionCreateInput,
   PositionDetail,
   PositionInput,
   PositionListItem,
@@ -13,13 +14,13 @@ import type {
 } from '../../shared/domain';
 import {
   canonicalStageSchema,
-  interviewReviewSnapshotSchema,
+  positionCreateInputSchema,
   positionInputSchema,
   processStageInputSchema,
 } from '../../shared/schemas';
+import { stagePriority } from '../../shared/stage-policy';
 import {
   integer,
-  json,
   notFound,
   nullableText,
   RepositoryError,
@@ -27,9 +28,10 @@ import {
   text,
   transaction,
 } from './common';
+import { decodeInterviewRow } from './interviews';
 
 const POSITION_COLUMNS = `
-  id, company, title, interest, raw_jd, current_stage, final_result, created_at, updated_at
+  id, company, title, location, interest, raw_jd, current_stage, final_result, created_at, updated_at
 `;
 const STAGE_COLUMNS = `
   id, position_id, name, canonical_stage, actual_date, expected_date,
@@ -45,6 +47,7 @@ function decodePosition(value: unknown): Position {
     id: text(data.id, 'id'),
     company: text(data.company, 'company'),
     title: text(data.title, 'title'),
+    location: text(data.location, 'location'),
     interest: interest as Position['interest'],
     rawJd: text(data.raw_jd, 'raw_jd'),
     currentStage: currentStageValue === null
@@ -73,39 +76,21 @@ function decodeStage(value: unknown): ProcessStage {
   };
 }
 
-function decodeInterview(value: unknown): Interview {
-  const data = row(value, 'interview');
-  return {
-    id: text(data.id, 'id'),
-    positionId: text(data.position_id, 'position_id'),
-    roundName: text(data.round_name, 'round_name'),
-    interviewDate: nullableText(data.interview_date, 'interview_date'),
-    transcript: text(data.transcript, 'transcript'),
-    personalNotes: text(data.personal_notes, 'personal_notes'),
-    summary: nullableText(data.summary, 'summary'),
-    reviewSnapshot: data.review_snapshot_json === null
-      ? null
-      : interviewReviewSnapshotSchema.parse(json(
-        data.review_snapshot_json,
-        'review_snapshot_json',
-      )),
-    feedbackResult: nullableText(data.feedback_result, 'feedback_result'),
-    createdAt: text(data.created_at, 'created_at'),
-    updatedAt: text(data.updated_at, 'updated_at'),
-  };
-}
-
 export interface PositionsRepository {
-  create(input: PositionInput): Position;
+  create(input: PositionCreateInput): Position;
   update(id: string, input: PositionInput): Position;
   get(id: string): Position;
   getDetail(id: string): PositionDetail;
   list(filter?: { query?: string; stage?: CanonicalStage }): PositionListItem[];
+  listGrouped?(filter?: { query?: string; stage?: CanonicalStage }): CompanyPositionGroup[];
   remove(id: string): void;
   listStages(positionId: string): ProcessStage[];
   upsertStage(input: ProcessStageInput & { id?: string }): ProcessStage;
   reorderStages(positionId: string, orderedIds: string[]): ProcessStage[];
+  removeStage(positionId: string, stageId: string): ProcessStage[];
 }
+
+const INTERESTED_STAGE_NAME = '感兴趣';
 
 export function createPositionsRepository(db: DatabaseSync): PositionsRepository {
   const get = (id: string): Position => {
@@ -122,20 +107,27 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
     `).all(positionId).map(decodeStage);
   };
 
-  // Current stage is the furthest ordered stage with an actual date. Before any
+  // Current stage is the furthest ordered stage with a recorded date. Before any
   // progress is recorded, it is the first ordered stage (normally "interested").
   const refreshCurrentStage = (positionId: string, now: string): void => {
     const stages = db.prepare(`
-      SELECT canonical_stage, actual_date FROM process_stages
+      SELECT canonical_stage, actual_date, expected_date FROM process_stages
       WHERE position_id = ? ORDER BY order_index
     `).all(positionId).map((value) => {
       const data = row(value, 'process stage');
       return {
         canonicalStage: canonicalStageSchema.parse(text(data.canonical_stage, 'canonical_stage')),
         actualDate: nullableText(data.actual_date, 'actual_date'),
+        expectedDate: nullableText(data.expected_date, 'expected_date'),
       };
     });
-    const current = [...stages].reverse().find((stage) => stage.actualDate !== null) ?? stages[0];
+    const current = [...stages].reverse().find((stage) => (
+      stage.actualDate !== null
+      || (
+        (stage.canonicalStage === 'assessment' || stage.canonicalStage === 'interview')
+        && stage.expectedDate !== null
+      )
+    )) ?? stages[0];
     db.prepare('UPDATE positions SET current_stage = ?, updated_at = ? WHERE id = ?')
       .run(current?.canonicalStage ?? null, now, positionId);
   };
@@ -176,38 +168,52 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
 
   return {
     create(input) {
-      const parsed = positionInputSchema.parse(input);
+      const parsed = positionCreateInputSchema.parse(input);
       return transaction(db, () => {
         const id = randomUUID();
         const now = new Date().toISOString();
+        const initialStage = parsed.initialStage ?? 'applied';
+        const initialDate = parsed.initialDate ?? now.slice(0, 10);
+        const stages = initialStage === 'interested'
+          ? [
+            { name: INTERESTED_STAGE_NAME, canonicalStage: 'interested' as const, orderIndex: 0 },
+            ...DEFAULT_PROCESS_STAGES.map((stage) => ({ ...stage, orderIndex: stage.orderIndex + 1 })),
+          ]
+          : DEFAULT_PROCESS_STAGES;
         db.prepare(`
           INSERT INTO positions (${POSITION_COLUMNS})
-          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
         `).run(
           id,
           parsed.company,
           parsed.title,
+          parsed.location,
           parsed.interest,
           parsed.rawJd,
-          DEFAULT_PROCESS_STAGES[0]?.canonicalStage ?? null,
+          initialStage,
           now,
           now,
         );
         const insertStage = db.prepare(`
           INSERT INTO process_stages (${STAGE_COLUMNS})
-          VALUES (?, ?, ?, ?, NULL, NULL, '', '', ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)
         `);
-        for (const stage of DEFAULT_PROCESS_STAGES) {
+        for (const stage of stages) {
+          const isSelected = stage.canonicalStage === initialStage;
+          const noticeOnly = stage.canonicalStage === 'assessment' || stage.canonicalStage === 'interview';
           insertStage.run(
             randomUUID(),
             id,
             stage.name,
             stage.canonicalStage,
+            isSelected && !noticeOnly ? initialDate : null,
+            isSelected && noticeOnly ? initialDate : null,
             stage.orderIndex,
             now,
             now,
           );
         }
+        refreshCurrentStage(id, now);
         return get(id);
       });
     },
@@ -218,9 +224,17 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
       const now = new Date().toISOString();
       db.prepare(`
         UPDATE positions
-        SET company = ?, title = ?, interest = ?, raw_jd = ?, updated_at = ?
+        SET company = ?, title = ?, location = ?, interest = ?, raw_jd = ?, updated_at = ?
         WHERE id = ?
-      `).run(parsed.company, parsed.title, parsed.interest, parsed.rawJd, now, id);
+      `).run(
+        parsed.company,
+        parsed.title,
+        parsed.location,
+        parsed.interest,
+        parsed.rawJd,
+        now,
+        id,
+      );
       return get(id);
     },
 
@@ -232,7 +246,7 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
       const interviews = db.prepare(`
         SELECT * FROM interviews
         WHERE position_id = ? ORDER BY interview_date DESC, created_at DESC
-      `).all(id).map(decodeInterview);
+      `).all(id).map(decodeInterviewRow);
       return { ...position, stages, interviews };
     },
 
@@ -240,9 +254,9 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
       const clauses: string[] = [];
       const parameters: string[] = [];
       if (filter.query?.trim()) {
-        clauses.push("(company LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR raw_jd LIKE ? ESCAPE '\\')");
+        clauses.push("(company LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR location LIKE ? ESCAPE '\\' OR raw_jd LIKE ? ESCAPE '\\')");
         const escaped = filter.query.trim().replace(/[\\%_]/g, '\\$&');
-        parameters.push(`%${escaped}%`, `%${escaped}%`, `%${escaped}%`);
+        parameters.push(`%${escaped}%`, `%${escaped}%`, `%${escaped}%`, `%${escaped}%`);
       }
       if (filter.stage) {
         clauses.push('current_stage = ?');
@@ -258,12 +272,39 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
           id: position.id,
           company: position.company,
           title: position.title,
+          location: position.location,
           interest: position.interest,
           currentStage: position.currentStage,
           finalResult: position.finalResult,
           updatedAt: position.updatedAt,
         };
       });
+    },
+
+    listGrouped(filter = {}) {
+      const groups = new Map<string, CompanyPositionGroup>();
+      for (const member of this.list(filter)) {
+        const group = groups.get(member.company);
+        if (group) group.members.push(member);
+        else groups.set(member.company, { canonicalName: member.company, members: [member] });
+      }
+      const grouped = [...groups.values()];
+      for (const group of grouped) {
+        group.members.sort((left, right) => (
+          stagePriority(left.currentStage) - stagePriority(right.currentStage)
+          || right.updatedAt.localeCompare(left.updatedAt)
+          || left.id.localeCompare(right.id)
+        ));
+      }
+      return grouped.sort((left, right) => (
+        stagePriority(left.members[0]?.currentStage) - stagePriority(right.members[0]?.currentStage)
+        || (right.members.reduce((latest, member) => (
+          member.updatedAt > latest ? member.updatedAt : latest
+        ), '')).localeCompare(left.members.reduce((latest, member) => (
+          member.updatedAt > latest ? member.updatedAt : latest
+        ), ''))
+        || left.canonicalName.localeCompare(right.canonicalName, 'zh-CN')
+      ));
     },
 
     remove(id) {
@@ -339,6 +380,28 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
         orderedIds,
         new Date().toISOString(),
       ));
+    },
+
+    removeStage(positionId, stageId) {
+      return transaction(db, () => {
+        get(positionId);
+        const existing = db.prepare(`
+          SELECT id FROM process_stages WHERE id = ? AND position_id = ?
+        `).get(stageId, positionId);
+        if (existing === undefined) notFound('Process stage', stageId);
+
+        db.prepare('DELETE FROM process_stages WHERE id = ? AND position_id = ?')
+          .run(stageId, positionId);
+        const orderedIds = db.prepare(`
+          SELECT id FROM process_stages
+          WHERE position_id = ? ORDER BY order_index, created_at, id
+        `).all(positionId).map((value) => text(row(value, 'process stage').id, 'id'));
+        return reorderInsideTransaction(
+          positionId,
+          orderedIds,
+          new Date().toISOString(),
+        );
+      });
     },
   };
 }

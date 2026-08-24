@@ -1,13 +1,18 @@
 import type {
+  AiTask,
   AiConnectionResult,
   AiPublicSettings,
   AiSettingsSaveInput,
   AssetVersion,
   CanonicalStage,
+  CompanyPositionGroup,
   Capability,
+  CapabilityMergeResult,
+  CapabilityAnalysisOutput,
   CapabilityAnalysisPreview,
   CapabilityInput,
   ChangeProposal,
+  ChangeProposalListResult,
   DashboardSummary,
   Insight,
   InsightInput,
@@ -15,9 +20,15 @@ import type {
   InterviewReviewPreview,
   InterviewReviewPreviewInput,
   InterviewReviewResult,
+  ImportedFileInput,
+  ImportedImageInput,
   Position,
   PositionDetail,
+  PositionCreateInput,
   PositionInput,
+  PositionImportPreview,
+  ProjectImportPreview,
+  ProjectSegmentUpdate,
   PreparationGenerateInput,
   PreparationOutboundPreview,
   PositionListItem,
@@ -33,6 +44,11 @@ import type {
   Question,
   QuestionInput,
   QuestionType,
+  EmailConnectionResult,
+  EmailSettingsPublic,
+  EmailSettingsSaveInput,
+  EmailSyncEvent,
+  EmailSyncResult,
 } from './domain';
 export type InterviewEditInput = Omit<
   Interview,
@@ -49,23 +65,44 @@ export const CHANNELS = {
   },
   positions: {
     list: 'positions:list',
+    listGrouped: 'positions:list-grouped',
     get: 'positions:get',
     create: 'positions:create',
     update: 'positions:update',
     remove: 'positions:remove',
     saveStage: 'positions:save-stage',
     reorderStages: 'positions:reorder-stages',
+    removeStage: 'positions:remove-stage',
+  },
+  email: {
+    settings: {
+      get: 'email:settings:get',
+      save: 'email:settings:save',
+    },
+    testConnection: 'email:test-connection',
+    syncNow: 'email:sync-now',
+    listRecent: 'email:list-recent',
   },
   preparations: {
     list: 'preparations:list',
     get: 'preparations:get',
     preview: 'preparations:preview',
     generate: 'preparations:generate',
+    start: 'preparations:start',
+  },
+  tasks: {
+    listByPosition: 'tasks:list-by-position',
+    get: 'tasks:get',
   },
   assets: {
     projects: { list: 'assets:projects:list', get: 'assets:projects:get', save: 'assets:projects:save' },
     questions: { list: 'assets:questions:list', get: 'assets:questions:get', save: 'assets:questions:save' },
-    capabilities: { list: 'assets:capabilities:list', get: 'assets:capabilities:get', save: 'assets:capabilities:save' },
+    capabilities: {
+      list: 'assets:capabilities:list',
+      get: 'assets:capabilities:get',
+      save: 'assets:capabilities:save',
+      merge: 'assets:capabilities:merge',
+    },
     insights: { list: 'assets:insights:list', get: 'assets:insights:get', save: 'assets:insights:save' },
     versions: 'assets:versions:list',
     prompts: { list: 'assets:prompts:list', get: 'assets:prompts:get', save: 'assets:prompts:save' },
@@ -94,6 +131,18 @@ export const CHANNELS = {
     confirmCapabilityAnalysis: 'system:capability-analysis:confirm',
     exportBackup: 'system:backup:export',
     restoreBackup: 'system:backup:restore',
+    getBackupProgress: 'system:backup:progress',
+    cancelBackup: 'system:backup:cancel',
+    listRollbacks: 'system:backup:rollbacks:list',
+    checkRollback: 'system:backup:rollbacks:check',
+    deleteRollback: 'system:backup:rollbacks:delete',
+  },
+  imports: {
+    previewPositionFromText: 'imports:position:text',
+    previewPositionFromImages: 'imports:position:images',
+    previewProjectsFromDocument: 'imports:projects:document',
+    updateProjectSegments: 'imports:projects:update-segments',
+    cancel: 'imports:cancel',
   },
 } as const;
 
@@ -101,6 +150,23 @@ export type BackupActionResult =
   | { status: 'cancelled' }
   | { status: 'exported' }
   | { status: 'restored' };
+
+export type BackupProgress = {
+  operation: 'idle' | 'export' | 'restore' | 'deep-check';
+  phase: string;
+  percent: number;
+  cancellable: boolean;
+  active: boolean;
+};
+
+export type RollbackSummary = {
+  id: string;
+  label: string;
+  createdAt: string;
+  size: number;
+  quickStatus: 'valid';
+  deepStatus: 'unchecked' | 'valid';
+};
 
 export interface AppError {
   code:
@@ -114,11 +180,19 @@ export interface AppError {
     | 'AI_TIMEOUT'
     | 'AI_PROVIDER_ERROR'
     | 'AI_INVALID_OUTPUT'
+    | 'AI_INPUT_UNSUPPORTED'
     | 'AI_SETTINGS_CORRUPT'
     | 'AI_SETTINGS_UNAVAILABLE'
     | 'BACKUP_INVALID'
-    | 'BACKUP_FAILED';
+    | 'BACKUP_FAILED'
+    | 'EMAIL_SETTINGS_CORRUPT'
+    | 'EMAIL_SETTINGS_UNAVAILABLE'
+    | 'EMAIL_NOT_CONFIGURED'
+    | 'EMAIL_CONNECTION_FAILED';
   message: string;
+  providerMessage?: string;
+  httpStatus?: number;
+  requestId?: string;
 }
 
 export interface JobSearchApi {
@@ -132,18 +206,34 @@ export interface JobSearchApi {
   };
   readonly positions: {
     list(filter?: { query?: string; stage?: CanonicalStage }): Promise<PositionListItem[]>;
+    listGrouped(filter?: { query?: string; stage?: CanonicalStage }): Promise<CompanyPositionGroup[]>;
     get(id: string): Promise<PositionDetail>;
-    create(input: PositionInput): Promise<Position>;
+    create(input: PositionCreateInput): Promise<Position>;
     update(id: string, input: PositionInput): Promise<Position>;
     remove(id: string): Promise<void>;
     saveStage(input: ProcessStageInput & { id?: string }): Promise<ProcessStage>;
     reorderStages(positionId: string, orderedIds: string[]): Promise<ProcessStage[]>;
+    removeStage(positionId: string, stageId: string): Promise<ProcessStage[]>;
+  };
+  readonly email?: {
+    readonly settings: {
+      get(): Promise<EmailSettingsPublic>;
+      save(input: EmailSettingsSaveInput): Promise<EmailSettingsPublic>;
+    };
+    testConnection(): Promise<EmailConnectionResult>;
+    syncNow(): Promise<EmailSyncResult>;
+    listRecent(limit?: number): Promise<EmailSyncEvent[]>;
   };
   readonly preparations: {
     list(positionId: string): Promise<PreparationMaterial[]>;
     get(id: string): Promise<PreparationMaterial>;
     preview(input: PreparationGenerateInput): Promise<PreparationOutboundPreview>;
     generate(input: PreparationGenerateInput): Promise<PreparationMaterial>;
+    start(input: PreparationGenerateInput): Promise<AiTask>;
+  };
+  readonly tasks: {
+    listByPosition(positionId: string): Promise<AiTask[]>;
+    get(id: string): Promise<AiTask>;
   };
   readonly assets: {
     readonly projects: {
@@ -160,6 +250,7 @@ export interface JobSearchApi {
       list(): Promise<Capability[]>;
       get(id: string): Promise<Capability>;
       save(input: CapabilityInput & { id?: string }): Promise<Capability>;
+      merge(sourceId: string, targetId: string): Promise<CapabilityMergeResult>;
     };
     readonly insights: {
       list(): Promise<Insight[]>;
@@ -186,16 +277,37 @@ export interface JobSearchApi {
       cancelPreview(token: string): Promise<void>;
     };
     readonly proposals: {
-      list(status?: ProposalStatus): Promise<ChangeProposal[]>;
+      list(status?: ProposalStatus): Promise<ChangeProposalListResult>;
       accept(id: string, editedPayload?: unknown): Promise<ChangeProposal>;
       ignore(id: string): Promise<ChangeProposal>;
     };
   };
+  readonly imports: {
+    previewPositionFromText(text: string): Promise<PositionImportPreview>;
+    previewPositionFromImages(
+      images: ImportedImageInput[],
+      mode?: 'vision' | 'ocr-text',
+    ): Promise<PositionImportPreview>;
+    previewProjectsFromDocument(
+      file: ImportedFileInput,
+      mode: 'ai' | 'local',
+    ): Promise<ProjectImportPreview>;
+    updateProjectSegments(
+      sessionId: string,
+      operation: ProjectSegmentUpdate,
+    ): Promise<ProjectImportPreview>;
+    cancel(sessionId: string): Promise<void>;
+  };
   readonly system: {
     getDashboardSummary(): Promise<DashboardSummary>;
     previewCapabilityAnalysis(positionIds: string[]): Promise<CapabilityAnalysisPreview>;
-    confirmCapabilityAnalysis(token: string): Promise<ChangeProposal[]>;
+    confirmCapabilityAnalysis(token: string): Promise<CapabilityAnalysisOutput>;
     exportBackup(): Promise<BackupActionResult>;
-    restoreBackup(): Promise<BackupActionResult>;
+    restoreBackup(options?: { deepCheck?: boolean }): Promise<BackupActionResult>;
+    getBackupProgress(): Promise<BackupProgress>;
+    cancelBackup(): Promise<{ status: 'cancelled' | 'not-cancellable' }>;
+    listRollbacks(): Promise<RollbackSummary[]>;
+    checkRollback(id: string, deep: boolean): Promise<RollbackSummary>;
+    deleteRollback(id: string): Promise<void>;
   };
 }

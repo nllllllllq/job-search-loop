@@ -38,6 +38,163 @@ function fixture(
 }
 
 describe('OpenAI-compatible AI client', () => {
+  it('uses Responses Web Search and parses fenced JSON output', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      output: [{
+        type: 'message',
+        content: [{ type: 'output_text', text: '```json\n{"answer":"researched"}\n```' }],
+      }],
+    }));
+    const client = fixture(fetch, {
+      getSettings: vi.fn(async () => ({
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/',
+        model: 'Doubao-Seed-2.0-mini',
+        apiKey: 'secret-key',
+      })),
+    });
+
+    await expect(client.completeJsonWithWebSearch(request, outputSchema))
+      .resolves.toEqual({ answer: 'researched' });
+    expect(fetch).toHaveBeenCalledWith(
+      'https://ark.cn-beijing.volces.com/api/v3/responses',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({
+      model: 'Doubao-Seed-2.0-mini',
+      input: request.messages,
+      tools: [{ type: 'web_search' }],
+      store: false,
+    });
+  });
+
+  it('maps configured image input parts into an OpenAI-compatible request body', async () => {
+    const imageBytes = new Uint8Array([1, 2, 3]);
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }));
+    const client = fixture(fetch, {
+      getSettings: vi.fn(async () => ({
+        baseUrl: 'https://api.example.com/v1',
+        model: 'vision-model',
+        apiKey: 'secret-key',
+        capabilities: {
+          images: true,
+        },
+      })),
+    });
+
+    await expect(client.completeJson({
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Read these inputs.' },
+          { type: 'image', mimeType: 'image/png', bytes: imageBytes },
+        ],
+      }],
+    }, outputSchema)).resolves.toEqual({ answer: 'ok' });
+
+    const payload = JSON.parse(String(fetch.mock.calls[0][1]!.body));
+    expect(payload).toEqual({
+      model: 'vision-model',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Read these inputs.' },
+          {
+            type: 'image_url',
+            image_url: { url: 'data:image/png;base64,AQID' },
+          },
+        ],
+      }],
+      temperature: 0.2,
+    });
+    expect(JSON.stringify(fetch.mock.calls[0][0])).not.toContain('AQID');
+  });
+
+  it('rejects unsupported image inputs before fetching', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }));
+    const client = fixture(fetch);
+
+    const error = await client.completeJson({
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'image',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1, 2, 3]),
+        }],
+      }],
+    }, outputSchema).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: 'AI_INPUT_UNSUPPORTED' });
+    expect(JSON.stringify(error)).not.toContain('AQID');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects all file inputs before fetching, even when image input is enabled', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }));
+    const client = fixture(fetch, {
+      getSettings: vi.fn(async () => ({
+        baseUrl: 'https://api.example.com/v1',
+        model: 'vision-model',
+        apiKey: 'secret-key',
+        capabilities: { images: true },
+      })),
+    });
+
+    await expect(client.completeJson({
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'file',
+          name: 'resume.pdf',
+          mimeType: 'application/pdf',
+          bytes: new Uint8Array([4, 5, 6]),
+        }],
+      }],
+    }, outputSchema)).rejects.toMatchObject({ code: 'AI_INPUT_UNSUPPORTED' });
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects image and file inputs outside user messages before fetching', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }));
+    const client = fixture(fetch, {
+      getSettings: vi.fn(async () => ({
+        baseUrl: 'https://api.example.com/v1',
+        model: 'vision-model',
+        apiKey: 'secret-key',
+        capabilities: {
+          images: true,
+        },
+      })),
+    });
+
+    await expect(client.completeJson({
+      messages: [{
+        role: 'system',
+        content: [{
+          type: 'image',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1, 2, 3]),
+        }, {
+          type: 'file',
+          name: 'resume.pdf',
+          mimeType: 'application/pdf',
+          bytes: new Uint8Array([4, 5, 6]),
+        }],
+      }],
+    }, outputSchema)).rejects.toMatchObject({ code: 'AI_INPUT_UNSUPPORTED' });
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('posts the configured model, messages and fixed temperature', async () => {
     const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
       choices: [{ message: { content: '{"answer":"ok"}' } }],
@@ -95,6 +252,109 @@ describe('OpenAI-compatible AI client', () => {
     );
     expect(error).toMatchObject({ code });
     expect(String((error as Error).message)).not.toContain('provider-body-with-secret');
+  });
+
+  it('strips an outer JSON markdown fence from Chat JSON output', async () => {
+    const client = fixture(async () => response({
+      choices: [{ message: { content: '```json\n{"answer":"fenced"}\n```' } }],
+    }));
+
+    await expect(client.completeJson(request, outputSchema)).resolves.toEqual({
+      answer: 'fenced',
+    });
+  });
+
+  it('exposes bounded, safe diagnostics for provider errors', async () => {
+    const client = fixture(async () => new Response(JSON.stringify({
+      error: {
+        message: 'Vision input is unsupported by this model. Bearer secret-key',
+      },
+    }), {
+      status: 400,
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req_vision_123',
+      },
+    }));
+
+    const error = await client.completeJson(request, outputSchema).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toMatchObject({
+      code: 'AI_PROVIDER_ERROR',
+      providerMessage: 'Vision input is unsupported by this model.',
+      httpStatus: 400,
+      requestId: 'req_vision_123',
+    });
+    expect(JSON.stringify(error)).not.toContain('secret-key');
+    expect(JSON.stringify(error)).not.toContain('Bearer');
+  });
+
+  it.each([
+    'The model "example-model" does not exist or you do not have access to it.',
+    'You exceeded your current quota. Please check your plan and billing details.',
+  ])('preserves ordinary provider diagnostics: %s', async (providerMessage) => {
+    const client = fixture(async () => new Response(JSON.stringify({
+      error: { message: providerMessage },
+    }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    await expect(client.completeJson(request, outputSchema)).rejects.toMatchObject({
+      code: 'AI_PROVIDER_ERROR',
+      providerMessage,
+      httpStatus: 400,
+    });
+  });
+
+  it('redacts OpenAI-style API keys from ordinary provider diagnostics', async () => {
+    const apiKey = 'sk-proj-very-secret-provider-key';
+    const client = fixture(async () => new Response(JSON.stringify({
+      error: { message: `Invalid API key ${apiKey}` },
+    }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    const error = await client.completeJson(request, outputSchema).catch(
+      (caught: unknown) => caught,
+    );
+    const serialized = JSON.stringify(error);
+
+    expect(error).toMatchObject({
+      code: 'AI_AUTH_FAILED',
+      providerMessage: 'Invalid API key [redacted]',
+      httpStatus: 401,
+    });
+    expect(serialized).not.toContain(apiKey);
+  });
+
+  it('does not expose provider errors that echo submitted content', async () => {
+    const echoedJd = 'Build the confidential hiring platform for Example Corp';
+    const echoedAsset = 'data:image/png;base64,very-private-image-content';
+    const client = fixture(async () => new Response(JSON.stringify({
+      error: {
+        message: `Invalid request: {"messages":[{"content":"${echoedJd}"}],"asset":"${echoedAsset}","authorization":"Bearer secret-key"}`,
+      },
+    }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    const error = await client.completeJson(request, outputSchema).catch(
+      (caught: unknown) => caught,
+    );
+    const serialized = JSON.stringify(error);
+
+    expect(error).toMatchObject({
+      code: 'AI_PROVIDER_ERROR',
+      httpStatus: 400,
+    });
+    expect(serialized).not.toContain(echoedJd);
+    expect(serialized).not.toContain(echoedAsset);
+    expect(serialized).not.toContain('secret-key');
   });
 
   it('maps network failures and missing choices to AI_PROVIDER_ERROR', async () => {
@@ -174,19 +434,54 @@ describe('OpenAI-compatible AI client', () => {
     expect(clearTimeout).toHaveBeenCalledOnce();
   });
 
-  it('uses a minimal structured request when testing the connection', async () => {
-    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
-      choices: [{ message: { content: '{"ok":true}' } }],
-    }));
+  it('tests both Chat JSON and Responses Web Search capabilities', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>()
+      .mockResolvedValueOnce(response({
+        choices: [{ message: { content: '```json\n{"ok":true}\n```' } }],
+      }))
+      .mockResolvedValueOnce(response({
+        output_text: '```json\n{"ok":true}\n```',
+      }));
     const client = fixture(fetch);
 
     await expect(client.testConnection()).resolves.toEqual({
       ok: true,
       message: '连接成功，可以使用。',
     });
-    const init = fetch.mock.calls[0][1]!;
-    expect(JSON.parse(String(init.body)).messages).toEqual([
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const chatInit = fetch.mock.calls[0][1]!;
+    expect(JSON.parse(String(chatInit.body)).messages).toEqual([
       expect.objectContaining({ content: expect.stringContaining('JSON') }),
     ]);
+    expect(fetch.mock.calls[0]?.[0]).toBe('https://api.example.com/v1/chat/completions');
+    expect(fetch.mock.calls[1]?.[0]).toBe('https://api.example.com/v1/responses');
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toMatchObject({
+      tools: [{ type: 'web_search' }],
+      store: false,
+    });
+  });
+
+  it('identifies the failed capability without exposing provider details', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>()
+      .mockResolvedValueOnce(response({
+        choices: [{ message: { content: '{"ok":true}' } }],
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: 'Invalid request: {"detail":"provider secret body"}' },
+      }), {
+        status: 503,
+        headers: { 'x-request-id': 'req_web_search' },
+      }));
+    const client = fixture(fetch);
+
+    const error = await client.testConnection().catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      code: 'AI_PROVIDER_ERROR',
+      httpStatus: 503,
+      requestId: 'req_web_search',
+    });
+    expect(String((error as Error).message)).toContain('Responses Web Search');
+    expect(JSON.stringify(error)).not.toContain('provider secret body');
   });
 });

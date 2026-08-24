@@ -56,6 +56,15 @@ describe('preload preparation contract', () => {
     expect(electronMocks.invoke).not.toHaveBeenCalled();
   });
 
+  it('rejects invalid background preparation start input before invoking main IPC', async () => {
+    await expect(exposedApi().preparations.start({
+      positionId: 'not-a-uuid',
+      projectIds: [],
+      questionIds: [],
+    })).rejects.toBeDefined();
+    expect(electronMocks.invoke).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid preview input before invoking main IPC', async () => {
     await expect(exposedApi().preparations.preview({
       positionId: 'not-a-uuid',
@@ -82,13 +91,18 @@ describe('preload preparation contract', () => {
       projectIds: [],
       questionIds: [],
     })],
+    ['start', () => exposedApi().preparations.start({
+      positionId: '11111111-1111-4111-8111-111111111111',
+      projectIds: [],
+      questionIds: [],
+    })],
   ])('rejects malformed %s responses from main IPC', async (_method, request) => {
     electronMocks.invoke.mockResolvedValueOnce({ unexpected: true });
     await expect(request()).rejects.toBeDefined();
     expect(electronMocks.invoke).toHaveBeenCalledOnce();
   });
 
-  it('passes a real project-and-question preview through service, main and preload validation', async () => {
+  it('passes a position-only preview through service, main and preload validation', async () => {
     const database = createTestDatabase();
     try {
       const positions = createPositionsRepository(database);
@@ -151,8 +165,8 @@ describe('preload preparation contract', () => {
         questionIds: [question.id],
       });
 
-      expect(result.selectedAssets.projects).toEqual([project]);
-      expect(result.selectedAssets.questions).toEqual([question]);
+      expect(result.selectedAssets.projects).toEqual([]);
+      expect(result.selectedAssets.questions).toEqual([]);
       expect(result.jobDataJson).toContain(JSON.stringify(position.rawJd));
       expect(service.preview({
         positionId: position.id,

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,12 +9,47 @@ import { registerSystemHandlers } from '../../src/main/ipc/system';
 import {
   BackupServiceError,
   createBackupService,
+  markerPathFor,
+  readRestoreMarker,
+  recoverInterruptedRestore,
+  writeRestoreMarker,
   type LiveDatabaseController,
+  type RestoreMarker,
 } from '../../src/main/services/backup';
 import { CURRENT_SCHEMA_VERSION } from '../../src/main/migrations';
+import { createPromptsRepository } from '../../src/main/repositories/prompts';
 
 const temporaryDirectories: string[] = [];
 const openControllers: LiveDatabaseController[] = [];
+const COMPATIBILITY_POSITION_ID = '11111111-1111-4111-8111-111111111111';
+const COMPATIBILITY_INTERVIEW_ID = '22222222-2222-4222-8222-222222222222';
+const COMPATIBILITY_STAGE_ID = '88888888-8888-4888-8888-888888888888';
+const COMPATIBILITY_PROPOSAL_ID = '55555555-5555-4555-8555-555555555555';
+const LEGACY_REVIEW_SNAPSHOT_JSON = JSON.stringify({
+  promptSnapshot: '旧复盘 Prompt',
+  modelSnapshot: 'legacy-model',
+  inputSnapshot: '{"transcript":"面试记录"}',
+  output: {
+    summary: '旧复盘摘要',
+    strengths: ['结构清晰'],
+    gaps: ['补充量化结果'],
+    proposals: [{
+      targetType: 'insight',
+      targetId: null,
+      operation: 'create',
+      payload: {
+        title: '旧心得',
+        content: '旧内容',
+        positionId: COMPATIBILITY_POSITION_ID,
+        projectId: null,
+        questionId: null,
+        capabilityId: null,
+      },
+      rationale: '保留旧复盘建议',
+    }],
+  },
+  reviewedAt: '2026-07-27T08:00:00.000Z',
+});
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'job-loop-backup-'));
@@ -125,6 +160,117 @@ function seedClosedLoop(db: DatabaseSync): void {
   );
 }
 
+function seedV12CompatibilityRecords(db: DatabaseSync): void {
+  seedClosedLoop(db);
+  const now = '2026-07-27T08:00:00.000Z';
+  db.prepare(`
+    INSERT INTO process_stages (
+      id, position_id, name, canonical_stage, actual_date, expected_date,
+      feedback, notes, order_index, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    COMPATIBILITY_STAGE_ID,
+    COMPATIBILITY_POSITION_ID,
+    '一面',
+    'interview',
+    now,
+    null,
+    '旧反馈',
+    '旧备注',
+    0,
+    now,
+    now,
+  );
+  db.prepare(`
+    UPDATE interviews
+    SET stage_id = ?, review_snapshot_json = ?
+    WHERE id = ?
+  `).run(
+    COMPATIBILITY_STAGE_ID,
+    LEGACY_REVIEW_SNAPSHOT_JSON,
+    COMPATIBILITY_INTERVIEW_ID,
+  );
+  db.prepare(`
+    UPDATE change_proposals
+    SET status = 'pending', accepted_payload_json = NULL, resolved_at = NULL
+    WHERE id = ?
+  `).run(COMPATIBILITY_PROPOSAL_ID);
+}
+
+function createLegacyBackup(path: string, version: 1 | 4): void {
+  const db = openDatabase(path);
+  try {
+    seedClosedLoop(db);
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      ALTER TABLE change_proposals DROP COLUMN analysis_run_id;
+      DROP TABLE capability_analysis_runs;
+      ALTER TABLE positions DROP COLUMN location;
+      ALTER TABLE projects DROP COLUMN unclassified_notes;
+      DROP TABLE ai_tasks;
+      DROP TABLE company_aliases;
+      DROP TABLE canonical_companies;
+      DROP TABLE email_sync_events;
+    `);
+    if (version === 1) {
+      db.exec(`
+        ALTER TABLE projects DROP COLUMN outcome;
+        ALTER TABLE projects DROP COLUMN evidence;
+        ALTER TABLE interviews DROP COLUMN review_snapshot_json;
+      `);
+    }
+    db.exec(`PRAGMA user_version = ${version};`);
+  } finally {
+    db.close();
+  }
+}
+
+function createVersion5Backup(path: string): void {
+  const db = openDatabase(path);
+  try {
+    db.exec(`
+      DELETE FROM prompt_templates
+      WHERE kind IN ('project-import', 'position-image');
+      ALTER TABLE prompt_templates RENAME TO prompt_templates_v6;
+      CREATE TABLE prompt_templates (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL UNIQUE CHECK (
+          kind IN ('preparation', 'interview-review', 'capability-analysis')
+        ),
+        name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+      INSERT INTO prompt_templates
+      SELECT * FROM prompt_templates_v6;
+      DROP TABLE prompt_templates_v6;
+      DROP TABLE ai_tasks;
+      DROP TABLE company_aliases;
+      DROP TABLE canonical_companies;
+      DROP TABLE email_sync_events;
+      PRAGMA user_version = 5;
+    `);
+  } finally {
+    db.close();
+  }
+}
+
+function createVersion11Backup(path: string): void {
+  const db = openDatabase(path);
+  try {
+    seedV12CompatibilityRecords(db);
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      DROP INDEX interviews_stage_idx;
+      ALTER TABLE interviews DROP COLUMN stage_id;
+      PRAGMA user_version = 11;
+    `);
+  } finally {
+    db.close();
+  }
+}
+
 afterEach(async () => {
   for (const controller of openControllers.splice(0)) {
     try {
@@ -139,6 +285,125 @@ afterEach(async () => {
 });
 
 describe('local database backup', () => {
+  it('preserves V12 stage and legacy review data through backup restore', async () => {
+    const app = await fixture();
+    seedV12CompatibilityRecords(app.database());
+
+    const expectedInterview = app.database().prepare(`
+      SELECT stage_id, review_snapshot_json
+      FROM interviews
+      WHERE id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID);
+    const expectedProposal = app.database().prepare(`
+      SELECT id, status, payload_json, accepted_payload_json
+      FROM change_proposals
+      WHERE id = ?
+    `).get(COMPATIBILITY_PROPOSAL_ID);
+    expect(expectedInterview).toEqual({
+      stage_id: COMPATIBILITY_STAGE_ID,
+      review_snapshot_json: LEGACY_REVIEW_SNAPSHOT_JSON,
+    });
+    expect(expectedProposal).toMatchObject({
+      id: COMPATIBILITY_PROPOSAL_ID,
+      status: 'pending',
+    });
+
+    const backupPath = join(app.directory, 'v12-compatibility.jobloop');
+    await app.service.exportTo(backupPath);
+    app.database().exec(`
+      DELETE FROM change_proposals;
+      DELETE FROM projects;
+      DELETE FROM interviews;
+      DELETE FROM process_stages;
+      DELETE FROM preparation_materials;
+      DELETE FROM positions;
+    `);
+    await app.service.restoreFrom(backupPath);
+
+    expect(app.database().prepare(`
+      SELECT stage_id, review_snapshot_json
+      FROM interviews
+      WHERE id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID)).toEqual(expectedInterview);
+    expect(app.database().prepare(`
+      SELECT interviews.stage_id, process_stages.position_id
+      FROM interviews
+      JOIN process_stages ON process_stages.id = interviews.stage_id
+      WHERE interviews.id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID)).toEqual({
+      stage_id: COMPATIBILITY_STAGE_ID,
+      position_id: COMPATIBILITY_POSITION_ID,
+    });
+    expect(app.database().prepare(`
+      SELECT id, status, payload_json, accepted_payload_json
+      FROM change_proposals
+      WHERE id = ?
+    `).get(COMPATIBILITY_PROPOSAL_ID)).toEqual(expectedProposal);
+  });
+
+  it('restores a real V11 backup with a null stage and unchanged legacy review data', async () => {
+    const app = await fixture();
+    const backupPath = join(app.directory, 'v11-compatibility.jobloop');
+    createVersion11Backup(backupPath);
+
+    const legacy = new DatabaseSync(backupPath);
+    expect(legacy.prepare('PRAGMA user_version').get()).toEqual({ user_version: 11 });
+    expect(legacy.prepare('PRAGMA table_info(interviews)').all().map((column) => column.name))
+      .not.toContain('stage_id');
+    expect(legacy.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'index' AND name = 'interviews_stage_idx'
+    `).get()).toBeUndefined();
+    const expectedSnapshot = legacy.prepare(`
+      SELECT review_snapshot_json
+      FROM interviews
+      WHERE id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID)?.review_snapshot_json;
+    const expectedProposal = legacy.prepare(`
+      SELECT id, status, payload_json, accepted_payload_json
+      FROM change_proposals
+      WHERE id = ?
+    `).get(COMPATIBILITY_PROPOSAL_ID);
+    expect(expectedSnapshot).toBe(LEGACY_REVIEW_SNAPSHOT_JSON);
+    expect(expectedProposal).toMatchObject({
+      id: COMPATIBILITY_PROPOSAL_ID,
+      status: 'pending',
+    });
+    legacy.close();
+
+    await app.service.restoreFrom(backupPath);
+
+    expect(app.database().prepare('PRAGMA user_version').get())
+      .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
+    expect(app.database().prepare(`
+      SELECT stage_id, review_snapshot_json
+      FROM interviews
+      WHERE id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID)).toEqual({
+      stage_id: null,
+      review_snapshot_json: expectedSnapshot,
+    });
+    expect(app.database().prepare(`
+      SELECT id, status, payload_json, accepted_payload_json
+      FROM change_proposals
+      WHERE id = ?
+    `).get(COMPATIBILITY_PROPOSAL_ID)).toEqual(expectedProposal);
+  });
+
+  it('restores a V5 backup and adds current prompt templates on repository startup', async () => {
+    const app = await fixture();
+    const backupPath = join(app.directory, 'v5.jobloop');
+    createVersion5Backup(backupPath);
+
+    await app.service.restoreFrom(backupPath);
+
+    expect(app.database().prepare('PRAGMA user_version').get())
+      .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
+    const prompts = createPromptsRepository(app.database());
+    expect(prompts.get('project-import').name).toBeTruthy();
+    expect(prompts.get('position-image').name).toBeTruthy();
+  });
+
   it('exports and restores the complete closed-loop records', async () => {
     const app = await fixture();
     seedClosedLoop(app.database());
@@ -174,7 +439,48 @@ describe('local database backup', () => {
     expect(readFileSync(settingsPath, 'utf8')).toBe(
       '{"encryptedKey":"never-in-backup-secret"}',
     );
-    expect(existsSync(restored.rollbackPath)).toBe(true);
+    expect('rollbackPath' in restored && existsSync(restored.rollbackPath)).toBe(true);
+  });
+
+  it.each([1, 4] as const)(
+    'restores a complete V%i backup and migrates it to the current schema',
+    async (version) => {
+      const app = await fixture();
+      const backupPath = join(app.directory, `legacy-v${version}.jobloop`);
+      createLegacyBackup(backupPath, version);
+
+      await expect(app.service.restoreFrom(backupPath)).resolves.toEqual({
+        rollbackPath: expect.any(String),
+      });
+      expect(app.database().prepare('PRAGMA user_version').get())
+        .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
+      expect(app.database().prepare(`
+        SELECT location FROM positions
+        WHERE id = '11111111-1111-4111-8111-111111111111'
+      `).get()).toEqual({ location: '' });
+      expect(app.database().prepare(`
+        SELECT unclassified_notes FROM projects
+        WHERE id = '44444444-4444-4444-8444-444444444444'
+      `).get()).toEqual({ unclassified_notes: '' });
+      expect(app.database().prepare(`
+        SELECT COUNT(*) AS count FROM capability_analysis_runs
+      `).get()).toEqual({ count: 0 });
+    },
+  );
+
+  it('rejects a V4 backup missing a table required by that schema version', async () => {
+    const app = await fixture();
+    const backupPath = join(app.directory, 'legacy-v4-missing-table.jobloop');
+    createLegacyBackup(backupPath, 4);
+    const legacy = new DatabaseSync(backupPath);
+    legacy.exec('DROP TABLE questions;');
+    legacy.close();
+
+    await expect(app.service.restoreFrom(backupPath)).rejects.toMatchObject({
+      code: 'BACKUP_INVALID',
+    });
+    expect(app.database().prepare('PRAGMA user_version').get())
+      .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
   });
 
   it('rejects invalid and future-schema files without changing the live database', async () => {
@@ -281,7 +587,21 @@ describe('local database backup', () => {
       { getSummary: vi.fn() },
       undefined,
       {
-        backup: { exportTo, restoreFrom },
+        backup: {
+          exportTo,
+          restoreFrom,
+          getProgress: vi.fn().mockReturnValue({
+            operation: 'idle',
+            phase: 'idle',
+            percent: 0,
+            cancellable: false,
+            active: false,
+          }),
+          cancel: vi.fn().mockReturnValue(false),
+          listRollbacks: vi.fn().mockResolvedValue([]),
+          checkRollback: vi.fn(),
+          deleteRollback: vi.fn(),
+        },
         dialogs: {
           chooseExportPath: vi.fn().mockResolvedValue(null),
           chooseRestorePath: vi.fn().mockResolvedValue(null),
@@ -299,5 +619,136 @@ describe('local database backup', () => {
     expect(exportTo).not.toHaveBeenCalled();
     expect(restoreFrom).not.toHaveBeenCalled();
     expect(onRestoreCompleted).not.toHaveBeenCalled();
+  });
+
+  it('records restore phases, reports progress, and clears the marker on success', async () => {
+    const source = await fixture();
+    seedClosedLoop(source.database());
+    const backupPath = join(source.directory, 'source.jobloop');
+    await source.service.exportTo(backupPath);
+
+    const target = await fixture();
+    const phases: string[] = [];
+    const service = createBackupService({
+      controller: target.controller,
+      onProgress: (progress) => {
+        if (progress.operation === 'restore') phases.push(progress.phase);
+      },
+    });
+
+    await service.restoreFrom(backupPath);
+
+    expect(phases).toEqual(expect.arrayContaining([
+      'validating-source',
+      'staging',
+      'creating-rollback',
+      'ready-to-replace',
+      'replacing',
+      'completed',
+    ]));
+    expect(service.getProgress()).toMatchObject({
+      operation: 'restore',
+      phase: 'completed',
+      percent: 100,
+      cancellable: false,
+      active: false,
+    });
+    expect(existsSync(markerPathFor(target.livePath))).toBe(false);
+  });
+
+  it('can cancel restore before replacement without changing live data', async () => {
+    const source = await fixture();
+    seedClosedLoop(source.database());
+    const backupPath = join(source.directory, 'source.jobloop');
+    await source.service.exportTo(backupPath);
+
+    const target = await fixture();
+    target.database().prepare(`
+      INSERT INTO positions (
+        id, company, title, interest, raw_jd, current_stage, final_result, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      '77777777-7777-4777-8777-777777777777',
+      '取消后保留',
+      '产品经理',
+      3,
+      '原始数据',
+      'interested',
+      null,
+      '2026-07-28T08:00:00.000Z',
+      '2026-07-28T08:00:00.000Z',
+    );
+    let service!: ReturnType<typeof createBackupService>;
+    service = createBackupService({
+      controller: target.controller,
+      onProgress: (progress) => {
+        if (progress.phase === 'ready-to-replace') service.cancel();
+      },
+    });
+
+    await expect(service.restoreFrom(backupPath)).resolves.toEqual({
+      status: 'cancelled',
+    });
+    expect(target.database().prepare('SELECT company FROM positions').get())
+      .toEqual({ company: '取消后保留' });
+    expect(existsSync(markerPathFor(target.livePath))).toBe(false);
+  });
+
+  it('resolves interrupted restore by continuing, rolling back, or preserving files', async () => {
+    const source = await fixture();
+    seedClosedLoop(source.database());
+    const replacementPath = join(source.directory, 'replacement.jobloop');
+    await source.service.exportTo(replacementPath);
+    source.controller.close();
+
+    for (const choice of ['continue', 'rollback', 'preserve'] as const) {
+      const directory = await mkdtemp(join(tmpdir(), `job-loop-recovery-${choice}-`));
+      temporaryDirectories.push(directory);
+      const livePath = join(directory, 'live.sqlite');
+      const stagedPath = join(directory, '.live.sqlite.restore.tmp');
+      const rollbackPath = join(directory, 'live.sqlite.rollback-safe.jobloop');
+      await copyFile(replacementPath, stagedPath);
+      await copyFile(replacementPath, rollbackPath);
+      if (choice !== 'continue') await copyFile(replacementPath, livePath);
+      const marker: RestoreMarker = {
+        version: 1,
+        phase: choice === 'continue' ? 'live-displaced' : 'replacement-installed',
+        livePath,
+        stagedPath,
+        rollbackPath,
+        startedAt: '2026-07-28T08:00:00.000Z',
+      };
+      await writeRestoreMarker(marker);
+
+      await expect(recoverInterruptedRestore(livePath, choice)).resolves.toBe(choice);
+      expect(await readRestoreMarker(livePath)).toBeNull();
+      if (choice !== 'preserve') expect(existsSync(livePath)).toBe(true);
+      if (choice === 'preserve') {
+        expect((await readdir(directory)).some((name) => name.includes('restore-preserved')))
+          .toBe(true);
+      }
+    }
+  });
+
+  it('keeps the newest three validated rollbacks and safely deletes by opaque id', async () => {
+    const app = await fixture();
+    seedClosedLoop(app.database());
+    for (let index = 0; index < 4; index += 1) {
+      const backupPath = join(app.directory, `source-${index}.jobloop`);
+      await app.service.exportTo(backupPath);
+      await app.service.restoreFrom(backupPath);
+    }
+
+    const rollbacks = await app.service.listRollbacks();
+    expect(rollbacks).toHaveLength(3);
+    expect(rollbacks.every((item) => !('path' in item))).toBe(true);
+    await expect(app.service.deleteRollback('../live.sqlite')).rejects.toMatchObject({
+      code: 'BACKUP_INVALID',
+    });
+    await expect(app.service.checkRollback(rollbacks[0].id, true)).resolves.toMatchObject({
+      deepStatus: 'valid',
+    });
+    await app.service.deleteRollback(rollbacks[0].id);
+    expect(await app.service.listRollbacks()).toHaveLength(2);
   });
 });

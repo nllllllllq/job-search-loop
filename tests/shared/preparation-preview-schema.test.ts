@@ -17,6 +17,7 @@ const project = {
   name: '无断点项目名🙂',
   createdAt: '2026-07-01T00:00:00.000Z',
   id: '22222222-2222-4222-8222-222222222222',
+  unclassifiedNotes: '',
 };
 
 const question = {

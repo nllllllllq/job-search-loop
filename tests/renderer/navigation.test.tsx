@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../src/renderer/App';
+import { resetJobSearchFake } from '../helpers/bridge';
 
 describe('desktop navigation', () => {
   beforeEach(() => {
@@ -56,12 +57,10 @@ describe('desktop navigation', () => {
   );
 
   it.each([
-    ['总览', '总览'],
+    ['首页', '首页'],
     ['岗位', '岗位'],
-    ['复盘中心', '复盘'],
     ['项目档案', '项目'],
     ['问题库', '题库'],
-    ['能力主题', '能力'],
     ['随想与心得', '随想'],
     ['设置', '设置'],
   ])('keeps a compact visible label for %s', (label, shortLabel) => {
@@ -84,6 +83,42 @@ describe('desktop navigation', () => {
     render(<App />);
 
     expect(document.title).toBe(expectedTitle);
+  });
+
+  it('ignores a deep-linked review drawer query', async () => {
+    const fake = resetJobSearchFake();
+    window.location.hash = '#/?drawer=reviews';
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { level: 1, name: '首页' }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '待确认清单' })).not.toBeInTheDocument();
+    expect(fake.reviews.proposals.list).not.toHaveBeenCalled();
+  });
+
+  it('redirects the legacy review route to home without opening a drawer', async () => {
+    const fake = resetJobSearchFake();
+    window.location.hash = '#/reviews';
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { level: 1, name: '首页' }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '待确认清单' })).not.toBeInTheDocument();
+    expect(fake.reviews.proposals.list).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('#/');
+    expect(document.title).toBe('求职闭环');
+  });
+
+  it('redirects the legacy capabilities route to the dashboard drawer', async () => {
+    window.location.hash = '#/capabilities';
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { level: 1, name: '首页' }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: '能力主题' }))
+      .toBeInTheDocument();
+    expect(window.location.hash).toContain('#/?drawer=');
+    expect(document.title).toBe('求职闭环');
   });
 
   it('restores the host document title on unmount', () => {

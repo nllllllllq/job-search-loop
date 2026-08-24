@@ -4,8 +4,22 @@ import {
   aiConnectionResultSchema,
   aiPublicSettingsSchema,
   aiSettingsSaveSchema,
+  aiTaskListSchema,
+  aiTaskSchema,
+  emailConnectionResultSchema,
+  emailListRecentSchema,
+  emailSettingsPublicSchema,
+  emailSettingsSaveSchema,
+  emailSyncEventListSchema,
+  emailSyncResultSchema,
   backupActionResultSchema,
+  backupCancelResultSchema,
+  backupProgressSchema,
+  backupRestoreOptionsSchema,
+  capabilityAnalysisOutputSchema,
   capabilityAnalysisPreviewSchema,
+  capabilityMergeResultSchema,
+  capabilityMergeSchema,
   capabilityAnalysisSelectionSchema,
   changeProposalListSchema,
   dashboardSummarySchema,
@@ -18,6 +32,12 @@ import {
   interviewReviewResultSchema,
   interviewSchema,
   interviewUpdateSchema,
+  importCancelSchema,
+  positionImportImagesSchema,
+  positionImportTextSchema,
+  positionCreateInputSchema,
+  projectImportDocumentSchema,
+  projectSegmentsUpdateSchema,
   preparationGenerateSchema,
   preparationMaterialListSchema,
   preparationOutboundPreviewSchema,
@@ -26,6 +46,10 @@ import {
   promptSaveSchema,
   promptTemplateListSchema,
   promptTemplateSchema,
+  rollbackCheckInputSchema,
+  rollbackIdSchema,
+  rollbackSummaryArraySchema,
+  rollbackSummarySchema,
 } from '../shared/schemas';
 
 function parseAppError(value: unknown): AppError | null {
@@ -43,10 +67,15 @@ function parseAppError(value: unknown): AppError | null {
       'AI_TIMEOUT',
       'AI_PROVIDER_ERROR',
       'AI_INVALID_OUTPUT',
+      'AI_INPUT_UNSUPPORTED',
       'AI_SETTINGS_CORRUPT',
       'AI_SETTINGS_UNAVAILABLE',
       'BACKUP_INVALID',
       'BACKUP_FAILED',
+      'EMAIL_SETTINGS_CORRUPT',
+      'EMAIL_SETTINGS_UNAVAILABLE',
+      'EMAIL_NOT_CONFIGURED',
+      'EMAIL_CONNECTION_FAILED',
     ].includes(
       String(candidate.code),
     )
@@ -57,6 +86,15 @@ function parseAppError(value: unknown): AppError | null {
   return {
     code: candidate.code as AppError['code'],
     message: candidate.message,
+    providerMessage: typeof candidate.providerMessage === 'string'
+      ? candidate.providerMessage
+      : undefined,
+    httpStatus: typeof candidate.httpStatus === 'number'
+      ? candidate.httpStatus
+      : undefined,
+    requestId: typeof candidate.requestId === 'string'
+      ? candidate.requestId
+      : undefined,
   };
 }
 
@@ -104,8 +142,9 @@ const api = frozen<JobSearchApi>({
   }),
   positions: frozen<JobSearchApi['positions']>({
     list: (filter) => invoke(CHANNELS.positions.list, filter),
+    listGrouped: (filter) => invoke(CHANNELS.positions.listGrouped, filter),
     get: (id) => invoke(CHANNELS.positions.get, id),
-    create: (input) => invoke(CHANNELS.positions.create, input),
+    create: (input) => invoke(CHANNELS.positions.create, positionCreateInputSchema.parse(input)),
     update: (id, input) => invoke(CHANNELS.positions.update, { id, input }),
     remove: (id) => invoke(CHANNELS.positions.remove, id),
     saveStage: (input) => invoke(CHANNELS.positions.saveStage, input),
@@ -113,6 +152,31 @@ const api = frozen<JobSearchApi>({
       CHANNELS.positions.reorderStages,
       { positionId, orderedIds },
     ),
+    removeStage: (positionId, stageId) => invoke(
+      CHANNELS.positions.removeStage,
+      { positionId, stageId },
+    ),
+  }),
+  email: frozen<NonNullable<JobSearchApi['email']>>({
+    settings: frozen<NonNullable<JobSearchApi['email']>['settings']>({
+      get: async () => emailSettingsPublicSchema.parse(
+        await invoke(CHANNELS.email.settings.get),
+      ),
+      save: async (input) => emailSettingsPublicSchema.parse(await invoke(
+        CHANNELS.email.settings.save,
+        emailSettingsSaveSchema.parse(input),
+      )),
+    }),
+    testConnection: async () => emailConnectionResultSchema.parse(
+      await invoke(CHANNELS.email.testConnection),
+    ),
+    syncNow: async () => emailSyncResultSchema.parse(
+      await invoke(CHANNELS.email.syncNow),
+    ),
+    listRecent: async (limit) => emailSyncEventListSchema.parse(await invoke(
+      CHANNELS.email.listRecent,
+      emailListRecentSchema.parse(limit === undefined ? undefined : { limit }),
+    )),
   }),
   preparations: frozen<JobSearchApi['preparations']>({
     list: async (positionId) => preparationMaterialListSchema.parse(
@@ -133,6 +197,20 @@ const api = frozen<JobSearchApi>({
         preparationGenerateSchema.parse(input),
       ),
     ),
+    start: async (input) => aiTaskSchema.parse(await invoke(
+      CHANNELS.preparations.start,
+      preparationGenerateSchema.parse(input),
+    )),
+  }),
+  tasks: frozen<JobSearchApi['tasks']>({
+    listByPosition: async (positionId) => aiTaskListSchema.parse(await invoke(
+      CHANNELS.tasks.listByPosition,
+      idSchema.parse(positionId),
+    )),
+    get: async (id) => aiTaskSchema.parse(await invoke(
+      CHANNELS.tasks.get,
+      idSchema.parse(id),
+    )),
   }),
   assets: frozen<JobSearchApi['assets']>({
     projects: frozen<JobSearchApi['assets']['projects']>({
@@ -149,6 +227,12 @@ const api = frozen<JobSearchApi>({
       list: () => invoke(CHANNELS.assets.capabilities.list),
       get: (id) => invoke(CHANNELS.assets.capabilities.get, id),
       save: (input) => invoke(CHANNELS.assets.capabilities.save, input),
+      merge: async (sourceId, targetId) => capabilityMergeResultSchema.parse(
+        await invoke(
+          CHANNELS.assets.capabilities.merge,
+          capabilityMergeSchema.parse({ sourceId, targetId }),
+        ),
+      ),
     }),
     insights: frozen<JobSearchApi['assets']['insights']>({
       list: () => invoke(CHANNELS.assets.insights.list),
@@ -223,6 +307,30 @@ const api = frozen<JobSearchApi>({
       )),
     }),
   }),
+  imports: frozen<JobSearchApi['imports']>({
+    previewPositionFromText: (text) => invoke(
+      CHANNELS.imports.previewPositionFromText,
+      positionImportTextSchema.parse({ text }),
+    ),
+    previewPositionFromImages: (images, mode) => invoke(
+      CHANNELS.imports.previewPositionFromImages,
+      positionImportImagesSchema.parse({ images, mode }),
+    ),
+    previewProjectsFromDocument: (file, mode) => invoke(
+      CHANNELS.imports.previewProjectsFromDocument,
+      projectImportDocumentSchema.parse({ file, mode }),
+    ),
+    updateProjectSegments: (sessionId, operation) => invoke(
+      CHANNELS.imports.updateProjectSegments,
+      projectSegmentsUpdateSchema.parse({ sessionId, operation }),
+    ),
+    cancel: async (sessionId) => {
+      await invoke(
+        CHANNELS.imports.cancel,
+        importCancelSchema.parse({ sessionId }),
+      );
+    },
+  }),
   system: frozen<JobSearchApi['system']>({
     getDashboardSummary: async () => dashboardSummarySchema.parse(
       await invoke(CHANNELS.system.getDashboardSummary),
@@ -233,7 +341,7 @@ const api = frozen<JobSearchApi>({
         capabilityAnalysisSelectionSchema.parse(positionIds),
       ),
     ),
-    confirmCapabilityAnalysis: async (token) => changeProposalListSchema.parse(
+    confirmCapabilityAnalysis: async (token) => capabilityAnalysisOutputSchema.parse(
       await invoke(
         CHANNELS.system.confirmCapabilityAnalysis,
         idSchema.parse(token),
@@ -242,9 +350,33 @@ const api = frozen<JobSearchApi>({
     exportBackup: async () => backupActionResultSchema.parse(
       await invoke(CHANNELS.system.exportBackup),
     ),
-    restoreBackup: async () => backupActionResultSchema.parse(
-      await invoke(CHANNELS.system.restoreBackup),
+    restoreBackup: async (options) => backupActionResultSchema.parse(
+      await invoke(
+        CHANNELS.system.restoreBackup,
+        backupRestoreOptionsSchema.parse(options),
+      ),
     ),
+    getBackupProgress: async () => backupProgressSchema.parse(
+      await invoke(CHANNELS.system.getBackupProgress),
+    ),
+    cancelBackup: async () => backupCancelResultSchema.parse(
+      await invoke(CHANNELS.system.cancelBackup),
+    ),
+    listRollbacks: async () => rollbackSummaryArraySchema.parse(
+      await invoke(CHANNELS.system.listRollbacks),
+    ),
+    checkRollback: async (id, deep) => rollbackSummarySchema.parse(
+      await invoke(
+        CHANNELS.system.checkRollback,
+        rollbackCheckInputSchema.parse({ id, deep }),
+      ),
+    ),
+    deleteRollback: async (id) => {
+      await invoke(
+        CHANNELS.system.deleteRollback,
+        rollbackIdSchema.parse(id),
+      );
+    },
   }),
 });
 

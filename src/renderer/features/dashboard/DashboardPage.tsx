@@ -1,17 +1,19 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import type {
+  CapabilityAnalysisOutput,
   CapabilityAnalysisPreview,
   DashboardSummary,
   PositionListItem,
 } from '../../../shared/domain';
 import { EmptyState } from '../../components/EmptyState';
 import { Modal } from '../../components/Modal';
-import { StatusBadge } from '../../components/StatusBadge';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useToast } from '../../hooks/useToast';
 import { CapabilityFrequency } from './CapabilityFrequency';
+import { CapabilityDrawer } from './CapabilityDrawer';
 import { ProcessTimeline } from './ProcessTimeline';
+import { ReviewToCapabilityEditor } from './ReviewToCapabilityEditor';
 import { StageDistribution } from './StageDistribution';
 
 function readableError(error: unknown): string {
@@ -37,9 +39,11 @@ function AnalysisModal({
   onClose,
   onCreated,
 }: AnalysisModalProps) {
-  const toast = useToast();
   const [selected, setSelected] = useState<string[]>([]);
   const [preview, setPreview] = useState<CapabilityAnalysisPreview | null>(null);
+  const [result, setResult] = useState<CapabilityAnalysisOutput | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [includedIndexes, setIncludedIndexes] = useState<Set<number>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -47,6 +51,9 @@ function AnalysisModal({
     if (submitting) return;
     setSelected([]);
     setPreview(null);
+    setResult(null);
+    setEditingIndex(null);
+    setIncludedIndexes(new Set());
     setError('');
     onClose();
   };
@@ -56,6 +63,7 @@ function AnalysisModal({
       ? current.filter((item) => item !== id)
       : [...current, id]);
     setPreview(null);
+    setResult(null);
     setError('');
   };
 
@@ -76,20 +84,28 @@ function AnalysisModal({
     setSubmitting(true);
     setError('');
     try {
-      const proposals = await window.jobSearch.system.confirmCapabilityAnalysis(preview.token);
-      toast.success(`已生成 ${proposals.length} 条待确认能力建议。`);
+      const analysis = await window.jobSearch.system.confirmCapabilityAnalysis(preview.token);
+      setResult(analysis);
       onCreated();
       setSubmitting(false);
-      resetAndClose();
     } catch (reason) {
       setError(readableError(reason));
       setSubmitting(false);
-      setPreview(null);
     }
   };
 
+  const editingCapability = editingIndex === null ? null : result?.capabilities[editingIndex] ?? null;
+  const editingItem = editingCapability === null
+    ? { targetType: 'capability' as const, title: '', content: '' }
+    : {
+      targetType: 'capability' as const,
+      title: editingCapability.name,
+      content: editingCapability.evidence.join('\n'),
+    };
+
   return (
-    <Modal
+    <>
+      <Modal
       closeDisabled={submitting}
       footer={(
         <>
@@ -101,7 +117,7 @@ function AnalysisModal({
           >
             取消分析
           </button>
-          {preview ? (
+          {preview && !result ? (
             <button
               className="button button--primary"
               disabled={submitting}
@@ -110,7 +126,7 @@ function AnalysisModal({
             >
               {submitting ? '正在分析…' : '确认发送并分析'}
             </button>
-          ) : (
+          ) : result ? null : (
             <button
               className="button button--primary"
               disabled={submitting || selected.length < 2}
@@ -129,7 +145,6 @@ function AnalysisModal({
       <div className="capability-analysis">
         <p className="capability-analysis__notice">
           默认不选择岗位。请至少选择 2 个 JD；系统不会自动分析。
-          重复分析会产生一组新的待确认建议。
         </p>
         {positions.length === 0 ? (
           <p>请先记录至少两个岗位，再开始共性能力分析。</p>
@@ -174,19 +189,68 @@ function AnalysisModal({
                 <pre>{position.rawJd}</pre>
               </details>
             ))}
+            {result ? (
+              <section aria-label="共性能力分析结果" className="capability-analysis__results">
+                <h3>分析结果</h3>
+                {result.capabilities.map((capability, index) => {
+                  const included = includedIndexes.has(index);
+                  return (
+                    <article key={`${capability.name}-${index}`}>
+                      <h4>{capability.name}</h4>
+                      <dl>
+                        <div><dt>JD 频次</dt><dd>{capability.jdFrequency}</dd></div>
+                        <div><dt>证据</dt><dd>{capability.evidence.join('\n')}</dd></div>
+                        <div><dt>差距</dt><dd>{capability.gaps.join('\n') || '—'}</dd></div>
+                      </dl>
+                      <button
+                        className="button button--quiet"
+                        disabled={included}
+                        onClick={() => setEditingIndex(index)}
+                        type="button"
+                      >
+                        {included ? '已纳入' : '纳入能力'}
+                      </button>
+                    </article>
+                  );
+                })}
+              </section>
+            ) : null}
           </section>
         ) : null}
       </div>
-    </Modal>
+      </Modal>
+      {editingCapability ? (
+        <ReviewToCapabilityEditor
+          initialValue={{
+            name: editingCapability.name,
+            jdFrequency: editingCapability.jdFrequency,
+            evidence: editingCapability.evidence.join('\n'),
+            gaps: editingCapability.gaps.join('\n'),
+            mergedIntoId: null,
+          }}
+          item={editingItem}
+          onClose={() => setEditingIndex(null)}
+          onSaved={() => {
+            if (editingIndex === null) return;
+            setIncludedIndexes((current) => {
+              const next = new Set(current);
+              next.add(editingIndex);
+              return next;
+            });
+          }}
+          open
+        />
+      ) : null}
+    </>
   );
 }
 
 function SummaryCards({ summary }: { summary: DashboardSummary }) {
   const cards = [
+    ['公司数量', summary.companyCount],
     ['累计岗位', summary.totalPositions],
     ['进入面试', summary.positionsWithInterviews],
     ['完成复盘', summary.completedReviews],
-    ['待确认建议', summary.pendingProposals],
   ] as const;
   return (
     <section className="dashboard-stats" aria-label="求职进度摘要">
@@ -202,6 +266,7 @@ function SummaryCards({ summary }: { summary: DashboardSummary }) {
 }
 
 export function DashboardPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [positionOptions, setPositionOptions] = useState<PositionListItem[]>([]);
   const toast = useToast();
@@ -209,51 +274,70 @@ export function DashboardPage() {
     () => window.jobSearch.system.getDashboardSummary(),
     [],
   );
-  const data = summary.data;
-  const recent = useMemo(() => data?.recentPositions ?? [], [data]);
-
-  if (summary.loading) {
-    return <div className="resource-state" role="status">正在整理求职进度…</div>;
-  }
-  if (summary.error || !data) {
-    return (
-      <EmptyState
-        action={(
-          <button className="button button--quiet" onClick={() => void summary.reload()} type="button">
-            重试
-          </button>
-        )}
-        body="本地进度统计暂时无法读取，岗位与复盘记录没有被修改。"
-        icon="!"
-        title="总览加载失败"
-      />
-    );
-  }
+  const data = summary.data ?? {
+    totalPositions: 0,
+    companyCount: 0,
+    stageDistribution: [],
+    positionsWithInterviews: 0,
+    completedReviews: 0,
+    pendingProposals: 0,
+    processEvents: [],
+    capabilityFrequency: [],
+    recentPositions: [],
+  };
+  const drawer = searchParams.get('drawer');
+  const openDrawer = useCallback((value: 'capabilities') => {
+    const next = new URLSearchParams(searchParams);
+    next.set('drawer', value);
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+  const closeDrawer = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('drawer');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   return (
     <div className="dashboard-page">
-      <header className="page-heading dashboard-heading">
-        <div>
-          <p className="section-label">LOOP OVERVIEW / 求职进度</p>
-          <h2>把分散的经历，收拢成可复用的判断。</h2>
-          <p>查看岗位阶段、流程日期与已经沉淀的能力证据。</p>
-        </div>
+      {summary.loading ? (
+        <div className="resource-state" role="status">正在整理求职进度…</div>
+      ) : summary.error || !summary.data ? (
+        <EmptyState
+          action={(
+            <button className="button button--quiet" onClick={() => void summary.reload()} type="button">
+              重试
+            </button>
+          )}
+          body="本地进度统计暂时无法读取，岗位与复盘记录没有被修改。"
+          icon="!"
+          title="首页加载失败"
+        />
+      ) : (
+        <>
+      <SummaryCards summary={data} />
+
+      <section className="dashboard-panel dashboard-panel--wide">
+        <header>
+          <div>
+            <p className="section-label">UPCOMING SCHEDULE</p>
+            <h3>待完成安排</h3>
+          </div>
+          <p>只显示今天及未来的测评与面试进行时间</p>
+        </header>
+        <ProcessTimeline events={data.processEvents} />
+      </section>
+
+      <section aria-label="首页快捷入口" className="dashboard-shortcuts">
         <button
-          className="button button--primary"
-          onClick={() => {
-            setAnalysisOpen(true);
-            setPositionOptions([]);
-            void window.jobSearch.positions.list()
-              .then(setPositionOptions)
-              .catch(() => toast.error('岗位列表读取失败，请关闭后重试。'));
-          }}
+          className="dashboard-shortcut"
+          onClick={() => openDrawer('capabilities')}
           type="button"
         >
-          分析共性能力
+          <span>能力主题</span>
+          <strong>{data.capabilityFrequency.length}</strong>
+          <small>查看高频能力与证据</small>
         </button>
-      </header>
-
-      <SummaryCards summary={data} />
+      </section>
 
       {data.totalPositions === 0 ? (
         <EmptyState
@@ -280,45 +364,31 @@ export function DashboardPage() {
                   <p className="section-label">CAPABILITY SIGNALS</p>
                   <h3>能力频次</h3>
                 </div>
-                <Link to="/capabilities">查看能力库</Link>
+                <div className="dashboard-panel__actions">
+                  <button className="text-button" onClick={() => openDrawer('capabilities')} type="button">
+                    查看能力库
+                  </button>
+                  <button
+                    className="button button--quiet"
+                    onClick={() => {
+                      setAnalysisOpen(true);
+                      setPositionOptions([]);
+                      void window.jobSearch.positions.list()
+                        .then(setPositionOptions)
+                        .catch(() => toast.error('岗位列表读取失败，请关闭后重试。'));
+                    }}
+                    type="button"
+                  >
+                    分析共性能力
+                  </button>
+                </div>
               </header>
               <CapabilityFrequency items={data.capabilityFrequency} />
             </article>
           </section>
 
-          <section className="dashboard-panel dashboard-panel--wide">
-            <header>
-              <div>
-                <p className="section-label">PROCESS DATES</p>
-                <h3>流程日期线</h3>
-              </div>
-              <p>日期仅用于记录流程，不会创建提醒</p>
-            </header>
-            <ProcessTimeline events={data.processEvents} />
-          </section>
-
-          <section className="dashboard-panel dashboard-panel--wide">
-            <header>
-              <div>
-                <p className="section-label">RECENT FILES</p>
-                <h3>近期岗位</h3>
-              </div>
-              <Link to="/positions">全部岗位</Link>
-            </header>
-            <ul className="recent-position-list">
-              {recent.map((position) => (
-                <li key={position.id}>
-                  <Link to={`/positions/${position.id}`}>
-                    <span>
-                      <strong>{position.company}</strong>
-                      <small>{position.title}</small>
-                    </span>
-                    <StatusBadge stage={position.currentStage ?? undefined} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
+        </>
+      )}
         </>
       )}
 
@@ -329,6 +399,11 @@ export function DashboardPage() {
         }}
         open={analysisOpen}
         positions={positionOptions}
+      />
+      <CapabilityDrawer
+        onChanged={() => void summary.reload()}
+        onClose={closeDrawer}
+        open={drawer === 'capabilities'}
       />
     </div>
   );

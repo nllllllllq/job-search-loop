@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BackupSection } from '../../src/renderer/features/settings/BackupSection';
 import { ToastProvider } from '../../src/renderer/hooks/useToast';
 import { createJobSearchFake, installJobSearchFake } from '../helpers/bridge';
@@ -70,5 +70,72 @@ describe('backup settings section', () => {
     expect((await screen.findAllByText('恢复失败，请确认选择的是有效备份文件。'))[0])
       .toBeVisible();
     expect(document.body).not.toHaveTextContent('C:\\Users\\secret');
+  });
+
+  it('shows safe rollback summaries and can deep-check then delete one', async () => {
+    const fake = createJobSearchFake();
+    fake.system.listRollbacks.mockResolvedValue([{
+      id: 'live.sqlite.rollback-safe.jobloop',
+      label: '恢复前副本 · 2026/7/28 18:00:00',
+      createdAt: '2026-07-28T10:00:00.000Z',
+      size: 2048,
+      quickStatus: 'valid',
+      deepStatus: 'unchecked',
+    }]);
+    fake.system.checkRollback.mockResolvedValue({
+      id: 'live.sqlite.rollback-safe.jobloop',
+      label: '恢复前副本 · 2026/7/28 18:00:00',
+      createdAt: '2026-07-28T10:00:00.000Z',
+      size: 2048,
+      quickStatus: 'valid',
+      deepStatus: 'valid',
+    });
+    installJobSearchFake(fake);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+
+    renderBackup();
+    expect(await screen.findByText('恢复前副本 · 2026/7/28 18:00:00')).toBeVisible();
+    expect(screen.queryByText(/C:\\/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '深度校验' }));
+    expect(fake.system.checkRollback).toHaveBeenCalledWith(
+      'live.sqlite.rollback-safe.jobloop',
+      true,
+    );
+    expect(await screen.findByText('深度校验通过')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '删除副本' }));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(fake.system.deleteRollback).toHaveBeenCalledWith(
+      'live.sqlite.rollback-safe.jobloop',
+    );
+  });
+
+  it('reports restore progress and allows cancellation before replacement', async () => {
+    const fake = createJobSearchFake();
+    let resolveRestore!: (value: { status: 'cancelled' }) => void;
+    fake.system.restoreBackup.mockImplementation(() => new Promise((resolve) => {
+      resolveRestore = resolve;
+    }));
+    fake.system.getBackupProgress.mockResolvedValue({
+      operation: 'restore',
+      phase: 'ready-to-replace',
+      percent: 65,
+      cancellable: true,
+      active: true,
+    });
+    fake.system.cancelBackup.mockImplementation(async () => {
+      resolveRestore({ status: 'cancelled' });
+      return { status: 'cancelled' };
+    });
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderBackup();
+    await user.click(screen.getByRole('button', { name: '从备份恢复' }));
+    await user.click(screen.getByRole('button', { name: '确认恢复并重启' }));
+    expect(await screen.findByText('准备替换 · 65%')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '取消本次恢复' }));
+    expect(fake.system.cancelBackup).toHaveBeenCalledOnce();
+    expect((await screen.findAllByText('恢复已取消，当前数据未改变'))[0]).toBeVisible();
   });
 });

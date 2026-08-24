@@ -6,6 +6,7 @@ import { createProposalsRepository } from '../../src/main/repositories/proposals
 import { createTestDatabase } from '../helpers/database';
 
 const project = {
+  projectTime: '',
   name: '检索项目',
   background: '用户难以找到信息。',
   goal: '缩短检索时间。',
@@ -15,6 +16,7 @@ const project = {
   evidence: '线上数据。',
   reflections: '需要更早做基线。',
   storytellingVersions: '两分钟版本。',
+  unclassifiedNotes: '',
 };
 
 describe('controlled proposal acceptance', () => {
@@ -245,6 +247,10 @@ describe('controlled proposal acceptance', () => {
       const proposals = createProposalsRepository(db);
       const assets = createAssetsRepository(db);
       const projectAsset = assets.saveProject(project);
+      const secondProjectAsset = assets.saveProject({
+        ...project,
+        name: '第二个关联项目',
+      });
       const capabilityAsset = assets.saveCapability({
         name: '问题拆解',
         jdFrequency: 1,
@@ -252,12 +258,19 @@ describe('controlled proposal acceptance', () => {
         gaps: '',
         mergedIntoId: null,
       });
+      const secondCapabilityAsset = assets.saveCapability({
+        name: '利益相关方沟通',
+        jdFrequency: 1,
+        evidence: '跨团队协作证据',
+        gaps: '',
+        mergedIntoId: null,
+      });
       const questionAsset = assets.saveQuestion({
         type: 'interviewer',
         text: '如何判断需求优先级？',
         answerDraft: '目标、风险与证据。',
-        projectIds: [projectAsset.id],
-        capabilityIds: [capabilityAsset.id],
+        projectIds: [projectAsset.id, secondProjectAsset.id],
+        capabilityIds: [capabilityAsset.id, secondCapabilityAsset.id],
         occurrenceCount: 1,
         status: 'active',
       });

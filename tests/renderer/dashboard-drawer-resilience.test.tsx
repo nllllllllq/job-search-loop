@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -61,12 +61,12 @@ describe('dashboard drawer resilience', () => {
     resetJobSearchFake();
   });
 
-  it.each([
-    ['pending', () => deferred<DashboardSummary>().promise],
-    ['rejected', () => Promise.reject(new Error('summary unavailable'))],
-  ])('keeps a deep-linked review drawer usable while summary is %s', async (_case, summary) => {
+  it('ignores a deep-linked review drawer without loading proposals', async () => {
     const fake = resetJobSearchFake();
-    fake.system.getDashboardSummary.mockImplementation(summary);
+    fake.system.getDashboardSummary.mockResolvedValue({
+      ...emptySummary,
+      pendingProposals: 4,
+    });
 
     render(
       <MemoryRouter initialEntries={['/?drawer=reviews']}>
@@ -78,72 +78,10 @@ describe('dashboard drawer resilience', () => {
       </MemoryRouter>,
     );
 
-    const drawer = await screen.findByRole('dialog');
-    expect(await within(drawer).findByRole('button', { name: /待处理|寰呭鐞?/ }))
-      .toBeInTheDocument();
-    if (_case === 'rejected') {
-      expect(await screen.findByText(/总览加载失败|鎬昏鍔犺浇澶辫触/)).toBeInTheDocument();
-      expect(screen.getByRole('dialog')).toBe(drawer);
-    }
-  });
-
-  it('keeps the review drawer mounted while an accepted proposal reloads summary', async () => {
-    const fake = resetJobSearchFake();
-    const reload = deferred<DashboardSummary>();
-    fake.system.getDashboardSummary
-      .mockResolvedValueOnce(emptySummary)
-      .mockReturnValueOnce(reload.promise);
-    const proposal = {
-      id: '33333333-3333-4333-8333-333333333333',
-      targetType: 'insight' as const,
-      targetId: null,
-      operation: 'create' as const,
-      payload: {
-        title: '复盘',
-        content: '保持抽屉上下文',
-        positionId: null,
-        projectId: null,
-        questionId: null,
-        capabilityId: null,
-      },
-      rationale: '测试重载',
-      positionId: null,
-      interviewId: null,
-      analysisRunId: null,
-      status: 'pending' as const,
-      acceptedPayload: null,
-      createdAt: '2026-07-28T00:00:00.000Z',
-      updatedAt: '2026-07-28T00:00:00.000Z',
-      resolvedAt: null,
-      context: { position: null, interview: null },
-    };
-    fake.reviews.proposals.list.mockResolvedValue({
-      items: [proposal],
-      corruptItems: [],
-      corruptCount: 0,
-    });
-    fake.reviews.proposals.accept.mockResolvedValue({
-      ...proposal,
-      status: 'accepted',
-      resolvedAt: '2026-07-28T01:00:00.000Z',
-    });
-    const user = userEvent.setup();
-
-    render(
-      <MemoryRouter initialEntries={['/?drawer=reviews']}>
-        <ToastProvider defaultDuration={0}>
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-          </Routes>
-        </ToastProvider>
-      </MemoryRouter>,
-    );
-
-    const drawer = await screen.findByRole('dialog');
-    await user.click(await within(drawer).findByRole('button', { name: /^(接受|鎺ュ彈)$/ }));
-    await waitFor(() => expect(fake.system.getDashboardSummary).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole('dialog')).toBe(drawer);
-    expect(document.body.style.overflow).toBe('hidden');
+    expect(await screen.findByLabelText('求职进度摘要')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('待确认清单')).not.toBeInTheDocument();
+    expect(fake.reviews.proposals.list).not.toHaveBeenCalled();
   });
 
   it('traps focus, delegates nested Escape to the modal, and restores focus and scroll lock', async () => {

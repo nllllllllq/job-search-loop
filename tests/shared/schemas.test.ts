@@ -1,19 +1,72 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
-import type { PositionInput, ProcessStageInput } from '../../src/shared/domain';
+import type { PositionCreateInput, PositionInput, ProcessStageInput } from '../../src/shared/domain';
 import {
   aiBaseUrlSchema,
   changeProposalInputSchema,
   isoDateSchema,
+  interviewReviewOutputSchema,
+  positionCreateInputSchema,
   positionInputSchema,
   processStageInputSchema,
   projectPayloadSchema,
 } from '../../src/shared/schemas';
 
 describe('shared schemas', () => {
+  it('requires the five in-context interview review modules and typed reusable items', () => {
+    const output = {
+      overview: {
+        round: '业务一面',
+        overall: '表达清楚。',
+        keyFacts: ['讨论需求优先级。'],
+      },
+      questionAnswers: [{
+        question: '如何判断优先级？',
+        answerSummary: '从目标和结果回答。',
+        quality: '良好',
+        improvement: '补充数据。',
+      }],
+      strengthsAndRisks: { strengths: ['拆解清晰'], risks: ['证据不足'] },
+      nextRoundPreparation: ['准备量化案例。'],
+      reusableItems: [{
+        targetType: 'insight',
+        title: '先给结论',
+        content: '先说判断，再给证据。',
+      }],
+    } as const;
+
+    expect(interviewReviewOutputSchema.parse(output)).toEqual(output);
+    expect(interviewReviewOutputSchema.safeParse({ ...output, reusableItems: [{
+      targetType: 'unknown',
+      title: '无效',
+      content: '无效',
+    }] }).success).toBe(false);
+    expect(interviewReviewOutputSchema.safeParse({
+      ...output,
+      questionAnswers: [],
+    }).success).toBe(true);
+  });
+
   it('keeps position and process-stage output types aligned with domain contracts', () => {
     expectTypeOf<z.input<typeof positionInputSchema>>().toEqualTypeOf<PositionInput>();
+    expectTypeOf<z.input<typeof positionCreateInputSchema>>().toEqualTypeOf<PositionCreateInput>();
     expectTypeOf<z.output<typeof processStageInputSchema>>().toEqualTypeOf<ProcessStageInput>();
+  });
+
+  it('limits creation stages to the five user-facing intake options', () => {
+    const base = {
+      company: '远山科技',
+      title: '产品经理',
+      interest: 5 as const,
+      rawJd: '负责产品规划',
+      initialDate: '2026-08-12',
+    };
+
+    expect(positionCreateInputSchema.parse({ ...base, initialStage: 'interview' })).toMatchObject({
+      initialStage: 'interview',
+      initialDate: '2026-08-12',
+    });
+    expect(positionCreateInputSchema.safeParse({ ...base, initialStage: 'rejected' }).success).toBe(false);
   });
 
   it('accepts calendar-valid ISO dates only', () => {

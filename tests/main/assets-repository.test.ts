@@ -248,6 +248,27 @@ describe('assets repository', () => {
     }
   });
 
+  it('persists project time and versions project-time-only edits', () => {
+    const db = createTestDatabase();
+
+    try {
+      const assets = createAssetsRepository(db);
+      const created = assets.saveProject({ ...projectInput, projectTime: '2024' });
+      const updated = assets.saveProject({
+        ...projectInput,
+        id: created.id,
+        projectTime: '2025',
+      });
+
+      expect(created.projectTime).toBe('2024');
+      expect(updated.projectTime).toBe('2025');
+      expect(JSON.parse(assets.listVersions('project', created.id)[0].snapshot))
+        .toMatchObject({ projectTime: '2024' });
+    } finally {
+      db.close();
+    }
+  });
+
   it('versions a project only when an accepted edit changes its narrative', () => {
     const db = createTestDatabase();
 

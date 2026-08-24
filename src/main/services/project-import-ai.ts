@@ -9,14 +9,12 @@ import type {
 import type { PromptsRepository } from '../repositories/prompts';
 import type { AiCompletionRequest } from './ai-client';
 import type { PrivateAiSettings } from './ai-settings';
-import { classifyProjectText } from './import-classifier';
+import { AiServiceError } from './ai-settings';
 
 const MAX_AI_TEXT_LENGTH = 120_000;
-const AI_FALLBACK_WARNING = 'AI 解析失败，已使用本地规则';
-const LONG_TEXT_WARNING = '内容较长，已使用本地规则';
 
 const projectFields = [
-  'name', 'background', 'goal', 'role', 'keyDecisions', 'outcome', 'evidence',
+  'name', 'projectTime', 'background', 'goal', 'role', 'keyDecisions', 'outcome', 'evidence',
   'reflections', 'storytellingVersions', 'unclassifiedNotes',
 ] as const satisfies readonly ProjectImportField[];
 
@@ -26,18 +24,12 @@ const projectImportFieldSchema = z.object({
   value: z.string().max(100_000),
   provenance: z.enum(['source', 'ai-rewrite', 'ai-suggestion']),
   evidence: z.string().max(20_000),
-}).strict().superRefine((field, context) => {
-  if (field.value && field.provenance !== 'ai-suggestion' && !field.evidence.trim()) {
-    context.addIssue({ code: 'custom', message: 'Source-backed values require evidence.' });
-  }
-  if (field.value && field.provenance !== 'ai-suggestion' && !evidenceLineReference.test(field.evidence)) {
-    context.addIssue({ code: 'custom', message: 'Source-backed evidence requires a line reference.' });
-  }
-});
+}).strict();
 
 const projectImportItemSchema = z.object({
   startLine: z.number().int().positive(),
   name: projectImportFieldSchema,
+  projectTime: projectImportFieldSchema,
   background: projectImportFieldSchema,
   goal: projectImportFieldSchema,
   role: projectImportFieldSchema,
@@ -55,11 +47,16 @@ const projectImportItemSchema = z.object({
   if (!project.name.value.trim()) {
     context.addIssue({ code: 'custom', message: 'Projects require a name.', path: ['name', 'value'] });
   }
-  if (!projectFields.some((field) => {
-    const value = project[field];
-    return value.value.trim() && value.provenance !== 'ai-suggestion' && value.evidence.trim();
-  })) {
-    context.addIssue({ code: 'custom', message: 'Projects require at least one grounded field.' });
+  if (!projectFields.some((field) => (
+    field !== 'name'
+    && project[field].value.trim()
+    && project[field].provenance !== 'ai-suggestion'
+    && project[field].evidence.trim()
+  ))) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Projects require at least one source-backed field outside the name.',
+    });
   }
 });
 
@@ -80,7 +77,7 @@ export interface ProjectImportAiDependencies {
   ai: {
     completeJson(
       request: AiCompletionRequest,
-      outputSchema: typeof projectImportAiOutputSchema,
+      outputSchema: z.ZodType<unknown>,
       settings: PrivateAiSettings,
     ): Promise<unknown>;
   };
@@ -93,19 +90,43 @@ export type ProjectImportAnalysis = Pick<
   'analysisMode' | 'classification' | 'explanation' | 'segments' | 'warnings'
 >;
 
-function localResult(
-  text: string,
-  analysisMode: 'local' | 'local-fallback',
-  warning?: string,
-): ProjectImportAnalysis {
-  const segments = classifyProjectText(text);
-  return {
-    analysisMode,
-    classification: segments.length ? 'valid-project' : 'no-valid-project',
-    explanation: segments.length ? '已按本地规则识别候选项目；请逐字段确认。' : '未识别到可保存的项目。',
-    segments,
-    warnings: warning ? [warning] : [],
-  };
+const preservedAiErrorCodes = new Set([
+  'AI_NOT_CONFIGURED',
+  'AI_AUTH_FAILED',
+  'AI_RATE_LIMITED',
+  'AI_TIMEOUT',
+  'AI_PROVIDER_ERROR',
+  'AI_INVALID_OUTPUT',
+  'AI_INPUT_UNSUPPORTED',
+  'AI_SETTINGS_CORRUPT',
+  'AI_SETTINGS_UNAVAILABLE',
+]);
+
+function providerFailure(error: unknown): AiServiceError {
+  if (error instanceof AiServiceError) return error;
+  const record = error !== null && typeof error === 'object'
+    ? error as Record<string, unknown>
+    : null;
+  const code = typeof record?.code === 'string' && preservedAiErrorCodes.has(record.code)
+    ? record.code as ConstructorParameters<typeof AiServiceError>[0]
+    : 'AI_PROVIDER_ERROR';
+  const httpStatus = typeof record?.httpStatus === 'number'
+    && Number.isInteger(record.httpStatus)
+    && record.httpStatus >= 100
+    && record.httpStatus <= 599
+    ? record.httpStatus
+    : undefined;
+  const requestId = typeof record?.requestId === 'string'
+    && /^[A-Za-z0-9._:-]{1,200}$/.test(record.requestId)
+    ? record.requestId
+    : undefined;
+  return new AiServiceError(
+    code,
+    'External AI service could not complete the request.',
+    undefined,
+    httpStatus,
+    requestId,
+  );
 }
 
 function buildRequest(prompt: string, numberedText: string): AiCompletionRequest {
@@ -120,7 +141,7 @@ function buildRequest(prompt: string, numberedText: string): AiCompletionRequest
           'Return strict JSON with classification, projects, and explanation. If there is no identifiable project experience, use no-valid-project and projects: [].',
           'Every project field must be {value, provenance, evidence}; provenance is source, ai-rewrite, or ai-suggestion.',
           'source and ai-rewrite evidence must use `L12: exact supporting text` or `L12-L14: exact supporting text`; the line reference and quoted text must both come from that project segment. ai-rewrite may improve narration only: never invent quantitative, business, causal, or responsibility facts. Use ai-suggestion when evidence is missing.',
-          'For each project include startLine and unusedContent [{content,reason}].',
+          'For each project include startLine, projectTime, and unusedContent [{content,reason}].',
           '<document_text>', numberedText, '</document_text>',
         ].join('\n'),
       },
@@ -145,27 +166,51 @@ function evidenceIsInSource(
   return Boolean(quote) && lines.slice(startLine - 1, endLine).join('\n').includes(quote);
 }
 
+function normalizeField(value: unknown): ProjectImportFieldValue {
+  if (typeof value === 'string') return { value, provenance: 'ai-suggestion', evidence: '' };
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return { value: '', provenance: 'ai-suggestion', evidence: '' };
+  }
+  const record = value as Record<string, unknown>;
+  const fieldValue = typeof record.value === 'string' ? record.value : '';
+  const provenance = record.provenance === 'source'
+    || record.provenance === 'ai-rewrite'
+    || record.provenance === 'ai-suggestion'
+    ? record.provenance
+    : 'ai-suggestion';
+  const evidence = typeof record.evidence === 'string' ? record.evidence : '';
+  if (provenance !== 'ai-suggestion' && (!fieldValue || !evidence.trim())) {
+    return { value: fieldValue, provenance: 'ai-suggestion', evidence: '' };
+  }
+  return { value: fieldValue, provenance, evidence };
+}
+
+function normalizeProject(project: unknown): unknown {
+  if (project === null || typeof project !== 'object' || Array.isArray(project)) return project;
+  const item = project as Record<string, unknown>;
+  return {
+    ...item,
+    ...Object.fromEntries(projectFields.map((field) => [field, normalizeField(item[field])])),
+    unusedContent: item.unusedContent ?? [],
+  };
+}
+
 // Accepting this legacy shape keeps old custom model prompts from crashing the
 // import. Its values are deliberately downgraded to suggestions, never facts.
 function normalizeCandidate(candidate: unknown): unknown {
   if (candidate === null || typeof candidate !== 'object') return candidate;
   const record = candidate as Record<string, unknown>;
-  if ('classification' in record || !Array.isArray(record.projects)) return candidate;
+  if (!Array.isArray(record.projects)) return candidate;
+  if ('classification' in record) {
+    return {
+      ...record,
+      projects: record.projects.map((project) => normalizeProject(project)),
+    };
+  }
   return {
     classification: record.projects.length ? 'valid-project' : 'no-valid-project',
     explanation: '模型返回了旧格式；所有预填内容均需确认。',
-    projects: record.projects.map((project) => {
-      const item = project as Record<string, unknown>;
-      return {
-        startLine: item.startLine,
-        ...Object.fromEntries(projectFields.map((field) => [field, {
-          value: typeof item[field] === 'string' ? item[field] : '',
-          provenance: 'ai-suggestion',
-          evidence: '',
-        }])),
-        unusedContent: [],
-      };
-    }),
+    projects: record.projects.map((project) => normalizeProject(project)),
   };
 }
 
@@ -186,11 +231,25 @@ function segmentsFromAi(text: string, candidate: unknown): ProjectSegmentPreview
     const fields: Record<ProjectImportField, ProjectImportFieldValue> = Object.fromEntries(
       projectFields.map((field) => [field, project[field]]),
     ) as Record<ProjectImportField, ProjectImportFieldValue>;
-    if (projectFields.some((field) => !evidenceIsInSource(fields[field], lines, {
-      startLine: project.startLine,
-      endLine: sourceEnd,
-    }))) {
-      throw new Error('AI evidence is not present in the project source');
+    for (const field of projectFields) {
+      if (!evidenceIsInSource(fields[field], lines, {
+        startLine: project.startLine,
+        endLine: sourceEnd,
+      })) {
+        fields[field] = {
+          value: fields[field].value,
+          provenance: 'ai-suggestion',
+          evidence: '',
+        };
+      }
+    }
+    if (!projectFields.some((field) => (
+      field !== 'name'
+      && fields[field].value.trim()
+      && fields[field].provenance !== 'ai-suggestion'
+      && fields[field].evidence.trim()
+    ))) {
+      throw new Error('AI project has no source-backed field after evidence validation');
     }
     return {
       tempId: randomUUID(),
@@ -198,6 +257,7 @@ function segmentsFromAi(text: string, candidate: unknown): ProjectSegmentPreview
       sourceText,
       suggested: {
         name: fields.name.value,
+        projectTime: fields.projectTime.value,
         background: fields.background.value,
         goal: fields.goal.value,
         role: fields.role.value,
@@ -223,18 +283,36 @@ export async function analyzeProjectImport(
   mode: 'ai' | 'local',
   dependencies?: ProjectImportAiDependencies,
 ): Promise<ProjectImportAnalysis> {
-  if (mode === 'local') return localResult(text, 'local');
-  if (text.length > MAX_AI_TEXT_LENGTH) return localResult(text, 'local-fallback', LONG_TEXT_WARNING);
-  if (!dependencies) return localResult(text, 'local-fallback', AI_FALLBACK_WARNING);
+  if (mode === 'local') {
+    throw new AiServiceError(
+      'AI_INPUT_UNSUPPORTED',
+      'Local project analysis is no longer supported; configure AI to continue.',
+    );
+  }
+  if (text.length > MAX_AI_TEXT_LENGTH) {
+    throw new AiServiceError(
+      'VALIDATION_ERROR',
+      'Project import text exceeds the 120,000 character limit.',
+    );
+  }
+  if (!dependencies) {
+    throw new AiServiceError('AI_NOT_CONFIGURED', 'Project import AI is not configured.');
+  }
 
+  let candidate: unknown;
   try {
     const prompt = dependencies.prompts.get('project-import').content;
     const settings = await dependencies.getSettings();
     const numberedText = text.replace(/\r\n?/g, '\n').split('\n')
       .map((line, index) => `${index + 1} | ${line}`).join('\n');
-    const candidate = await dependencies.ai.completeJson(
-      buildRequest(prompt, numberedText), projectImportAiOutputSchema, settings,
+    candidate = await dependencies.ai.completeJson(
+      buildRequest(prompt, numberedText), z.unknown(), settings,
     );
+  } catch (error) {
+    throw providerFailure(error);
+  }
+
+  try {
     const parsed = projectImportAiOutputSchema.parse(normalizeCandidate(candidate));
     return {
       analysisMode: 'ai',
@@ -244,6 +322,9 @@ export async function analyzeProjectImport(
       warnings: [],
     };
   } catch {
-    return localResult(text, 'local-fallback', AI_FALLBACK_WARNING);
+    throw new AiServiceError(
+      'AI_INVALID_OUTPUT',
+      'AI project analysis output did not pass local validation.',
+    );
   }
 }

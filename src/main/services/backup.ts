@@ -46,7 +46,13 @@ const REQUIRED_TABLES_V8_PLUS = [
   'company_aliases',
 ].sort();
 
+const REQUIRED_TABLES_V10_PLUS = [
+  ...REQUIRED_TABLES_V8_PLUS,
+  'email_sync_events',
+].sort();
+
 function requiredTablesForVersion(version: number): readonly string[] {
+  if (version >= 10) return REQUIRED_TABLES_V10_PLUS;
   if (version >= 8) return REQUIRED_TABLES_V8_PLUS;
   if (version >= 7) return REQUIRED_TABLES_V7_PLUS;
   return version >= 5 ? REQUIRED_TABLES_V5_PLUS : REQUIRED_TABLES_V1_TO_V4;

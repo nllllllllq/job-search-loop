@@ -5,6 +5,10 @@ import type {
   CompanyPositionGroup,
   ChangeProposalListItem,
   DashboardSummary,
+  EmailConnectionResult,
+  EmailSettingsPublic,
+  EmailSyncEvent,
+  EmailSyncResult,
   Insight,
   Interview,
   Position,
@@ -39,6 +43,15 @@ export interface JobSearchApiFake {
     saveStage: ApiMock<JobSearchApi['positions']['saveStage']>;
     reorderStages: ApiMock<JobSearchApi['positions']['reorderStages']>;
     removeStage: ApiMock<JobSearchApi['positions']['removeStage']>;
+  };
+  email?: {
+    readonly settings: {
+      get: ApiMock<NonNullable<JobSearchApi['email']>['settings']['get']>;
+      save: ApiMock<NonNullable<JobSearchApi['email']>['settings']['save']>;
+    };
+    testConnection: ApiMock<NonNullable<JobSearchApi['email']>['testConnection']>;
+    syncNow: ApiMock<NonNullable<JobSearchApi['email']>['syncNow']>;
+    listRecent: ApiMock<NonNullable<JobSearchApi['email']>['listRecent']>;
   };
   readonly preparations: {
     list: ApiMock<JobSearchApi['preparations']['list']>;
@@ -311,6 +324,42 @@ export function createJobSearchFake(): JobSearchApiFake {
       deleteRollback: vi.fn<JobSearchApi['system']['deleteRollback']>()
         .mockResolvedValue(undefined),
     },
+  };
+}
+
+export function createEmailApiFake(): NonNullable<JobSearchApiFake['email']> {
+  const settings: EmailSettingsPublic = {
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    email: 'user@example.com',
+    username: 'user@example.com',
+    enabled: false,
+    intervalMinutes: 15,
+    hasPassword: true,
+    lastUid: 0,
+    lastSyncAt: null,
+    lastError: null,
+  };
+  const syncResult: EmailSyncResult = {
+    processed: 0,
+    applied: 0,
+    pending: 0,
+    skipped: 0,
+    lastUid: settings.lastUid,
+    lastSyncAt: settings.lastSyncAt,
+    lastError: settings.lastError,
+  };
+  const connection: EmailConnectionResult = { ok: true, message: 'IMAP connection ok' };
+  const events: EmailSyncEvent[] = [];
+  return {
+    settings: {
+      get: vi.fn<NonNullable<JobSearchApi['email']>['settings']['get']>().mockResolvedValue(settings),
+      save: vi.fn<NonNullable<JobSearchApi['email']>['settings']['save']>().mockResolvedValue(settings),
+    },
+    testConnection: vi.fn<NonNullable<JobSearchApi['email']>['testConnection']>().mockResolvedValue(connection),
+    syncNow: vi.fn<NonNullable<JobSearchApi['email']>['syncNow']>().mockResolvedValue(syncResult),
+    listRecent: vi.fn<NonNullable<JobSearchApi['email']>['listRecent']>().mockResolvedValue(events),
   };
 }
 

@@ -10,6 +10,8 @@ import { tmpdir } from 'node:os';
 import { openDatabase } from '../../src/main/database';
 import { CURRENT_SCHEMA_VERSION, migrate } from '../../src/main/migrations';
 import { createAssetsRepository } from '../../src/main/repositories/assets';
+import { createInterviewsRepository } from '../../src/main/repositories/interviews';
+import { createPositionsRepository } from '../../src/main/repositories/positions';
 import { createProposalsRepository } from '../../src/main/repositories/proposals';
 import { createTestDatabase } from '../helpers/database';
 
@@ -24,6 +26,69 @@ function removeDatabaseFiles(path: string): void {
 }
 
 describe('database migrations', () => {
+  it('stores nullable interview stage links and rejects stages from another position', () => {
+    const db = createTestDatabase();
+
+    try {
+      const positions = createPositionsRepository(db);
+      const interviews = createInterviewsRepository(db);
+      const position = positions.create({
+        company: '远山科技',
+        title: '产品经理',
+        interest: 5,
+        rawJd: '负责产品规划',
+      });
+      const otherPosition = positions.create({
+        company: '另一家公司',
+        title: '产品经理',
+        interest: 4,
+        rawJd: '负责产品规划',
+      });
+      const stage = positions.listStages(position.id)[0];
+      const otherStage = positions.listStages(otherPosition.id)[0];
+      if (!stage || !otherStage) throw new Error('Expected default process stages');
+      const base = {
+        positionId: position.id,
+        roundName: '业务一面',
+        interviewDate: null,
+        transcript: '面试记录',
+        personalNotes: '',
+        feedbackResult: null,
+      };
+
+      expect(interviews.create(base).stageId).toBeNull();
+      expect(interviews.create({ ...base, stageId: stage.id }).stageId).toBe(stage.id);
+      expect(() => interviews.create({ ...base, stageId: otherStage.id }))
+        .toThrow(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+      expect(db.prepare('PRAGMA table_info(interviews)').all().map((column) => column.name))
+        .toContain('stage_id');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('does not duplicate project_time when a legacy-version schema already has the column', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`
+      CREATE TABLE projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        project_time TEXT NOT NULL DEFAULT ''
+      ) STRICT;
+      PRAGMA user_version = 5;
+    `);
+
+    try {
+      expect(() => migrate(db)).not.toThrow();
+      expect(db.prepare('PRAGMA table_info(projects)').all().map((column) => column.name))
+        .toContain('project_time');
+      expect(db.prepare('PRAGMA user_version').get())
+        .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
+    } finally {
+      db.close();
+    }
+  });
+
   it('migrates V6 to a minimal AI task table without request payload columns', () => {
     const db = new DatabaseSync(':memory:');
     db.exec(`
@@ -115,6 +180,7 @@ describe('database migrations', () => {
         'capability_evidence',
         'change_proposals',
         'company_aliases',
+        'email_sync_events',
         'insights',
         'interviews',
         'positions',
@@ -179,7 +245,7 @@ describe('database migrations', () => {
       const definitions = db.prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
       ).all();
-      expect(definitions).toHaveLength(16);
+      expect(definitions).toHaveLength(17);
       for (const definition of definitions) {
         expect(String(definition.sql).trim()).toMatch(/\) STRICT;?$/);
       }

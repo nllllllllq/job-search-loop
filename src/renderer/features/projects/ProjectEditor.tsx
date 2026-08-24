@@ -5,16 +5,19 @@ import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
 
 interface ProjectEditorProps {
+  dialogTitle?: string;
   initialValue?: ProjectInput;
   onClose: () => void;
   onSave: (input: ProjectInput) => Promise<void>;
   open: boolean;
+  submitLabel?: string;
 }
 
 type ProjectErrors = Partial<Record<keyof ProjectInput, string>>;
 
 const emptyProject: ProjectInput = {
   name: '',
+  projectTime: '',
   background: '',
   goal: '',
   role: '',
@@ -26,26 +29,13 @@ const emptyProject: ProjectInput = {
   unclassifiedNotes: '',
 };
 
-const fields: Array<{
-  key: keyof ProjectInput;
-  label: string;
-  limit: number;
-  rows: number;
-}> = [
-  { key: 'background', label: '背景', limit: 20_000, rows: 4 },
-  { key: 'goal', label: '目标', limit: 20_000, rows: 3 },
-  { key: 'role', label: '角色', limit: 20_000, rows: 3 },
-  { key: 'keyDecisions', label: '关键决策', limit: 40_000, rows: 5 },
-  { key: 'outcome', label: '结果', limit: 40_000, rows: 4 },
-  { key: 'evidence', label: '证据', limit: 40_000, rows: 4 },
-  { key: 'reflections', label: '反思', limit: 20_000, rows: 4 },
-];
-
 export function ProjectEditor({
+  dialogTitle,
   initialValue,
   onClose,
   onSave,
   open,
+  submitLabel,
 }: ProjectEditorProps) {
   const [value, setValue] = useState<ProjectInput>(initialValue ?? emptyProject);
   const [errors, setErrors] = useState<ProjectErrors>({});
@@ -53,7 +43,13 @@ export function ProjectEditor({
 
   useEffect(() => {
     if (!open) return;
-    setValue(initialValue ?? emptyProject);
+    setValue(initialValue
+      ? {
+        ...initialValue,
+        projectTime: initialValue.projectTime ?? '',
+        unclassifiedNotes: initialValue.unclassifiedNotes ?? '',
+      }
+      : emptyProject);
     setErrors({});
     setSaving(false);
   }, [initialValue, open]);
@@ -91,19 +87,22 @@ export function ProjectEditor({
     setErrors((current) => ({ ...current, [key]: undefined }));
   };
 
+  const title = dialogTitle ?? (initialValue ? '编辑项目' : '新增项目');
+  const actionLabel = submitLabel ?? '保存项目';
+
   return (
     <Modal
       dismissal="close-button-only"
       footer={(
         <button className="button button--primary" disabled={saving} form="project-editor-form" type="submit">
-          {saving ? '保存中…' : '保存项目'}
+          {saving ? '保存中…' : actionLabel}
         </button>
       )}
       onClose={() => {
         if (!saving) onClose();
       }}
       open={open}
-      title={initialValue ? '编辑项目' : '新增项目'}
+      title={title}
     >
       <form className="editor-form" id="project-editor-form" noValidate onSubmit={submit}>
         <Field error={errors.name} label="项目名称" required>
@@ -113,35 +112,30 @@ export function ProjectEditor({
             value={value.name}
           />
         </Field>
-        {fields.map((field) => (
-          <Field error={errors[field.key]} key={field.key} label={field.label}>
-            <textarea
-              maxLength={field.limit}
-              onChange={(event) => change(field.key, event.target.value)}
-              rows={field.rows}
-              value={value[field.key]}
-            />
-          </Field>
-        ))}
-        <Field
-          hint="兼容保留不同场景下的项目讲述底稿；这里不是简历改写器。"
-          label="讲述版本（附加叙事）"
-        >
+        <Field error={errors.role} label="项目角色">
           <textarea
-            maxLength={40_000}
-            onChange={(event) => change('storytellingVersions', event.target.value)}
-            rows={6}
-            value={value.storytellingVersions}
+            maxLength={20_000}
+            onChange={(event) => change('role', event.target.value)}
+            rows={3}
+            value={value.role}
+          />
+        </Field>
+        <Field error={errors.projectTime} label="项目时间">
+          <input
+            maxLength={200}
+            onChange={(event) => change('projectTime', event.target.value)}
+            value={value.projectTime ?? ''}
           />
         </Field>
         <Field
-          hint="无法可靠归类的原文会保留在这里，之后可再整理。"
-          label="待整理内容"
+          error={errors.unclassifiedNotes}
+          hint="保留项目原始内容；AI 整理不会覆盖这段原文。"
+          label="项目内容"
         >
           <textarea
             maxLength={100_000}
             onChange={(event) => change('unclassifiedNotes', event.target.value)}
-            rows={5}
+            rows={10}
             value={value.unclassifiedNotes ?? ''}
           />
         </Field>

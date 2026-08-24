@@ -9,6 +9,7 @@ interface InterviewEditorProps {
   initialValue?: Interview;
   open: boolean;
   positionId: string;
+  stageId?: string | null;
   onClose: () => void;
   onSave: (input: InterviewEditInput) => Promise<void>;
 }
@@ -37,6 +38,7 @@ export function InterviewEditor({
   initialValue,
   open,
   positionId,
+  stageId = null,
   onClose,
   onSave,
 }: InterviewEditorProps) {
@@ -61,6 +63,7 @@ export function InterviewEditor({
     if (saving) return;
     const input: InterviewEditInput = {
       positionId,
+      stageId: initialValue?.stageId ?? stageId,
       roundName: value.roundName,
       interviewDate: value.interviewDate || null,
       transcript: value.transcript,

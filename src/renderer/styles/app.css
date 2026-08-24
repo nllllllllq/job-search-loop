@@ -329,6 +329,42 @@ a {
   outline: none;
 }
 
+.quick-insight-button {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  right: -0.55rem;
+  display: inline-flex;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  gap: 0.35rem;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.55rem 0.7rem;
+  overflow: hidden;
+  border: 1px solid var(--ink-strong);
+  border-radius: 999px 0 0 999px;
+  background: var(--accent);
+  color: var(--surface);
+  box-shadow: -3px 4px 0 rgba(23, 34, 56, 0.12);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: width 160ms ease, right 160ms ease, background-color 160ms ease;
+}
+
+.quick-insight-button:hover,
+.quick-insight-button:focus-visible {
+  right: 0;
+  width: 5rem;
+  background: var(--primary);
+}
+
+.quick-insight-button__label {
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .overview-page,
 .placeholder-page {
   animation: page-enter 320ms ease both;
@@ -1166,6 +1202,139 @@ a {
   box-shadow: none;
 }
 
+.settings-email {
+  border-top: 3px solid var(--primary);
+}
+
+.settings-email__form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  padding: 1.5rem;
+}
+
+.settings-email__checks,
+.settings-email__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  grid-column: 1 / -1;
+}
+
+.settings-email__actions {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.settings-email__status,
+.settings-email__events {
+  padding: 0 1.5rem 1.25rem;
+}
+
+.settings-email__status {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.settings-email__status dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.settings-email__status dl > div {
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-email__status dt,
+.settings-email__events h4 {
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.settings-email__status dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.settings-email__status p,
+.settings-email__events p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.settings-email__status [role="alert"],
+.settings-email__status .connection-result--error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.settings-email__status .connection-result--success {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.settings-email__events {
+  border-top: 1px solid var(--line);
+}
+
+.settings-email__events h4 {
+  margin: 1rem 0 0.5rem;
+}
+
+.settings-email__events ul {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.settings-email__events li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.15rem 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid var(--line-strong);
+  background: rgba(207, 200, 185, 0.12);
+}
+
+.settings-email__events li strong,
+.settings-email__events li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-email__events li span {
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
+
+.settings-email__events li p {
+  grid-column: 1 / -1;
+  white-space: pre-wrap;
+}
+
+.settings-email__state,
+.settings-email__unavailable {
+  padding: 1.25rem 1.5rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .position-table tbody .position-group-header:hover {
   background: var(--surface-raised);
 }
@@ -1980,6 +2149,37 @@ a {
   overflow: hidden;
 }
 
+.projects-page .asset-split {
+  grid-template-columns: 1fr;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.55fr) minmax(12rem, 1fr) minmax(16rem, 2fr) auto;
+  gap: var(--space-4);
+  align-items: center;
+  width: 100%;
+}
+
+.project-row .asset-card__index,
+.project-row h3,
+.project-row__intro {
+  margin: 0;
+}
+
+.project-row__intro {
+  display: block;
+  max-width: none;
+  border-top: 0 !important;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+
+.project-row__intro > span {
+  white-space: pre-wrap;
+}
+
 .asset-card::after {
   position: absolute;
   top: -1.8rem;
@@ -2390,6 +2590,17 @@ a {
 .preparation-panel > .empty-state,
 .preparation-history {
   margin-top: var(--space-5);
+}
+
+.project-import-diff-original del {
+  color: var(--danger);
+  text-decoration-thickness: 2px;
+}
+
+.project-import-diff-suggestion mark {
+  padding: 0 0.15em;
+  background: var(--warning-soft);
+  color: var(--ink-strong);
 }
 
 .preparation-task {
@@ -2909,15 +3120,6 @@ a {
     margin-left: 88px;
   }
 
-  .workspace-header {
-    min-height: 108px;
-    padding: 1.25rem 2rem 1rem;
-  }
-
-  .workspace-header h1 {
-    font-size: 2rem;
-  }
-
   .content-frame {
     padding: 1.5rem 2rem;
   }
@@ -2973,10 +3175,6 @@ a {
     margin-left: 76px;
   }
 
-  .workspace-header {
-    min-height: 126px;
-  }
-
   .overview-intro {
     grid-template-columns: 1fr;
     gap: 1.5rem;
@@ -2992,6 +3190,24 @@ a {
 
   .asset-split {
     grid-template-columns: 1fr;
+  }
+
+  .project-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .project-row .asset-card__index,
+  .project-row h3 {
+    grid-column: 1;
+  }
+
+  .project-row__intro,
+  .project-row > .text-button {
+    grid-column: 2;
+  }
+
+  .project-row > .text-button {
+    justify-self: start;
   }
 
   .prompt-template-grid {
@@ -3020,6 +3236,14 @@ a {
   .workspace-header,
   .content-frame {
     padding-inline: 1.25rem;
+  }
+
+  .project-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-row > * {
+    grid-column: 1;
   }
 
   .overview-ledger {
@@ -3062,6 +3286,8 @@ a {
 
   .position-filter,
   .editor-form__grid,
+  .settings-email__form,
+  .settings-email__status dl,
   .link-picker-grid,
   .question-list,
   .capability-grid,
@@ -3196,7 +3422,7 @@ a {
 /* Dashboard drawers: dense, right-anchored work surfaces. */
 .dashboard-shortcuts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: var(--space-4);
 }
 

@@ -3,8 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { SettingsPage } from '../../src/renderer/features/settings/SettingsPage';
 import { ToastProvider } from '../../src/renderer/hooks/useToast';
-import { createJobSearchFake, installJobSearchFake } from '../helpers/bridge';
-import type { PromptTemplate } from '../../src/shared/domain';
+import { createEmailApiFake, createJobSearchFake, installJobSearchFake } from '../helpers/bridge';
+import type { EmailSettingsPublic, EmailSyncEvent, PromptTemplate } from '../../src/shared/domain';
 
 const prompts: PromptTemplate[] = [
   {
@@ -50,6 +50,100 @@ function renderSettings() {
 }
 
 describe('settings page', () => {
+  it('shows a safe unavailable note when email sync is not exposed', async () => {
+    const fake = createJobSearchFake();
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    const email = await screen.findByRole('button', { name: /EMAIL \/ 邮箱同步.*招聘邮件自动更新/ });
+    await user.click(email);
+
+    expect(await screen.findByText('邮箱同步暂不可用')).toBeVisible();
+  });
+
+  it('saves, tests, and syncs email settings without exposing the password', async () => {
+    const fake = createJobSearchFake();
+    const emailApi = createEmailApiFake();
+    const initial: EmailSettingsPublic = {
+      host: 'imap.example.com',
+      port: 993,
+      secure: true,
+      email: 'user@example.com',
+      username: 'user@example.com',
+      enabled: false,
+      intervalMinutes: 15,
+      hasPassword: false,
+      lastUid: 4,
+      lastSyncAt: '2026-08-12T08:00:00.000Z',
+      lastError: '等待下一次同步',
+    };
+    const event: EmailSyncEvent = {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      messageKey: 'message-1',
+      subject: '面试通知',
+      sender: 'hr@example.com',
+      receivedAt: '2026-08-12T07:00:00.000Z',
+      status: 'pending',
+      positionId: null,
+      canonicalStage: null,
+      reason: '未找到唯一匹配岗位',
+      createdAt: '2026-08-12T08:00:00.000Z',
+    };
+    emailApi.settings.get.mockResolvedValue(initial);
+    emailApi.settings.save.mockResolvedValue({ ...initial, hasPassword: true, enabled: true });
+    emailApi.listRecent.mockResolvedValue([event]);
+    fake.email = emailApi;
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    await user.click(await screen.findByRole('button', { name: /EMAIL \/ 邮箱同步.*招聘邮件自动更新/ }));
+    expect(await screen.findByLabelText(/IMAP 主机/)).toHaveValue(initial.host);
+    expect(screen.getByLabelText(/密码 \/ 应用授权码/)).toHaveAttribute('autocomplete', 'new-password');
+    expect(screen.getByText(event.subject)).toBeVisible();
+    expect(screen.getByText(event.reason)).toBeVisible();
+    expect(screen.getByText(initial.lastError!)).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '保存邮箱设置' }));
+    expect(await screen.findByText('首次保存邮箱同步需要填写密码')).toBeVisible();
+    expect(emailApi.settings.save).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText(/密码 \/ 应用授权码/), 'app-secret');
+    await user.click(screen.getByRole('button', { name: '保存邮箱设置' }));
+    await waitFor(() => expect(emailApi.settings.save).toHaveBeenCalledWith({
+      host: initial.host,
+      port: initial.port,
+      secure: initial.secure,
+      email: initial.email,
+      username: initial.username,
+      password: 'app-secret',
+      enabled: initial.enabled,
+      intervalMinutes: initial.intervalMinutes,
+    }));
+    expect(screen.getByLabelText(/密码 \/ 应用授权码/)).toHaveValue('');
+
+    await user.click(screen.getByRole('button', { name: '测试邮箱连接' }));
+    await waitFor(() => expect(emailApi.testConnection).toHaveBeenCalledTimes(1));
+    emailApi.syncNow.mockResolvedValueOnce({
+      processed: 0,
+      applied: 0,
+      pending: 0,
+      skipped: 0,
+      lastUid: initial.lastUid,
+      lastSyncAt: initial.lastSyncAt,
+      lastError: 'provider details must stay hidden',
+    });
+    await user.click(screen.getByRole('button', { name: '立即同步' }));
+    await waitFor(() => expect(emailApi.syncNow).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('邮箱同步操作失败，请检查配置后重试。', { selector: 'p' })).toBeVisible();
+    expect(screen.queryByText('邮箱同步完成')).not.toBeInTheDocument();
+    expect(screen.queryByText('provider details must stay hidden')).not.toBeInTheDocument();
+    expect(emailApi.listRecent).toHaveBeenCalledWith(5);
+  });
+
   it('keeps settings sections collapsed initially and opens only one at a time', async () => {
     const fake = createJobSearchFake();
     fake.ai.settings.get.mockResolvedValue({
@@ -446,6 +540,28 @@ describe('settings page', () => {
 
     expect((await screen.findAllByText('请求过于频繁，请稍后再试。'))[0]).toBeVisible();
     expect(document.body).not.toHaveTextContent('provider payload');
+  });
+
+  it('identifies the failed connection capability in safe UI copy', async () => {
+    const fake = createJobSearchFake();
+    fake.ai.settings.get.mockResolvedValue({
+      baseUrl: 'https://api.example.com/v1',
+      model: 'model-a',
+      hasApiKey: true,
+    });
+    fake.ai.testConnection.mockRejectedValue({
+      code: 'AI_PROVIDER_ERROR',
+      message: 'Responses Web Search connection test failed.',
+    });
+    fake.assets.prompts.list.mockResolvedValue(prompts);
+    installJobSearchFake(fake);
+    const user = userEvent.setup();
+
+    renderSettings();
+    await user.click(await screen.findByRole('button', { name: /AI 服务配置/ }));
+    await user.click(await screen.findByRole('button', { name: '测试连接' }));
+
+    expect((await screen.findAllByText(/Responses Web Search/))[0]).toBeVisible();
   });
 
   it('saves exact prompt content and keeps it after a failed save', async () => {

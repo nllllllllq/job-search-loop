@@ -5,6 +5,7 @@ import type {
   CanonicalStage,
   CompanyPositionGroup,
   Position,
+  PositionCreateInput,
   PositionDetail,
   PositionInput,
   PositionListItem,
@@ -13,6 +14,7 @@ import type {
 } from '../../shared/domain';
 import {
   canonicalStageSchema,
+  positionCreateInputSchema,
   positionInputSchema,
   processStageInputSchema,
 } from '../../shared/schemas';
@@ -75,7 +77,7 @@ function decodeStage(value: unknown): ProcessStage {
 }
 
 export interface PositionsRepository {
-  create(input: PositionInput): Position;
+  create(input: PositionCreateInput): Position;
   update(id: string, input: PositionInput): Position;
   get(id: string): Position;
   getDetail(id: string): PositionDetail;
@@ -87,6 +89,8 @@ export interface PositionsRepository {
   reorderStages(positionId: string, orderedIds: string[]): ProcessStage[];
   removeStage(positionId: string, stageId: string): ProcessStage[];
 }
+
+const INTERESTED_STAGE_NAME = '感兴趣';
 
 export function createPositionsRepository(db: DatabaseSync): PositionsRepository {
   const get = (id: string): Position => {
@@ -103,20 +107,27 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
     `).all(positionId).map(decodeStage);
   };
 
-  // Current stage is the furthest ordered stage with an actual date. Before any
+  // Current stage is the furthest ordered stage with a recorded date. Before any
   // progress is recorded, it is the first ordered stage (normally "interested").
   const refreshCurrentStage = (positionId: string, now: string): void => {
     const stages = db.prepare(`
-      SELECT canonical_stage, actual_date FROM process_stages
+      SELECT canonical_stage, actual_date, expected_date FROM process_stages
       WHERE position_id = ? ORDER BY order_index
     `).all(positionId).map((value) => {
       const data = row(value, 'process stage');
       return {
         canonicalStage: canonicalStageSchema.parse(text(data.canonical_stage, 'canonical_stage')),
         actualDate: nullableText(data.actual_date, 'actual_date'),
+        expectedDate: nullableText(data.expected_date, 'expected_date'),
       };
     });
-    const current = [...stages].reverse().find((stage) => stage.actualDate !== null) ?? stages[0];
+    const current = [...stages].reverse().find((stage) => (
+      stage.actualDate !== null
+      || (
+        (stage.canonicalStage === 'assessment' || stage.canonicalStage === 'interview')
+        && stage.expectedDate !== null
+      )
+    )) ?? stages[0];
     db.prepare('UPDATE positions SET current_stage = ?, updated_at = ? WHERE id = ?')
       .run(current?.canonicalStage ?? null, now, positionId);
   };
@@ -157,10 +168,18 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
 
   return {
     create(input) {
-      const parsed = positionInputSchema.parse(input);
+      const parsed = positionCreateInputSchema.parse(input);
       return transaction(db, () => {
         const id = randomUUID();
         const now = new Date().toISOString();
+        const initialStage = parsed.initialStage ?? 'applied';
+        const initialDate = parsed.initialDate ?? now.slice(0, 10);
+        const stages = initialStage === 'interested'
+          ? [
+            { name: INTERESTED_STAGE_NAME, canonicalStage: 'interested' as const, orderIndex: 0 },
+            ...DEFAULT_PROCESS_STAGES.map((stage) => ({ ...stage, orderIndex: stage.orderIndex + 1 })),
+          ]
+          : DEFAULT_PROCESS_STAGES;
         db.prepare(`
           INSERT INTO positions (${POSITION_COLUMNS})
           VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
@@ -171,26 +190,30 @@ export function createPositionsRepository(db: DatabaseSync): PositionsRepository
           parsed.location,
           parsed.interest,
           parsed.rawJd,
-          DEFAULT_PROCESS_STAGES[0]?.canonicalStage ?? null,
+          initialStage,
           now,
           now,
         );
         const insertStage = db.prepare(`
           INSERT INTO process_stages (${STAGE_COLUMNS})
-          VALUES (?, ?, ?, ?, ?, NULL, '', '', ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)
         `);
-        for (const stage of DEFAULT_PROCESS_STAGES) {
+        for (const stage of stages) {
+          const isSelected = stage.canonicalStage === initialStage;
+          const noticeOnly = stage.canonicalStage === 'assessment' || stage.canonicalStage === 'interview';
           insertStage.run(
             randomUUID(),
             id,
             stage.name,
             stage.canonicalStage,
-            stage.canonicalStage === 'applied' ? now.slice(0, 10) : null,
+            isSelected && !noticeOnly ? initialDate : null,
+            isSelected && noticeOnly ? initialDate : null,
             stage.orderIndex,
             now,
             now,
           );
         }
+        refreshCurrentStage(id, now);
         return get(id);
       });
     },

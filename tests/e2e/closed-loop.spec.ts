@@ -30,6 +30,10 @@ async function openWindow(app: ElectronApplication): Promise<Page> {
 
 async function configureAi(page: Page, server: FakeAiServer): Promise<void> {
   await page.getByRole('link', { name: '设置' }).click();
+  const providerToggle = page.getByRole('button', { name: /AI 服务配置/ });
+  if (!(await page.getByLabel('API 地址').isVisible().catch(() => false))) {
+    await providerToggle.click();
+  }
   await page.getByLabel('API 地址').fill(server.baseUrl);
   await page.getByLabel('模型').fill('fake-e2e-model');
   await page.getByLabel('替换 API Key').fill('e2e-only-key');
@@ -42,7 +46,8 @@ async function createPosition(
   input: { company: string; title: string; rawJd: string },
 ): Promise<void> {
   await page.getByRole('link', { name: '岗位', exact: true }).click();
-  await page.getByRole('button', { name: /录入岗位/ }).click();
+  await page.getByRole('button', { name: /录入岗位/ }).first().click();
+  await page.getByRole('tab', { name: '手动录入' }).click();
   await page.getByLabel('公司').fill(input.company);
   await page.getByLabel('岗位名称').fill(input.title);
   await page.getByLabel('兴趣度').selectOption('5');
@@ -54,20 +59,16 @@ async function createPosition(
 async function generatePreparation(
   page: Page,
   server: FakeAiServer,
-  question?: string,
 ): Promise<void> {
   await page.getByRole('button', { name: '生成准备材料' }).click();
-  if (question) {
-    await page.getByLabel(`问题：${question}`).check();
-  }
-  await page.getByRole('button', { name: '查看发送摘要' }).click();
-  await expect(page.getByRole('heading', { name: '预计载荷摘要' })).toBeVisible();
+  await page.getByRole('button', { name: '查看发送内容' }).click();
+  await expect(page.getByRole('heading', { name: '岗位研究与准备范围' })).toBeVisible();
   expect(server.requests).toHaveLength(2);
   await page.getByRole('button', { name: '确认生成' }).click();
-  await expect(page.getByRole('heading', { name: '岗位摘要' }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: '公司与产品调研' }).first()).toBeVisible();
 }
 
-test('turns one interview into reusable preparation for the next job', async () => {
+test('keeps JD preparation and interview learning in one persistent loop', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'job-search-loop-e2e-'));
   const server = await startFakeAiServer();
   let app: ElectronApplication | null = null;
@@ -85,17 +86,27 @@ test('turns one interview into reusable preparation for the next job', async () 
     });
 
     await page.getByRole('button', { name: '编辑流程阶段：面试' }).click();
-    await page.getByLabel('实际日期').fill('2026-08-01');
+    await page.getByLabel('面试进行时间').fill('2026-08-01');
     await page.getByRole('button', { name: '保存阶段' }).click();
-    await expect(page.getByText('实际日期：2026-08-01')).toBeVisible();
+    await expect(page.getByText('面试进行时间 2026-08-01')).toBeVisible();
 
     await page.getByRole('button', { name: '生成准备材料' }).click();
-    await page.getByRole('button', { name: '查看发送摘要' }).click();
-    await expect(page.getByRole('heading', { name: '预计载荷摘要' })).toBeVisible();
+    await page.getByRole('button', { name: '查看发送内容' }).click();
+    await expect(page.getByRole('heading', { name: '岗位研究与准备范围' })).toBeVisible();
     expect(server.requests).toHaveLength(0);
     await page.getByRole('button', { name: '确认生成' }).click();
     await expect.poll(() => server.requests.length).toBe(1);
-    await expect(page.getByRole('heading', { name: '岗位摘要' })).toBeVisible();
+    const failedPreparation = page.getByText('准备材料生成失败');
+    await Promise.race([
+      page.getByRole('heading', { name: '公司与产品调研' }).waitFor(),
+      failedPreparation.waitFor(),
+    ]);
+    if (await failedPreparation.isVisible().catch(() => false)) {
+      const diagnostics = page.getByRole('group', { name: '查看服务诊断' });
+      await diagnostics.click();
+      throw new Error(`Preparation task failed: ${await diagnostics.textContent()}`);
+    }
+    await expect(page.getByRole('heading', { name: '公司与产品调研' })).toBeVisible();
 
     await page.getByRole('button', { name: '新增面试记录' }).click();
     await page.getByLabel('轮次').fill('一面');
@@ -113,7 +124,7 @@ test('turns one interview into reusable preparation for the next job', async () 
     await expect.poll(() => server.requests.length).toBe(2);
     await expect(page.getByText('候选人能够说明用户研究方法，但需要补充业务影响证据。')).toBeVisible();
 
-    await page.getByRole('link', { name: '总览' }).click();
+    await page.getByRole('link', { name: '首页', exact: true }).click();
     await page.getByRole('button', { name: /待确认清单/ }).click();
     const questionProposal = page.locator('article.proposal-card').filter({
       hasText: REUSABLE_QUESTION,
@@ -132,23 +143,29 @@ test('turns one interview into reusable preparation for the next job', async () 
       title: '产品运营',
       rawJd: '要求用户洞察和跨团队协作。',
     });
-    await generatePreparation(page, server, REUSABLE_QUESTION);
+    await generatePreparation(page, server);
     await expect.poll(() => server.requests.length).toBe(3);
-    expect(server.requests[2]?.body).toContain(REUSABLE_QUESTION);
+    expect(server.requests[2]?.body).not.toContain(REUSABLE_QUESTION);
+    expect(server.requests.map((request) => request.path)).toEqual([
+      '/v1/responses',
+      '/v1/chat/completions',
+      '/v1/responses',
+    ]);
     for (const request of server.requests) {
       expect(request.method).toBe('POST');
-      expect(request.path).toBe('/v1/chat/completions');
       expect(request.headers.authorization).toBe('Bearer e2e-only-key');
     }
-    await expect(page.getByText(/1 个问题/)).toBeVisible();
+    await expect(page.getByText('企业智能助手').first()).toBeVisible();
 
     await app.close();
     app = await launchTestApp(userData);
     page = await openWindow(app);
     await page.getByRole('link', { name: '岗位', exact: true }).click();
     const positionTable = page.locator('table.position-table');
-    await expect(positionTable.getByRole('link', { name: /远山科技/ })).toBeVisible();
-    await expect(positionTable.getByRole('link', { name: /海川软件/ })).toBeVisible();
+    await positionTable.getByRole('button', { name: /远山科技/ }).click();
+    await expect(positionTable.getByRole('link', { name: /AI 产品经理/ })).toBeVisible();
+    await positionTable.getByRole('button', { name: /海川软件/ }).click();
+    await expect(positionTable.getByRole('link', { name: /产品运营/ })).toBeVisible();
     await page.getByRole('link', { name: '问题库' }).click();
     await expect(page.getByText(REUSABLE_QUESTION)).toBeVisible();
   } finally {

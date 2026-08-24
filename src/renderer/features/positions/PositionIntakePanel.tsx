@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { ZodError } from 'zod';
 import type {
   ImportedImageInput,
+  PositionCreateInput,
   PositionImportPreview,
   PositionInput,
 } from '../../../shared/domain';
@@ -9,7 +10,7 @@ import {
   POSITION_IMPORT_IMAGE_MAX_BYTES,
   POSITION_IMPORT_IMAGE_MAX_COUNT,
   positionImportImagesSchema,
-  positionInputSchema,
+  positionCreateInputSchema,
 } from '../../../shared/schemas';
 import type { AppError } from '../../../shared/ipc';
 import { Field } from '../../components/Field';
@@ -17,18 +18,42 @@ import { Modal } from '../../components/Modal';
 
 type Tab = 'manual' | 'text' | 'images';
 
-const emptyPosition: PositionInput = {
-  company: '',
-  title: '',
-  location: '',
-  interest: 3,
-  rawJd: '',
-};
+const initialStageOptions: Array<{
+  value: NonNullable<PositionCreateInput['initialStage']>;
+  label: string;
+  dateLabel: string;
+}> = [
+  { value: 'interested', label: '感兴趣', dateLabel: '记录时间' },
+  { value: 'applied', label: '已投递', dateLabel: '投递时间' },
+  { value: 'assessment', label: '测评', dateLabel: '收到通知时间' },
+  { value: 'interview', label: '面试', dateLabel: '收到通知时间' },
+  { value: 'offer', label: 'Offer', dateLabel: '收到 Offer 时间' },
+];
+
+function localIsoDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function emptyPosition(): PositionCreateInput {
+  return {
+    company: '',
+    title: '',
+    location: '',
+    interest: 3,
+    rawJd: '',
+    initialStage: 'applied',
+    initialDate: localIsoDate(),
+  };
+}
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSave: (input: PositionInput) => Promise<void>;
+  onSave: (input: PositionCreateInput) => Promise<void>;
 }
 
 async function fileBytes(file: File): Promise<Uint8Array> {
@@ -100,11 +125,11 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<File[]>([]);
   const [preview, setPreview] = useState<PositionImportPreview | null>(null);
-  const [value, setValue] = useState<PositionInput>(emptyPosition);
+  const [value, setValue] = useState<PositionCreateInput>(emptyPosition);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [imageInputUnsupported, setImageInputUnsupported] = useState(false);
-  const [errors, setErrors] = useState<Partial<Record<keyof PositionInput, string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<keyof PositionCreateInput, string>>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -112,7 +137,7 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
     setText('');
     setImages([]);
     setPreview(null);
-    setValue(emptyPosition);
+    setValue(emptyPosition());
     setBusy(false);
     setError('');
     setImageInputUnsupported(false);
@@ -126,7 +151,11 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
 
   const applyPreview = (next: PositionImportPreview) => {
     setPreview(next);
-    setValue(next.suggested);
+    setValue({
+      ...next.suggested,
+      initialStage: value.initialStage ?? 'applied',
+      initialDate: value.initialDate ?? localIsoDate(),
+    });
     setErrors({
       ...(!next.suggested.company.trim() ? { company: 'AI 未识别公司名称，请补充' } : {}),
       ...(!next.suggested.title.trim() ? { title: 'AI 未识别岗位名称，请补充' } : {}),
@@ -184,11 +213,11 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (busy) return;
-    const parsed = positionInputSchema.safeParse(value);
+    const parsed = positionCreateInputSchema.safeParse(value);
     if (!parsed.success) {
-      const next: Partial<Record<keyof PositionInput, string>> = {};
+      const next: Partial<Record<keyof PositionCreateInput, string>> = {};
       for (const issue of parsed.error.issues) {
-        const key = issue.path[0] as keyof PositionInput;
+        const key = issue.path[0] as keyof PositionCreateInput;
         if (key === 'company' || key === 'title') next[key] = '请输入 1–120 个字符';
         else if (key === 'rawJd') next[key] = '请输入原始 JD';
         else next[key] = '请检查此字段';
@@ -222,7 +251,7 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
     if (preview) void window.jobSearch.imports.cancel(preview.sessionId).catch(() => undefined);
     setTab(nextTab);
     setPreview(null);
-    setValue(emptyPosition);
+    setValue(emptyPosition());
     setError('');
     setImageInputUnsupported(false);
     setErrors({});
@@ -343,6 +372,31 @@ export function PositionIntakePanel({ open, onClose, onSave }: Props) {
               >
                 {[1, 2, 3, 4, 5].map((interest) => <option key={interest}>{interest}</option>)}
               </select>
+            </Field>
+          </div>
+          <div className="editor-form__grid">
+            <Field label="当前阶段">
+              <select
+                onChange={(event) => setValue({
+                  ...value,
+                  initialStage: event.target.value as PositionCreateInput['initialStage'],
+                })}
+                value={value.initialStage}
+              >
+                {initialStageOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </Field>
+            <Field error={errors.initialDate} label={initialStageOptions.find((option) => option.value === value.initialStage)?.dateLabel ?? '初始日期'}>
+              <input
+                onChange={(event) => {
+                  setValue({ ...value, initialDate: event.target.value });
+                  setErrors((current) => ({ ...current, initialDate: undefined }));
+                }}
+                type="date"
+                value={value.initialDate ?? ''}
+              />
             </Field>
           </div>
           <Field error={errors.rawJd} label="原始 JD" required>

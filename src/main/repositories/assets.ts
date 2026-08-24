@@ -48,6 +48,7 @@ function decodeProject(value: unknown): Project {
   return {
     id: text(data.id, 'id'),
     name: text(data.name, 'name'),
+    projectTime: text(data.project_time, 'project_time'),
     background: text(data.background, 'background'),
     goal: text(data.goal, 'goal'),
     role: text(data.role, 'role'),
@@ -139,6 +140,7 @@ function insertVersion(
 
 function sameProjectNarrative(previous: Project, input: ProjectInput): boolean {
   return previous.name === input.name
+    && previous.projectTime === (input.projectTime ?? '')
     && previous.background === input.background
     && previous.goal === input.goal
     && previous.role === input.role
@@ -246,11 +248,12 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
           if (sameProjectNarrative(previous, parsed)) return previous;
           insertVersion(db, 'project', id, previous, now);
           db.prepare(`
-            UPDATE projects SET name = ?, background = ?, goal = ?, role = ?,
+            UPDATE projects SET name = ?, project_time = ?, background = ?, goal = ?, role = ?,
               key_decisions = ?, outcome = ?, evidence = ?, reflections = ?,
               storytelling_versions = ?, unclassified_notes = ?, updated_at = ? WHERE id = ?
           `).run(
             parsed.name,
+            parsed.projectTime,
             parsed.background,
             parsed.goal,
             parsed.role,
@@ -266,12 +269,13 @@ export function createAssetsRepository(db: DatabaseSync): AssetsRepository {
         } else {
           db.prepare(`
             INSERT INTO projects (
-              id, name, background, goal, role, key_decisions, outcome,
+              id, name, project_time, background, goal, role, key_decisions, outcome,
               evidence, reflections, storytelling_versions, unclassified_notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             id,
             parsed.name,
+            parsed.projectTime,
             parsed.background,
             parsed.goal,
             parsed.role,

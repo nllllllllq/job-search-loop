@@ -211,7 +211,7 @@ Expected: installer and unpacked Electron smoke pass.
 
 - [ ] **Step 4: Remove old installers after resolving exact targets**
 
-List `C:\Users\Administrator\Desktop\Project\job_record\artifacts\*`, verify every target is an older installer directory, then remove only those older directories and keep the new version directory. Do not remove the artifacts root or unrelated files.
+List `artifacts\*`, verify every target is an older installer directory, then remove only those older directories and keep the new version directory. Do not remove the artifacts root or unrelated files.
 
 - [ ] **Step 5: Record final hash and commit**
 

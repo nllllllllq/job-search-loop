@@ -7,7 +7,6 @@ import { Modal } from '../../components/Modal';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useToast } from '../../hooks/useToast';
-import { InterviewPanel } from '../interviews/InterviewPanel';
 import { PreparationPanel } from '../preparations/PreparationPanel';
 import { PositionEditor } from './PositionEditor';
 import { StageTimeline } from './StageTimeline';
@@ -132,6 +131,7 @@ export function PositionDetailPage() {
 
       <section className="position-workspace-section" aria-label="岗位流程">
         <StageTimeline
+          interviews={position.interviews}
           onRefresh={resource.reload}
           positionId={position.id}
           stages={position.stages}
@@ -154,14 +154,6 @@ export function PositionDetailPage() {
           <span>最新版本优先</span>
         </header>
         <PreparationPanel positionId={position.id} />
-      </section>
-
-      <section className="position-workspace-section" aria-labelledby="interviews-title">
-        <header className="position-workspace-section__header">
-          <h3 id="interviews-title">面试记录</h3>
-          <span>记录与复盘</span>
-        </header>
-        <InterviewPanel positionId={position.id} />
       </section>
 
       <PositionEditor

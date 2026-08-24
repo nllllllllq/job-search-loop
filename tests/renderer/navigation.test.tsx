@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../src/renderer/App';
+import { resetJobSearchFake } from '../helpers/bridge';
 
 describe('desktop navigation', () => {
   beforeEach(() => {
@@ -56,7 +57,7 @@ describe('desktop navigation', () => {
   );
 
   it.each([
-    ['总览', '总览'],
+    ['首页', '首页'],
     ['岗位', '岗位'],
     ['项目档案', '项目'],
     ['问题库', '题库'],
@@ -84,29 +85,37 @@ describe('desktop navigation', () => {
     expect(document.title).toBe(expectedTitle);
   });
 
-  it('closes a deep-linked dashboard drawer with Escape', async () => {
+  it('ignores a deep-linked review drawer query', async () => {
+    const fake = resetJobSearchFake();
     window.location.hash = '#/?drawer=reviews';
     render(<App />);
 
-    expect(await screen.findByRole('dialog', { name: '待确认清单' }))
+    expect(await screen.findByRole('heading', { level: 1, name: '首页' }))
       .toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(
-      screen.queryByRole('dialog', { name: '待确认清单' }),
-    ).not.toBeInTheDocument());
-    expect(window.location.hash).toBe('#/');
+    expect(screen.queryByRole('dialog', { name: '待确认清单' })).not.toBeInTheDocument();
+    expect(fake.reviews.proposals.list).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['#/reviews', '待确认清单'],
-    ['#/capabilities', '能力主题'],
-  ])('redirects legacy route %s to the dashboard drawer', async (hash, drawerHeading) => {
-    window.location.hash = hash;
+  it('redirects the legacy review route to home without opening a drawer', async () => {
+    const fake = resetJobSearchFake();
+    window.location.hash = '#/reviews';
     render(<App />);
 
-    expect(await screen.findByRole('heading', { level: 1, name: '总览' }))
+    expect(await screen.findByRole('heading', { level: 1, name: '首页' }))
       .toBeInTheDocument();
-    expect(await screen.findByRole('dialog', { name: drawerHeading }))
+    expect(screen.queryByRole('dialog', { name: '待确认清单' })).not.toBeInTheDocument();
+    expect(fake.reviews.proposals.list).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('#/');
+    expect(document.title).toBe('求职闭环');
+  });
+
+  it('redirects the legacy capabilities route to the dashboard drawer', async () => {
+    window.location.hash = '#/capabilities';
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { level: 1, name: '首页' }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: '能力主题' }))
       .toBeInTheDocument();
     expect(window.location.hash).toContain('#/?drawer=');
     expect(document.title).toBe('求职闭环');

@@ -1,18 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { Interview } from '../../shared/domain';
+import type { Interview, InterviewReviewSnapshot } from '../../shared/domain';
 import {
   interviewInputSchema,
   interviewReviewSnapshotSchema,
   interviewSummarySchema,
   interviewUpdateSchema,
 } from '../../shared/schemas';
-import { json, notFound, nullableText, RepositoryError, row, text } from './common';
+import {
+  json,
+  notFound,
+  nullableText,
+  RepositoryError,
+  row,
+  text,
+} from './common';
 
 export type InterviewInput = Omit<
   Interview,
   'id' | 'summary' | 'reviewSnapshot' | 'createdAt' | 'updatedAt'
->;
+> & { stageId?: string | null };
 
 export function decodeInterviewRow(value: unknown): Interview {
   const data = row(value, 'interview');
@@ -33,6 +40,7 @@ export function decodeInterviewRow(value: unknown): Interview {
   return {
     id: text(data.id, 'id'),
     positionId: text(data.position_id, 'position_id'),
+    stageId: nullableText(data.stage_id, 'stage_id'),
     roundName: text(data.round_name, 'round_name'),
     interviewDate: nullableText(data.interview_date, 'interview_date'),
     transcript: text(data.transcript, 'transcript'),
@@ -51,6 +59,7 @@ export interface InterviewsRepository {
   get(id: string): Interview;
   listByPosition(positionId: string): Interview[];
   saveSummary(id: string, summary: string): Interview;
+  saveReview(id: string, summary: string, snapshot: InterviewReviewSnapshot): Interview;
 }
 
 export function createInterviewsRepository(db: DatabaseSync): InterviewsRepository {
@@ -61,16 +70,25 @@ export function createInterviewsRepository(db: DatabaseSync): InterviewsReposito
   };
   const write = (id: string, input: InterviewInput, create: boolean): Interview => {
     const parsed = (create ? interviewInputSchema : interviewUpdateSchema).parse(input);
+    if (parsed.stageId !== null) {
+      const stage = db.prepare(`
+        SELECT id FROM process_stages WHERE id = ? AND position_id = ?
+      `).get(parsed.stageId, parsed.positionId);
+      if (stage === undefined) {
+        throw new RepositoryError('VALIDATION_ERROR', '面试流程节点必须属于同一岗位。');
+      }
+    }
     const now = new Date().toISOString();
     if (create) {
       db.prepare(`
         INSERT INTO interviews (
-          id, position_id, round_name, interview_date, transcript, personal_notes,
+          id, position_id, stage_id, round_name, interview_date, transcript, personal_notes,
           summary, review_snapshot_json, feedback_result, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         parsed.positionId,
+        parsed.stageId,
         parsed.roundName,
         parsed.interviewDate,
         parsed.transcript,
@@ -84,11 +102,12 @@ export function createInterviewsRepository(db: DatabaseSync): InterviewsReposito
     } else {
       const result = db.prepare(`
         UPDATE interviews
-        SET position_id = ?, round_name = ?, interview_date = ?, transcript = ?,
+        SET position_id = ?, stage_id = ?, round_name = ?, interview_date = ?, transcript = ?,
             personal_notes = ?, feedback_result = ?, updated_at = ?
         WHERE id = ? AND review_snapshot_json IS NULL
       `).run(
         parsed.positionId,
+        parsed.stageId,
         parsed.roundName,
         parsed.interviewDate,
         parsed.transcript,
@@ -130,6 +149,30 @@ export function createInterviewsRepository(db: DatabaseSync): InterviewsReposito
         WHERE id = ? AND review_snapshot_json IS NULL
       `)
         .run(parsed, new Date().toISOString(), id);
+      if (result.changes !== 1) {
+        if (db.prepare('SELECT id FROM interviews WHERE id = ?').get(id) === undefined) {
+          notFound('Interview', id);
+        }
+        throw new RepositoryError(
+          'CONFLICT',
+          '已完成复盘的面试记录不能修改，请新建补充记录。',
+        );
+      }
+      return get(id);
+    },
+    saveReview(id, summary, snapshot) {
+      const parsedSummary = interviewSummarySchema.parse(summary);
+      const parsedSnapshot = interviewReviewSnapshotSchema.parse(snapshot);
+      const result = db.prepare(`
+        UPDATE interviews
+        SET summary = ?, review_snapshot_json = ?, updated_at = ?
+        WHERE id = ? AND review_snapshot_json IS NULL
+      `).run(
+        parsedSummary,
+        JSON.stringify(parsedSnapshot),
+        new Date().toISOString(),
+        id,
+      );
       if (result.changes !== 1) {
         if (db.prepare('SELECT id FROM interviews WHERE id = ?').get(id) === undefined) {
           notFound('Interview', id);

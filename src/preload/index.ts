@@ -6,15 +6,21 @@ import {
   aiSettingsSaveSchema,
   aiTaskListSchema,
   aiTaskSchema,
+  emailConnectionResultSchema,
+  emailListRecentSchema,
+  emailSettingsPublicSchema,
+  emailSettingsSaveSchema,
+  emailSyncEventListSchema,
+  emailSyncResultSchema,
   backupActionResultSchema,
   backupCancelResultSchema,
   backupProgressSchema,
   backupRestoreOptionsSchema,
+  capabilityAnalysisOutputSchema,
   capabilityAnalysisPreviewSchema,
   capabilityMergeResultSchema,
   capabilityMergeSchema,
   capabilityAnalysisSelectionSchema,
-  changeProposalArraySchema,
   changeProposalListSchema,
   dashboardSummarySchema,
   changeProposalSchema,
@@ -29,6 +35,7 @@ import {
   importCancelSchema,
   positionImportImagesSchema,
   positionImportTextSchema,
+  positionCreateInputSchema,
   projectImportDocumentSchema,
   projectSegmentsUpdateSchema,
   preparationGenerateSchema,
@@ -65,6 +72,10 @@ function parseAppError(value: unknown): AppError | null {
       'AI_SETTINGS_UNAVAILABLE',
       'BACKUP_INVALID',
       'BACKUP_FAILED',
+      'EMAIL_SETTINGS_CORRUPT',
+      'EMAIL_SETTINGS_UNAVAILABLE',
+      'EMAIL_NOT_CONFIGURED',
+      'EMAIL_CONNECTION_FAILED',
     ].includes(
       String(candidate.code),
     )
@@ -133,7 +144,7 @@ const api = frozen<JobSearchApi>({
     list: (filter) => invoke(CHANNELS.positions.list, filter),
     listGrouped: (filter) => invoke(CHANNELS.positions.listGrouped, filter),
     get: (id) => invoke(CHANNELS.positions.get, id),
-    create: (input) => invoke(CHANNELS.positions.create, input),
+    create: (input) => invoke(CHANNELS.positions.create, positionCreateInputSchema.parse(input)),
     update: (id, input) => invoke(CHANNELS.positions.update, { id, input }),
     remove: (id) => invoke(CHANNELS.positions.remove, id),
     saveStage: (input) => invoke(CHANNELS.positions.saveStage, input),
@@ -145,6 +156,27 @@ const api = frozen<JobSearchApi>({
       CHANNELS.positions.removeStage,
       { positionId, stageId },
     ),
+  }),
+  email: frozen<NonNullable<JobSearchApi['email']>>({
+    settings: frozen<NonNullable<JobSearchApi['email']>['settings']>({
+      get: async () => emailSettingsPublicSchema.parse(
+        await invoke(CHANNELS.email.settings.get),
+      ),
+      save: async (input) => emailSettingsPublicSchema.parse(await invoke(
+        CHANNELS.email.settings.save,
+        emailSettingsSaveSchema.parse(input),
+      )),
+    }),
+    testConnection: async () => emailConnectionResultSchema.parse(
+      await invoke(CHANNELS.email.testConnection),
+    ),
+    syncNow: async () => emailSyncResultSchema.parse(
+      await invoke(CHANNELS.email.syncNow),
+    ),
+    listRecent: async (limit) => emailSyncEventListSchema.parse(await invoke(
+      CHANNELS.email.listRecent,
+      emailListRecentSchema.parse(limit === undefined ? undefined : { limit }),
+    )),
   }),
   preparations: frozen<JobSearchApi['preparations']>({
     list: async (positionId) => preparationMaterialListSchema.parse(
@@ -309,7 +341,7 @@ const api = frozen<JobSearchApi>({
         capabilityAnalysisSelectionSchema.parse(positionIds),
       ),
     ),
-    confirmCapabilityAnalysis: async (token) => changeProposalArraySchema.parse(
+    confirmCapabilityAnalysis: async (token) => capabilityAnalysisOutputSchema.parse(
       await invoke(
         CHANNELS.system.confirmCapabilityAnalysis,
         idSchema.parse(token),

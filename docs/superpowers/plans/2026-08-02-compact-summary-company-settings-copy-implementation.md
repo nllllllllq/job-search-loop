@@ -113,4 +113,4 @@ Expected: 核心测试、安装包和 Windows smoke 通过。
 
 - [ ] **Step 3: 仅保留最新安装包并提交**
 
-将最新安装包复制到 `C:\Users\Administrator\Desktop\Project\job_record\artifacts\v1.4.2`，删除旧 `v1.4.1` 目录后记录 SHA-256，并提交本轮改动。
+将最新安装包复制到 `artifacts\v1.4.2`，删除旧 `v1.4.1` 目录后记录 SHA-256，并提交本轮改动。

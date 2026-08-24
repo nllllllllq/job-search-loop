@@ -11,11 +11,13 @@ import { Modal } from '../../components/Modal';
 
 interface QuestionEditorProps {
   capabilities: Capability[];
+  dialogTitle?: string;
   initialValue?: QuestionInput;
   onClose: () => void;
   onSave: (input: QuestionInput) => Promise<void>;
   open: boolean;
   projects: Project[];
+  submitLabel?: string;
   type: QuestionType;
 }
 
@@ -40,11 +42,13 @@ function editorTitle(type: QuestionType, editing: boolean): string {
 
 export function QuestionEditor({
   capabilities,
+  dialogTitle,
   initialValue,
   onClose,
   onSave,
   open,
   projects,
+  submitLabel,
   type,
 }: QuestionEditorProps) {
   const [value, setValue] = useState<QuestionInput>(initialValue ?? emptyQuestion(type));
@@ -99,14 +103,14 @@ export function QuestionEditor({
       dismissal="close-button-only"
       footer={(
         <button className="button button--primary" disabled={saving} form="question-editor-form" type="submit">
-          {saving ? '保存中…' : '保存问题'}
+          {saving ? '保存中…' : submitLabel ?? '保存问题'}
         </button>
       )}
       onClose={() => {
         if (!saving) onClose();
       }}
       open={open}
-      title={editorTitle(type, Boolean(initialValue))}
+      title={dialogTitle ?? editorTitle(type, Boolean(initialValue))}
     >
       <form className="editor-form" id="question-editor-form" noValidate onSubmit={submit}>
         <Field error={errors.text} label="问题文本" required>

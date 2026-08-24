@@ -6,6 +6,7 @@ import { createProposalsRepository } from '../../src/main/repositories/proposals
 import { createTestDatabase } from '../helpers/database';
 
 const project = {
+  projectTime: '',
   name: '检索项目',
   background: '用户难以找到信息。',
   goal: '缩短检索时间。',

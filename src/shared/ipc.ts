@@ -8,6 +8,7 @@ import type {
   CompanyPositionGroup,
   Capability,
   CapabilityMergeResult,
+  CapabilityAnalysisOutput,
   CapabilityAnalysisPreview,
   CapabilityInput,
   ChangeProposal,
@@ -23,6 +24,7 @@ import type {
   ImportedImageInput,
   Position,
   PositionDetail,
+  PositionCreateInput,
   PositionInput,
   PositionImportPreview,
   ProjectImportPreview,
@@ -42,6 +44,11 @@ import type {
   Question,
   QuestionInput,
   QuestionType,
+  EmailConnectionResult,
+  EmailSettingsPublic,
+  EmailSettingsSaveInput,
+  EmailSyncEvent,
+  EmailSyncResult,
 } from './domain';
 export type InterviewEditInput = Omit<
   Interview,
@@ -66,6 +73,15 @@ export const CHANNELS = {
     saveStage: 'positions:save-stage',
     reorderStages: 'positions:reorder-stages',
     removeStage: 'positions:remove-stage',
+  },
+  email: {
+    settings: {
+      get: 'email:settings:get',
+      save: 'email:settings:save',
+    },
+    testConnection: 'email:test-connection',
+    syncNow: 'email:sync-now',
+    listRecent: 'email:list-recent',
   },
   preparations: {
     list: 'preparations:list',
@@ -168,7 +184,11 @@ export interface AppError {
     | 'AI_SETTINGS_CORRUPT'
     | 'AI_SETTINGS_UNAVAILABLE'
     | 'BACKUP_INVALID'
-    | 'BACKUP_FAILED';
+    | 'BACKUP_FAILED'
+    | 'EMAIL_SETTINGS_CORRUPT'
+    | 'EMAIL_SETTINGS_UNAVAILABLE'
+    | 'EMAIL_NOT_CONFIGURED'
+    | 'EMAIL_CONNECTION_FAILED';
   message: string;
   providerMessage?: string;
   httpStatus?: number;
@@ -188,12 +208,21 @@ export interface JobSearchApi {
     list(filter?: { query?: string; stage?: CanonicalStage }): Promise<PositionListItem[]>;
     listGrouped(filter?: { query?: string; stage?: CanonicalStage }): Promise<CompanyPositionGroup[]>;
     get(id: string): Promise<PositionDetail>;
-    create(input: PositionInput): Promise<Position>;
+    create(input: PositionCreateInput): Promise<Position>;
     update(id: string, input: PositionInput): Promise<Position>;
     remove(id: string): Promise<void>;
     saveStage(input: ProcessStageInput & { id?: string }): Promise<ProcessStage>;
     reorderStages(positionId: string, orderedIds: string[]): Promise<ProcessStage[]>;
     removeStage(positionId: string, stageId: string): Promise<ProcessStage[]>;
+  };
+  readonly email?: {
+    readonly settings: {
+      get(): Promise<EmailSettingsPublic>;
+      save(input: EmailSettingsSaveInput): Promise<EmailSettingsPublic>;
+    };
+    testConnection(): Promise<EmailConnectionResult>;
+    syncNow(): Promise<EmailSyncResult>;
+    listRecent(limit?: number): Promise<EmailSyncEvent[]>;
   };
   readonly preparations: {
     list(positionId: string): Promise<PreparationMaterial[]>;
@@ -272,7 +301,7 @@ export interface JobSearchApi {
   readonly system: {
     getDashboardSummary(): Promise<DashboardSummary>;
     previewCapabilityAnalysis(positionIds: string[]): Promise<CapabilityAnalysisPreview>;
-    confirmCapabilityAnalysis(token: string): Promise<ChangeProposal[]>;
+    confirmCapabilityAnalysis(token: string): Promise<CapabilityAnalysisOutput>;
     exportBackup(): Promise<BackupActionResult>;
     restoreBackup(options?: { deepCheck?: boolean }): Promise<BackupActionResult>;
     getBackupProgress(): Promise<BackupProgress>;

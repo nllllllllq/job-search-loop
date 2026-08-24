@@ -78,6 +78,37 @@ describe('positions repository', () => {
     }
   });
 
+  it('creates a coherent process for a selected initial stage and date', () => {
+    const db = createTestDatabase();
+
+    try {
+      const positions = createPositionsRepository(db);
+      const created = positions.create({
+        company: '远山科技',
+        title: '产品经理',
+        interest: 5,
+        rawJd: '负责产品规划',
+        initialStage: 'assessment',
+        initialDate: '2026-08-12',
+      });
+
+      expect(positions.listStages(created.id).map((stage) => [
+        stage.canonicalStage,
+        stage.name,
+        stage.actualDate,
+        stage.expectedDate,
+      ])).toEqual([
+        ['applied', '已投递', null, null],
+        ['assessment', '测评', null, '2026-08-12'],
+        ['interview', '面试', null, null],
+        ['offer', 'Offer', null, null],
+      ]);
+      expect(created.currentStage).toBe('assessment');
+    } finally {
+      db.close();
+    }
+  });
+
   it('removes a stage, compacts the order, refreshes the current stage, and allows an empty flow', () => {
     const db = createTestDatabase();
 
@@ -109,6 +140,34 @@ describe('positions repository', () => {
       }
       expect(positions.listStages(created.id)).toEqual([]);
       expect(positions.get(created.id).currentStage).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
+  it('uses an assessment or interview notice date as current progress', () => {
+    const db = createTestDatabase();
+
+    try {
+      const positions = createPositionsRepository(db);
+      const created = positions.create({
+        company: 'Test company',
+        title: 'Test title',
+        interest: 5,
+        rawJd: 'Test JD',
+      });
+      const stages = positions.listStages(created.id);
+      const assessment = stages.find((stage) => stage.canonicalStage === 'assessment');
+      const interview = stages.find((stage) => stage.canonicalStage === 'interview');
+      const offer = stages.find((stage) => stage.canonicalStage === 'offer');
+      if (!assessment || !interview || !offer) throw new Error('missing assessment, interview, or offer stage');
+
+      positions.upsertStage({ ...offer, actualDate: null, expectedDate: '2026-08-08' });
+      expect(positions.get(created.id).currentStage).toBe('applied');
+      positions.upsertStage({ ...assessment, actualDate: null, expectedDate: '2026-08-08' });
+      expect(positions.get(created.id).currentStage).toBe('assessment');
+      positions.upsertStage({ ...interview, actualDate: null, expectedDate: '2026-08-08' });
+      expect(positions.get(created.id).currentStage).toBe('interview');
     } finally {
       db.close();
     }

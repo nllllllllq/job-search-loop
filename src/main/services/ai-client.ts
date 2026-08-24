@@ -329,7 +329,7 @@ export function createAiClient({
 
       let decoded: unknown;
       try {
-        decoded = JSON.parse(parsedProvider.data.choices[0].message.content);
+        decoded = JSON.parse(stripOuterJsonFence(parsedProvider.data.choices[0].message.content));
       } catch {
         throw new AiServiceError(
           'AI_INVALID_OUTPUT',
@@ -430,14 +430,38 @@ export function createAiClient({
     completeJson,
     completeJsonWithWebSearch,
     async testConnection() {
-      await completeJson(
-        {
-          messages: [{
-            role: 'user',
-            content: '仅返回 JSON：{"ok":true}',
-          }],
-        },
-        connectionOutputSchema,
+      const request = {
+        messages: [{
+          role: 'user' as const,
+          content: '仅返回 JSON：{"ok":true}',
+        }],
+      };
+      const runCheck = async (
+        capability: 'Chat JSON' | 'Responses Web Search',
+        check: () => Promise<unknown>,
+      ) => {
+        try {
+          await check();
+        } catch (error) {
+          if (error instanceof AiServiceError) {
+            throw new AiServiceError(
+              error.code,
+              `${capability} connection test failed.`,
+              error.providerMessage,
+              error.httpStatus,
+              error.requestId,
+            );
+          }
+          throw new AiServiceError(
+            'AI_PROVIDER_ERROR',
+            `${capability} connection test failed.`,
+          );
+        }
+      };
+      await runCheck('Chat JSON', () => completeJson(request, connectionOutputSchema));
+      await runCheck(
+        'Responses Web Search',
+        () => completeJsonWithWebSearch(request, connectionOutputSchema),
       );
       return { ok: true, message: '连接成功，可以使用。' };
     },

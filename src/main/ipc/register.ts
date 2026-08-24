@@ -38,6 +38,7 @@ import { registerReviewHandlers } from './reviews';
 import { registerSystemHandlers } from './system';
 import { registerImportHandlers, type ImportRuntime } from './imports';
 import { registerPreparationTaskHandlers } from './tasks';
+import { registerEmailHandlers } from './email';
 import { SafeIpcError, type IpcMainRegistrar } from './common';
 import type { AiClient } from '../services/ai-client';
 import type { AiSettingsStore } from '../services/ai-settings';
@@ -46,6 +47,13 @@ import { createPreparationTaskRuntime } from '../services/preparation-tasks';
 import { createInterviewReviewService } from '../services/interview-review';
 import { createCapabilityAnalysisService } from '../services/capability-analysis';
 import type { SystemRuntime } from './system';
+import {
+  createEmailSyncRepository,
+  type EmailSyncRepository,
+} from '../repositories/email-sync';
+import type { EmailSettingsStore } from '../services/email-settings';
+import type { EmailSyncService } from '../services/email-sync';
+import type { EmailSettingsPublic } from '../../shared/domain';
 
 export type { IpcMainRegistrar } from './common';
 
@@ -58,6 +66,7 @@ export interface RepositoryBundle {
   proposals: ProposalsRepository;
   dashboard: DashboardRepository;
   aiTasks: AiTasksRepository;
+  emailSync?: EmailSyncRepository;
 }
 
 export interface AiRuntime {
@@ -69,6 +78,11 @@ export interface MainRuntime {
   system?: SystemRuntime;
   imports?: ImportRuntime;
   isBlocked?: () => boolean;
+  email?: {
+    settings: EmailSettingsStore;
+    service: EmailSyncService;
+    onSettingsSaved?: (publicSettings: EmailSettingsPublic) => void | Promise<void>;
+  };
 }
 
 export function createRepositoryBundle(db: DatabaseSync): RepositoryBundle {
@@ -81,6 +95,7 @@ export function createRepositoryBundle(db: DatabaseSync): RepositoryBundle {
     proposals: createProposalsRepository(db),
     dashboard: createDashboardRepository(db),
     aiTasks: createAiTasksRepository(db),
+    emailSync: createEmailSyncRepository(db),
   };
 }
 
@@ -171,4 +186,12 @@ export function registerIpcHandlers(
     ...runtime?.imports,
   });
   if (ai) registerAiHandlers(guardedIpcMain, ai.settings, ai.client);
+  if (runtime?.email) {
+    registerEmailHandlers(
+      guardedIpcMain,
+      runtime.email.settings,
+      runtime.email.service,
+      runtime.email.onSettingsSaved,
+    );
+  }
 }

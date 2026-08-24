@@ -254,6 +254,16 @@ describe('OpenAI-compatible AI client', () => {
     expect(String((error as Error).message)).not.toContain('provider-body-with-secret');
   });
 
+  it('strips an outer JSON markdown fence from Chat JSON output', async () => {
+    const client = fixture(async () => response({
+      choices: [{ message: { content: '```json\n{"answer":"fenced"}\n```' } }],
+    }));
+
+    await expect(client.completeJson(request, outputSchema)).resolves.toEqual({
+      answer: 'fenced',
+    });
+  });
+
   it('exposes bounded, safe diagnostics for provider errors', async () => {
     const client = fixture(async () => new Response(JSON.stringify({
       error: {
@@ -424,19 +434,54 @@ describe('OpenAI-compatible AI client', () => {
     expect(clearTimeout).toHaveBeenCalledOnce();
   });
 
-  it('uses a minimal structured request when testing the connection', async () => {
-    const fetch = vi.fn<AiClientDependencies['fetch']>(async () => response({
-      choices: [{ message: { content: '{"ok":true}' } }],
-    }));
+  it('tests both Chat JSON and Responses Web Search capabilities', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>()
+      .mockResolvedValueOnce(response({
+        choices: [{ message: { content: '```json\n{"ok":true}\n```' } }],
+      }))
+      .mockResolvedValueOnce(response({
+        output_text: '```json\n{"ok":true}\n```',
+      }));
     const client = fixture(fetch);
 
     await expect(client.testConnection()).resolves.toEqual({
       ok: true,
       message: '连接成功，可以使用。',
     });
-    const init = fetch.mock.calls[0][1]!;
-    expect(JSON.parse(String(init.body)).messages).toEqual([
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const chatInit = fetch.mock.calls[0][1]!;
+    expect(JSON.parse(String(chatInit.body)).messages).toEqual([
       expect.objectContaining({ content: expect.stringContaining('JSON') }),
     ]);
+    expect(fetch.mock.calls[0]?.[0]).toBe('https://api.example.com/v1/chat/completions');
+    expect(fetch.mock.calls[1]?.[0]).toBe('https://api.example.com/v1/responses');
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toMatchObject({
+      tools: [{ type: 'web_search' }],
+      store: false,
+    });
+  });
+
+  it('identifies the failed capability without exposing provider details', async () => {
+    const fetch = vi.fn<AiClientDependencies['fetch']>()
+      .mockResolvedValueOnce(response({
+        choices: [{ message: { content: '{"ok":true}' } }],
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: 'Invalid request: {"detail":"provider secret body"}' },
+      }), {
+        status: 503,
+        headers: { 'x-request-id': 'req_web_search' },
+      }));
+    const client = fixture(fetch);
+
+    const error = await client.testConnection().catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      code: 'AI_PROVIDER_ERROR',
+      httpStatus: 503,
+      requestId: 'req_web_search',
+    });
+    expect(String((error as Error).message)).toContain('Responses Web Search');
+    expect(JSON.stringify(error)).not.toContain('provider secret body');
   });
 });

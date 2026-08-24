@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { ProcessStage, ProcessStageInput } from '../../../shared/domain';
+import type { Interview, ProcessStage, ProcessStageInput } from '../../../shared/domain';
 import { stageDatePolicy } from '../../../shared/stage-policy';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../hooks/useToast';
@@ -9,6 +9,7 @@ interface StageTimelineProps {
   onRefresh: () => Promise<unknown>;
   positionId: string;
   stages: ProcessStage[];
+  interviews: Interview[];
 }
 
 type StageNodeState = 'actual' | 'expected' | 'empty';
@@ -18,7 +19,7 @@ function getNodeState(stage: ProcessStage): StageNodeState {
   return 'empty';
 }
 
-export function StageTimeline({ onRefresh, positionId, stages }: StageTimelineProps) {
+export function StageTimeline({ onRefresh, positionId, stages, interviews }: StageTimelineProps) {
   const toast = useToast();
   const [editing, setEditing] = useState<ProcessStage | 'new' | null>(null);
   const [deleting, setDeleting] = useState<ProcessStage | null>(null);
@@ -123,6 +124,7 @@ export function StageTimeline({ onRefresh, positionId, stages }: StageTimelinePr
         onClose={() => setEditing(null)}
         onSave={saveStage}
         open={editing !== null}
+        interviews={interviews}
         positionId={positionId}
         stageCount={sortedStages.length}
       />

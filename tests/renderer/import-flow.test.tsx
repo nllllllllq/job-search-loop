@@ -136,7 +136,7 @@ describe('local import UI', () => {
     fireEvent.change(screen.getByLabelText('选择项目文件'), { target: { files: [file] } });
     expect(screen.getByText(/提取后的纯文本/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'AI 辅助解析' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '仅本地解析' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '仅本地解析' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'AI 辅助解析' }));
     expect(await screen.findByDisplayValue('项目一')).toBeInTheDocument();
     expect(fake.imports.previewProjectsFromDocument).toHaveBeenCalledWith(
@@ -181,7 +181,7 @@ describe('local import UI', () => {
     expect(await screen.findByDisplayValue('项目一')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '进入字段确认' }));
 
-    expect(screen.getAllByRole('button', { name: '接受建议' })).toHaveLength(9);
+    expect(screen.getAllByRole('button', { name: '接受建议' })).toHaveLength(10);
   });
 
   it('restores an AI rewrite to its evidence text instead of retaining the rewrite', async () => {
@@ -211,7 +211,7 @@ describe('local import UI', () => {
     expect(await screen.findByDisplayValue('项目一')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /进入字段确认/ }));
 
-    fireEvent.click(screen.getAllByRole('button', { name: /还原建议/ })[3]!);
+    fireEvent.click(screen.getAllByRole('button', { name: /还原建议/ })[4]!);
 
     expect(screen.getByDisplayValue('负责需求梳理与方案推进')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('AI polished role summary')).not.toBeInTheDocument();
@@ -251,7 +251,7 @@ describe('local import UI', () => {
     await waitFor(() => expect(fake.assets.projects.save).toHaveBeenCalledTimes(1));
     expect(fake.assets.projects.save).toHaveBeenLastCalledWith(expect.objectContaining({ background: '' }));
 
-    fireEvent.click(screen.getAllByRole('button', { name: /接受建议/ })[0]!);
+    fireEvent.click(screen.getAllByRole('button', { name: /接受建议/ })[1]!);
     fireEvent.click(screen.getByRole('button', { name: /保存 1 个项目/ }));
     await waitFor(() => expect(fake.assets.projects.save).toHaveBeenCalledTimes(2));
     expect(fake.assets.projects.save).toHaveBeenLastCalledWith(expect.objectContaining({

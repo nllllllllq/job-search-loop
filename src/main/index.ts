@@ -10,7 +10,10 @@ import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database';
 import { createRepositoryBundle, registerIpcHandlers } from './ipc/register';
 import { createAiSettingsStore, AiServiceError } from './services/ai-settings';
+import { createEmailSettingsStore, EmailSettingsError } from './services/email-settings';
+import { createEmailSyncService } from './services/email-sync';
 import { createAiClient } from './services/ai-client';
+import type { EmailSettingsPublic } from '../shared/domain';
 import {
   createBackupService,
   readRestoreMarker,
@@ -59,8 +62,13 @@ let database: DatabaseSync | null = null;
 let databaseClosed = false;
 let databaseRestarting = false;
 let databasePath = '';
+let emailSyncTimer: ReturnType<typeof setInterval> | null = null;
 
 function closeDatabaseOnce(): void {
+  if (emailSyncTimer !== null) {
+    clearInterval(emailSyncTimer);
+    emailSyncTimer = null;
+  }
   if (database === null || databaseClosed) return;
   databaseClosed = true;
   database.close();
@@ -144,6 +152,36 @@ app.whenReady().then(async () => {
       return safeStorage.decryptString(value);
     },
   });
+  const emailSettings = createEmailSettingsStore({
+    settingsPath: join(app.getPath('userData'), 'email-settings.json'),
+    encrypt(value) {
+      if (!safeStorage.isEncryptionAvailable()) {
+        throw new EmailSettingsError('EMAIL_SETTINGS_UNAVAILABLE', '本机安全存储暂时不可用');
+      }
+      return safeStorage.encryptString(value);
+    },
+    decrypt(value) {
+      if (!safeStorage.isEncryptionAvailable()) {
+        throw new EmailSettingsError('EMAIL_SETTINGS_UNAVAILABLE', '本机安全存储暂时不可用');
+      }
+      return safeStorage.decryptString(value);
+    },
+  });
+  const emailService = createEmailSyncService({
+    events: repositories.emailSync!,
+    positions: repositories.positions,
+    settings: emailSettings,
+  });
+  const scheduleEmailSync = async (publicSettings?: EmailSettingsPublic): Promise<void> => {
+    if (emailSyncTimer !== null) clearInterval(emailSyncTimer);
+    emailSyncTimer = null;
+    const emailPublic = publicSettings ?? await emailSettings.getPublic().catch(() => null);
+    if (!emailPublic?.enabled) return;
+    void emailService.syncNow().catch(() => undefined);
+    emailSyncTimer = setInterval(() => {
+      void emailService.syncNow().catch(() => undefined);
+    }, emailPublic.intervalMinutes * 60_000);
+  };
   const aiClient = createAiClient({
     fetch: globalThis.fetch,
     getSettings: () => settings.getPrivate(),
@@ -157,6 +195,11 @@ app.whenReady().then(async () => {
     },
     {
       isBlocked: () => databaseRestarting,
+      email: {
+        settings: emailSettings,
+        service: emailService,
+        onSettingsSaved: scheduleEmailSync,
+      },
       system: {
         backup,
         dialogs: {
@@ -191,6 +234,7 @@ app.whenReady().then(async () => {
       },
     },
   );
+  void scheduleEmailSync().catch(() => undefined);
   createMainWindow();
 
   app.on('activate', () => {

@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { DEFAULT_PROMPT_TEMPLATES } from '../shared/defaults';
 
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS positions (
@@ -46,6 +46,7 @@ const CREATE_SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS interviews (
     id TEXT PRIMARY KEY,
     position_id TEXT NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    stage_id TEXT REFERENCES process_stages(id) ON DELETE SET NULL,
     round_name TEXT NOT NULL,
     interview_date TEXT,
     transcript TEXT NOT NULL,
@@ -149,6 +150,7 @@ const CREATE_SCHEMA_V1 = `
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   ) STRICT;
+  CREATE INDEX IF NOT EXISTS interviews_stage_idx ON interviews(stage_id);
 
   CREATE TABLE IF NOT EXISTS ai_tasks (
     id TEXT PRIMARY KEY,
@@ -346,6 +348,11 @@ function hasTable(db: DatabaseSync, name: string): boolean {
   ).get(name) !== undefined;
 }
 
+function hasColumn(db: DatabaseSync, table: string, name: string): boolean {
+  return db.prepare(`PRAGMA table_info(${table})`).all()
+    .some((column) => column.name === name);
+}
+
 export function migrate(db: DatabaseSync): void {
   const version = readSchemaVersion(db);
   if (version > CURRENT_SCHEMA_VERSION) {
@@ -489,6 +496,35 @@ export function migrate(db: DatabaseSync): void {
         SELECT id, kind, name, content, created_at, updated_at FROM prompt_templates_v8;
         DROP TABLE prompt_templates_v8;
       `);
+    }
+    if (version < 10 && !hasTable(db, 'email_sync_events')) {
+      db.exec(`
+        CREATE TABLE email_sync_events (
+          id TEXT PRIMARY KEY,
+          message_key TEXT NOT NULL UNIQUE,
+          subject TEXT NOT NULL,
+          sender TEXT NOT NULL,
+          received_at TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('applied', 'pending')),
+          position_id TEXT REFERENCES positions(id) ON DELETE SET NULL,
+          canonical_stage TEXT CHECK (
+            canonical_stage IN ('interested', 'applied', 'assessment', 'interview', 'offer', 'rejected', 'withdrawn')
+            OR canonical_stage IS NULL
+          ),
+          reason TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX email_sync_events_created_idx ON email_sync_events(created_at DESC);
+      `);
+    }
+    if (version < 11 && hasTable(db, 'projects') && !hasColumn(db, 'projects', 'project_time')) {
+      db.exec("ALTER TABLE projects ADD COLUMN project_time TEXT NOT NULL DEFAULT '';");
+    }
+    if (version < 12 && hasTable(db, 'interviews')) {
+      if (!hasColumn(db, 'interviews', 'stage_id')) {
+        db.exec('ALTER TABLE interviews ADD COLUMN stage_id TEXT REFERENCES process_stages(id) ON DELETE SET NULL;');
+      }
+      db.exec('CREATE INDEX IF NOT EXISTS interviews_stage_idx ON interviews(stage_id);');
     }
     db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     db.exec('COMMIT');

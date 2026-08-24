@@ -3,7 +3,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import { createPromptsRepository } from '../../src/main/repositories/prompts';
-import { DEFAULT_PROMPT_TEMPLATES } from '../../src/shared/defaults';
+import {
+  DEFAULT_PROMPT_TEMPLATES,
+  LEGACY_PROJECT_IMPORT_PROMPT,
+  PREVIOUS_PROJECT_IMPORT_PROMPT,
+} from '../../src/shared/defaults';
 import { createTestDatabase } from '../helpers/database';
 
 let database: DatabaseSync | null = null;
@@ -78,6 +82,59 @@ describe('prompt templates repository', () => {
     expect(content).toContain('Action Guide');
     expect(content).toMatch(/恰好\s*3\s*个/);
     expect(content).toMatch(/中文/);
+  });
+
+  it('ships an exact project-import JSON contract', () => {
+    const content = DEFAULT_PROMPT_TEMPLATES.find(
+      (template) => template.kind === 'project-import',
+    )?.content ?? '';
+
+    expect(content).toContain('classification');
+    expect(content).toContain('valid-project');
+    expect(content).toContain('no-valid-project');
+    expect(content).toContain('projects');
+    expect(content).toContain('startLine');
+    expect(content).toContain('provenance');
+    expect(content).toContain('ai-rewrite');
+    expect(content).toContain('ai-suggestion');
+    expect(content).toContain('evidence');
+    expect(content).toContain('unusedContent');
+    expect(content).toContain('explanation');
+  });
+
+  it('upgrades only the shipped legacy project-import prompt', () => {
+    database = createTestDatabase();
+    const legacy = [
+      '你是项目档案整理助手。请只依据用户提供的文档原文识别项目边界，并提取可核验的项目字段。',
+      '不得编造文档中没有出现的经历、数据或职责；无法可靠分类的内容放入 unclassifiedNotes。',
+      'startLine 必须指向每个项目在带行号原文中的起始行。',
+    ].join('\n');
+    database.prepare(
+      "UPDATE prompt_templates SET content = ? WHERE kind = 'project-import'",
+    ).run(legacy);
+
+    const upgraded = createPromptsRepository(database);
+
+    expect(upgraded.get('project-import').content).not.toBe(legacy);
+    expect(upgraded.get('project-import').content).toContain('classification');
+
+    upgraded.save('project-import', '用户自定义项目导入规则');
+    const reopened = createPromptsRepository(database);
+    expect(reopened.get('project-import').content).toBe('用户自定义项目导入规则');
+  });
+
+  it('upgrades the immediately previous shipped project-import prompt too', () => {
+    database = createTestDatabase();
+    database.prepare(
+      "UPDATE prompt_templates SET content = ? WHERE kind = 'project-import'",
+    ).run(PREVIOUS_PROJECT_IMPORT_PROMPT);
+
+    const upgraded = createPromptsRepository(database);
+
+    expect(upgraded.get('project-import').content).toBe(
+      DEFAULT_PROMPT_TEMPLATES.find((template) => template.kind === 'project-import')?.content,
+    );
+    expect(upgraded.get('project-import').content).not.toBe(LEGACY_PROJECT_IMPORT_PROMPT);
   });
 
   it('never overwrites an existing customized preparation prompt', () => {

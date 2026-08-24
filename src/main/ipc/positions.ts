@@ -2,7 +2,7 @@ import { CHANNELS } from '../../shared/ipc';
 import {
   idSchema,
   preparationGenerateSchema,
-  positionInputSchema,
+  positionCreateInputSchema,
   positionListFilterSchema,
   positionUpdateSchema,
   processStageSaveSchema,
@@ -33,7 +33,7 @@ export function registerPositionHandlers(
     positions.getDetail(idSchema.parse(payload))
   )));
   ipcMain.handle(CHANNELS.positions.create, safeIpcHandler((_event, payload) => (
-    positions.create(positionInputSchema.parse(payload))
+    positions.create(positionCreateInputSchema.parse(payload))
   )));
   ipcMain.handle(CHANNELS.positions.update, safeIpcHandler((_event, payload) => {
     const parsed = positionUpdateSchema.parse(payload);

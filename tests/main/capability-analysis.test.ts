@@ -15,12 +15,13 @@ const SETTINGS = {
 };
 
 describe('explicit capability analysis', () => {
-  it('previews exact selected data and creates pending proposals only after confirm', async () => {
+  it('previews exact selected data and stores only the structured analysis after confirm', async () => {
     const db = createTestDatabase();
     try {
       const positions = createPositionsRepository(db);
       const prompts = createPromptsRepository(db);
       const proposals = createProposalsRepository(db);
+      const commitSpy = vi.spyOn(proposals, 'commitCapabilityAnalysis');
       const assets = createAssetsRepository(db);
       const first = positions.create({
         company: '甲公司',
@@ -79,7 +80,18 @@ describe('explicit capability analysis', () => {
       expect(request.messages[1].content).toContain(first.rawJd);
       expect(request.messages[1].content).toContain(second.rawJd);
       expect(request.messages[1].content).not.toContain('不应发送的 JD');
-      expect(result).toHaveLength(1);
+      expect(result).toEqual({
+        capabilities: [{
+          name: '用户研究',
+          jdFrequency: 2,
+          evidence: ['JD-A 提及用户研究', 'JD-B 提及用户研究'],
+          gaps: ['需要补充量化案例'],
+        }],
+      });
+      expect(commitSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        [],
+      );
       const run = db.prepare('SELECT * FROM capability_analysis_runs').get();
       expect(run).toMatchObject({
         selected_position_ids_json: JSON.stringify([first.id, second.id]),
@@ -99,28 +111,16 @@ describe('explicit capability analysis', () => {
         }],
       });
       expect(JSON.stringify(run)).not.toContain(SETTINGS.apiKey);
-      expect(proposals.list('pending').items).toEqual([
-        expect.objectContaining({
-          targetType: 'capability',
-          operation: 'create',
-          positionId: first.id,
-          analysisRunId: run?.id,
-          payload: {
-            name: '用户研究',
-            jdFrequency: 2,
-            evidence: 'JD-A 提及用户研究\nJD-B 提及用户研究',
-            gaps: '需要补充量化案例',
-            mergedIntoId: null,
-          },
-        }),
-      ]);
+      expect(proposals.list('pending').items).toEqual([]);
+      expect(db.prepare('SELECT COUNT(*) AS count FROM change_proposals').get())
+        .toEqual({ count: 0 });
       expect(assets.listCapabilities()).toEqual([]);
     } finally {
       db.close();
     }
   });
 
-  it('rolls back the analysis run and every proposal when any batch insert fails', async () => {
+  it('stores multiple structured capabilities without creating proposals', async () => {
     const db = createTestDatabase();
     try {
       const positions = createPositionsRepository(db);
@@ -151,19 +151,15 @@ describe('explicit capability analysis', () => {
         },
         getSettings: async () => SETTINGS,
       });
-      db.exec(`
-        CREATE TRIGGER reject_second_analysis_proposal
-        BEFORE INSERT ON change_proposals
-        WHEN NEW.payload_json LIKE '%沟通%'
-        BEGIN
-          SELECT RAISE(ABORT, 'forced batch failure');
-        END;
-      `);
       const preview = await service.preview([first.id, second.id]);
-
-      await expect(service.confirm(preview.token)).rejects.toThrow('forced batch failure');
+      await expect(service.confirm(preview.token)).resolves.toEqual({
+        capabilities: [
+          { name: '策略', jdFrequency: 2, evidence: ['A'], gaps: [] },
+          { name: '沟通', jdFrequency: 2, evidence: ['B'], gaps: [] },
+        ],
+      });
       expect(db.prepare('SELECT COUNT(*) AS count FROM capability_analysis_runs').get())
-        .toEqual({ count: 0 });
+        .toEqual({ count: 1 });
       expect(db.prepare('SELECT COUNT(*) AS count FROM change_proposals').get())
         .toEqual({ count: 0 });
       expect(createAssetsRepository(db).listCapabilities()).toEqual([]);

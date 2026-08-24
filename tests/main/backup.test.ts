@@ -21,6 +21,35 @@ import { createPromptsRepository } from '../../src/main/repositories/prompts';
 
 const temporaryDirectories: string[] = [];
 const openControllers: LiveDatabaseController[] = [];
+const COMPATIBILITY_POSITION_ID = '11111111-1111-4111-8111-111111111111';
+const COMPATIBILITY_INTERVIEW_ID = '22222222-2222-4222-8222-222222222222';
+const COMPATIBILITY_STAGE_ID = '88888888-8888-4888-8888-888888888888';
+const COMPATIBILITY_PROPOSAL_ID = '55555555-5555-4555-8555-555555555555';
+const LEGACY_REVIEW_SNAPSHOT_JSON = JSON.stringify({
+  promptSnapshot: '旧复盘 Prompt',
+  modelSnapshot: 'legacy-model',
+  inputSnapshot: '{"transcript":"面试记录"}',
+  output: {
+    summary: '旧复盘摘要',
+    strengths: ['结构清晰'],
+    gaps: ['补充量化结果'],
+    proposals: [{
+      targetType: 'insight',
+      targetId: null,
+      operation: 'create',
+      payload: {
+        title: '旧心得',
+        content: '旧内容',
+        positionId: COMPATIBILITY_POSITION_ID,
+        projectId: null,
+        questionId: null,
+        capabilityId: null,
+      },
+      rationale: '保留旧复盘建议',
+    }],
+  },
+  reviewedAt: '2026-07-27T08:00:00.000Z',
+});
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'job-loop-backup-'));
@@ -131,6 +160,43 @@ function seedClosedLoop(db: DatabaseSync): void {
   );
 }
 
+function seedV12CompatibilityRecords(db: DatabaseSync): void {
+  seedClosedLoop(db);
+  const now = '2026-07-27T08:00:00.000Z';
+  db.prepare(`
+    INSERT INTO process_stages (
+      id, position_id, name, canonical_stage, actual_date, expected_date,
+      feedback, notes, order_index, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    COMPATIBILITY_STAGE_ID,
+    COMPATIBILITY_POSITION_ID,
+    '一面',
+    'interview',
+    now,
+    null,
+    '旧反馈',
+    '旧备注',
+    0,
+    now,
+    now,
+  );
+  db.prepare(`
+    UPDATE interviews
+    SET stage_id = ?, review_snapshot_json = ?
+    WHERE id = ?
+  `).run(
+    COMPATIBILITY_STAGE_ID,
+    LEGACY_REVIEW_SNAPSHOT_JSON,
+    COMPATIBILITY_INTERVIEW_ID,
+  );
+  db.prepare(`
+    UPDATE change_proposals
+    SET status = 'pending', accepted_payload_json = NULL, resolved_at = NULL
+    WHERE id = ?
+  `).run(COMPATIBILITY_PROPOSAL_ID);
+}
+
 function createLegacyBackup(path: string, version: 1 | 4): void {
   const db = openDatabase(path);
   try {
@@ -144,6 +210,7 @@ function createLegacyBackup(path: string, version: 1 | 4): void {
       DROP TABLE ai_tasks;
       DROP TABLE company_aliases;
       DROP TABLE canonical_companies;
+      DROP TABLE email_sync_events;
     `);
     if (version === 1) {
       db.exec(`
@@ -181,7 +248,23 @@ function createVersion5Backup(path: string): void {
       DROP TABLE ai_tasks;
       DROP TABLE company_aliases;
       DROP TABLE canonical_companies;
+      DROP TABLE email_sync_events;
       PRAGMA user_version = 5;
+    `);
+  } finally {
+    db.close();
+  }
+}
+
+function createVersion11Backup(path: string): void {
+  const db = openDatabase(path);
+  try {
+    seedV12CompatibilityRecords(db);
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      DROP INDEX interviews_stage_idx;
+      ALTER TABLE interviews DROP COLUMN stage_id;
+      PRAGMA user_version = 11;
     `);
   } finally {
     db.close();
@@ -202,6 +285,111 @@ afterEach(async () => {
 });
 
 describe('local database backup', () => {
+  it('preserves V12 stage and legacy review data through backup restore', async () => {
+    const app = await fixture();
+    seedV12CompatibilityRecords(app.database());
+
+    const expectedInterview = app.database().prepare(`
+      SELECT stage_id, review_snapshot_json
+      FROM interviews
+      WHERE id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID);
+    const expectedProposal = app.database().prepare(`
+      SELECT id, status, payload_json, accepted_payload_json
+      FROM change_proposals
+      WHERE id = ?
+    `).get(COMPATIBILITY_PROPOSAL_ID);
+    expect(expectedInterview).toEqual({
+      stage_id: COMPATIBILITY_STAGE_ID,
+      review_snapshot_json: LEGACY_REVIEW_SNAPSHOT_JSON,
+    });
+    expect(expectedProposal).toMatchObject({
+      id: COMPATIBILITY_PROPOSAL_ID,
+      status: 'pending',
+    });
+
+    const backupPath = join(app.directory, 'v12-compatibility.jobloop');
+    await app.service.exportTo(backupPath);
+    app.database().exec(`
+      DELETE FROM change_proposals;
+      DELETE FROM projects;
+      DELETE FROM interviews;
+      DELETE FROM process_stages;
+      DELETE FROM preparation_materials;
+      DELETE FROM positions;
+    `);
+    await app.service.restoreFrom(backupPath);
+
+    expect(app.database().prepare(`
+      SELECT stage_id, review_snapshot_json
+      FROM interviews
+      WHERE id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID)).toEqual(expectedInterview);
+    expect(app.database().prepare(`
+      SELECT interviews.stage_id, process_stages.position_id
+      FROM interviews
+      JOIN process_stages ON process_stages.id = interviews.stage_id
+      WHERE interviews.id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID)).toEqual({
+      stage_id: COMPATIBILITY_STAGE_ID,
+      position_id: COMPATIBILITY_POSITION_ID,
+    });
+    expect(app.database().prepare(`
+      SELECT id, status, payload_json, accepted_payload_json
+      FROM change_proposals
+      WHERE id = ?
+    `).get(COMPATIBILITY_PROPOSAL_ID)).toEqual(expectedProposal);
+  });
+
+  it('restores a real V11 backup with a null stage and unchanged legacy review data', async () => {
+    const app = await fixture();
+    const backupPath = join(app.directory, 'v11-compatibility.jobloop');
+    createVersion11Backup(backupPath);
+
+    const legacy = new DatabaseSync(backupPath);
+    expect(legacy.prepare('PRAGMA user_version').get()).toEqual({ user_version: 11 });
+    expect(legacy.prepare('PRAGMA table_info(interviews)').all().map((column) => column.name))
+      .not.toContain('stage_id');
+    expect(legacy.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'index' AND name = 'interviews_stage_idx'
+    `).get()).toBeUndefined();
+    const expectedSnapshot = legacy.prepare(`
+      SELECT review_snapshot_json
+      FROM interviews
+      WHERE id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID)?.review_snapshot_json;
+    const expectedProposal = legacy.prepare(`
+      SELECT id, status, payload_json, accepted_payload_json
+      FROM change_proposals
+      WHERE id = ?
+    `).get(COMPATIBILITY_PROPOSAL_ID);
+    expect(expectedSnapshot).toBe(LEGACY_REVIEW_SNAPSHOT_JSON);
+    expect(expectedProposal).toMatchObject({
+      id: COMPATIBILITY_PROPOSAL_ID,
+      status: 'pending',
+    });
+    legacy.close();
+
+    await app.service.restoreFrom(backupPath);
+
+    expect(app.database().prepare('PRAGMA user_version').get())
+      .toEqual({ user_version: CURRENT_SCHEMA_VERSION });
+    expect(app.database().prepare(`
+      SELECT stage_id, review_snapshot_json
+      FROM interviews
+      WHERE id = ?
+    `).get(COMPATIBILITY_INTERVIEW_ID)).toEqual({
+      stage_id: null,
+      review_snapshot_json: expectedSnapshot,
+    });
+    expect(app.database().prepare(`
+      SELECT id, status, payload_json, accepted_payload_json
+      FROM change_proposals
+      WHERE id = ?
+    `).get(COMPATIBILITY_PROPOSAL_ID)).toEqual(expectedProposal);
+  });
+
   it('restores a V5 backup and adds current prompt templates on repository startup', async () => {
     const app = await fixture();
     const backupPath = join(app.directory, 'v5.jobloop');

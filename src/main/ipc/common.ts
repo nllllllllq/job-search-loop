@@ -3,6 +3,7 @@ import type { AppError } from '../../shared/ipc';
 import { RepositoryError } from '../repositories/common';
 import { AiServiceError } from '../services/ai-settings';
 import { BackupServiceError } from '../services/backup';
+import { EmailSettingsError } from '../services/email-settings';
 
 export interface IpcMainRegistrar {
   handle(
@@ -45,6 +46,9 @@ function safeError(error: unknown): SafeIpcError {
     });
   }
   if (error instanceof BackupServiceError) {
+    return new SafeIpcError(error.code, error.message);
+  }
+  if (error instanceof EmailSettingsError) {
     return new SafeIpcError(error.code, error.message);
   }
   return new SafeIpcError('INTERNAL_ERROR', 'The request could not be completed');

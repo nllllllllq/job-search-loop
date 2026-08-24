@@ -27,6 +27,7 @@ export function ProjectsPage() {
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionsError, setVersionsError] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [organizingProject, setOrganizingProject] = useState<Project | undefined>(undefined);
   const versionsRequestId = useRef(0);
 
   useEffect(() => () => {
@@ -82,6 +83,36 @@ export function ProjectsPage() {
     </button>
   );
 
+  const narrativeSections = selected ? [
+    {
+      label: '项目概述',
+      fields: [
+        ['项目时间', selected.projectTime ?? ''],
+        ['背景', selected.background],
+        ['目标', selected.goal],
+        ['角色', selected.role],
+      ],
+    },
+    {
+      label: '行动与决策',
+      fields: [['关键决策', selected.keyDecisions]],
+    },
+    {
+      label: '结果与证据',
+      fields: [
+        ['结果', selected.outcome],
+        ['证据', selected.evidence],
+      ],
+    },
+    {
+      label: '复盘与表达',
+      fields: [
+        ['反思', selected.reflections],
+        ['讲述版本（附加叙事）', selected.storytellingVersions],
+      ],
+    },
+  ] : [];
+
   return (
     <div className="assets-page projects-page">
       <header className="page-heading">
@@ -91,7 +122,10 @@ export function ProjectsPage() {
           <p>这里只维护项目事实与表达底稿，不修改简历；每次实际内容变化都会留下上一版。</p>
         </div>
         <span className="button-cluster">
-          <button className="button button--quiet" onClick={() => setImportOpen(true)} type="button">
+          <button className="button button--quiet" onClick={() => {
+            setOrganizingProject(undefined);
+            setImportOpen(true);
+          }} type="button">
             从文件导入
           </button>
           {addButton}
@@ -111,10 +145,32 @@ export function ProjectsPage() {
         <div className="asset-split">
           <section aria-label="项目列表" className="asset-list">
             {projects.data?.map((project) => (
-              <article className="asset-card" key={project.id}>
+              <article
+                aria-label={`PROJECT / ${project.updatedAt.slice(0, 10)}`}
+                className="asset-card project-row"
+                key={project.id}
+              >
                 <p className="asset-card__index">PROJECT / {project.updatedAt.slice(0, 10)}</p>
                 <h3 className="user-text">{project.name}</h3>
-                <p className="user-text">{project.background || '尚未记录背景'}</p>
+                <p className="project-row__intro">
+                  {[project.projectTime, project.role].filter(Boolean).length ? (
+                    <>
+                      <span className="project-row__meta user-text">
+                        {[project.projectTime, project.role].filter(Boolean).join(' · ')}
+                      </span>
+                      <span aria-hidden="true"> / </span>
+                    </>
+                  ) : null}
+                  <span className="user-text">
+                    {project.background || project.unclassifiedNotes || project.outcome || '尚未记录项目内容'}
+                  </span>
+                  {project.background && project.outcome ? (
+                    <>
+                      <span aria-hidden="true"> / </span>
+                      <span className="user-text">{project.outcome}</span>
+                    </>
+                  ) : null}
+                </p>
                 <button
                   aria-label={`查看 ${project.name}`}
                   className="text-button"
@@ -135,38 +191,37 @@ export function ProjectsPage() {
                     <p className="section-label">ACTIVE FILE / 当前档案</p>
                     <h3 className="user-text">{selected.name}</h3>
                   </div>
-                  <button className="button button--quiet" onClick={() => setEditing(selected)} type="button">
-                    编辑项目
-                  </button>
+                  <span className="button-cluster">
+                    <button className="button button--quiet" onClick={() => {
+                      setOrganizingProject(selected);
+                      setImportOpen(true);
+                    }} type="button">
+                      AI 整理
+                    </button>
+                    <button className="button button--quiet" onClick={() => setEditing(selected)} type="button">
+                      编辑项目
+                    </button>
+                  </span>
                 </div>
-                <dl className="narrative-grid">
-                  {[
-                    ['背景', selected.background],
-                    ['目标', selected.goal],
-                    ['角色', selected.role],
-                    ['关键决策', selected.keyDecisions],
-                    ['结果', selected.outcome],
-                    ['证据', selected.evidence],
-                    ['反思', selected.reflections],
-                  ].map(([label, content]) => (
-                    <div key={label}>
-                      <dt>{label}</dt>
-                      <dd className="user-text">{content || '—'}</dd>
-                    </div>
+                <div className="narrative-sections">
+                  {narrativeSections.map(({ label, fields }) => (
+                    <section aria-label={label} className="narrative-block" key={label}>
+                      <h4>{label}</h4>
+                      <dl className="narrative-grid">
+                        {fields.map(([fieldLabel, content]) => (
+                          <div key={fieldLabel}>
+                            <dt>{fieldLabel}</dt>
+                            <dd className="user-text">{content || '—'}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
                   ))}
-                </dl>
-                {selected.storytellingVersions ? (
-                  <section className="supplemental-narrative" aria-labelledby="storytelling-versions-title">
-                    <h4 id="storytelling-versions-title">讲述版本（附加叙事）</h4>
-                    <p className="user-text">{selected.storytellingVersions}</p>
-                  </section>
-                ) : null}
-                {selected.unclassifiedNotes ? (
-                  <details className="supplemental-narrative">
-                    <summary>待整理内容</summary>
-                    <p className="user-text">{selected.unclassifiedNotes}</p>
-                  </details>
-                ) : null}
+                </div>
+                <section aria-label="项目内容" className="supplemental-narrative">
+                  <h4>项目内容</h4>
+                  <p className="user-text">{selected.unclassifiedNotes || '—'}</p>
+                </section>
                 <section className="version-history" aria-label="只读历史">
                   <div className="version-history__heading">
                     <h4>只读历史</h4>
@@ -210,6 +265,8 @@ export function ProjectsPage() {
                               ['证据', snapshot.evidence],
                               ['反思', snapshot.reflections],
                               ['讲述版本（附加叙事）', snapshot.storytellingVersions],
+                              ['\u9879\u76ee\u65f6\u95f4', snapshot.projectTime],
+                              ['\u9879\u76ee\u5185\u5bb9', snapshot.unclassifiedNotes],
                             ].map(([label, content]) => (
                               <div key={label}>
                                 <dt>{label}</dt>
@@ -241,10 +298,25 @@ export function ProjectsPage() {
         open={editing !== undefined}
       />
       <ProjectImportWizard
-        onClose={() => setImportOpen(false)}
+        existingProject={organizingProject}
+        onClose={() => {
+          setImportOpen(false);
+          setOrganizingProject(undefined);
+        }}
         onCompleted={async () => {
-          await projects.reload();
-          toast.success('项目文件已导入');
+          const refreshed = await projects.reload();
+          if (organizingProject) {
+            const next = refreshed?.find((item) => item.id === organizingProject.id);
+            if (next) {
+              setSelected(next);
+              await loadVersions(next);
+            }
+            toast.success('项目已完成 AI 整理');
+          } else {
+            toast.success('项目文件已导入');
+          }
+          setImportOpen(false);
+          setOrganizingProject(undefined);
         }}
         open={importOpen}
       />

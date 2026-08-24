@@ -6,36 +6,7 @@ import { ToastProvider } from '../../src/renderer/hooks/useToast';
 import { DashboardPage } from '../../src/renderer/features/dashboard/DashboardPage';
 import { ProcessTimeline } from '../../src/renderer/features/dashboard/ProcessTimeline';
 import { resetJobSearchFake } from '../helpers/bridge';
-import type { Capability, ChangeProposalListItem } from '../../src/shared/domain';
-
-const pendingProposal: ChangeProposalListItem = {
-  id: '33333333-3333-4333-8333-333333333333',
-  targetType: 'question',
-  targetId: null,
-  operation: 'create',
-  payload: {
-    type: 'interviewer',
-    text: '如何判断需求优先级？',
-    answerDraft: '先说目标，再说证据。',
-    projectIds: [],
-    capabilityIds: [],
-    occurrenceCount: 1,
-    status: 'active',
-  },
-  rationale: '值得沉淀',
-  positionId: '11111111-1111-4111-8111-111111111111',
-  interviewId: '22222222-2222-4222-8222-222222222222',
-  analysisRunId: null,
-  status: 'pending',
-  acceptedPayload: null,
-  createdAt: '2026-07-27T10:00:00.000Z',
-  updatedAt: '2026-07-27T10:00:00.000Z',
-  resolvedAt: null,
-  context: {
-    position: { company: '远山科技', title: 'AI 产品经理' },
-    interview: { roundName: '业务一面', interviewDate: '2026-07-27' },
-  },
-};
+import type { Capability } from '../../src/shared/domain';
 
 const capability: Capability = {
   id: '44444444-4444-4444-8444-444444444444',
@@ -123,17 +94,22 @@ describe('dashboard page', () => {
     );
 
     const summaryCards = await screen.findByLabelText('求职进度摘要');
-    expect(within(summaryCards).getAllByRole('article')).toHaveLength(5);
+    expect(within(summaryCards).getAllByRole('article')).toHaveLength(4);
     expect(within(summaryCards).getByText('公司数量')).toBeInTheDocument();
     expect(within(summaryCards).getByText('累计岗位')).toBeInTheDocument();
     expect(within(summaryCards).getByText('进入面试')).toBeInTheDocument();
     expect(within(summaryCards).getByText('完成复盘')).toBeInTheDocument();
-    expect(within(summaryCards).getByText('待确认建议')).toBeInTheDocument();
-    expect(within(summaryCards).getAllByText('2', { selector: '.dashboard-stat__value' })).toHaveLength(3);
+    expect(within(summaryCards).queryByText('待确认建议')).not.toBeInTheDocument();
+    expect(within(summaryCards).getAllByText('2', { selector: '.dashboard-stat__value' })).toHaveLength(2);
     expect(screen.getAllByText('面试进行时间')).toHaveLength(2);
     expect(screen.getByText('只显示今天及未来的测评与面试进行时间')).toBeInTheDocument();
+    expect(screen.getByLabelText('首页快捷入口')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /待确认清单/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('待确认清单')).not.toBeInTheDocument();
     expect(screen.queryByText('LOOP OVERVIEW / 求职进度')).not.toBeInTheDocument();
     expect(screen.queryByText('近期岗位')).not.toBeInTheDocument();
+    expect(summaryCards.nextElementSibling).toHaveClass('dashboard-panel--wide');
+    expect(summaryCards.nextElementSibling).toHaveTextContent('待完成安排');
 
     await userEvent.click(screen.getByRole('button', { name: '分析共性能力' }));
     const checkboxes = await screen.findAllByRole('checkbox');
@@ -143,6 +119,111 @@ describe('dashboard page', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '取消分析' }));
     expect(fake.system.confirmCapabilityAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('keeps structured analysis results open and saves one capability only after confirmation', async () => {
+    const fake = resetJobSearchFake();
+    const positions = [{
+      id: '11111111-1111-4111-8111-111111111111',
+      company: '甲公司',
+      title: 'AI 产品经理',
+      location: '',
+      interest: 5 as const,
+      currentStage: 'interview' as const,
+      finalResult: null,
+      updatedAt: '2026-08-02T00:00:00.000Z',
+    }, {
+      id: '22222222-2222-4222-8222-222222222222',
+      company: '乙公司',
+      title: '产品经理',
+      location: '',
+      interest: 4 as const,
+      currentStage: 'applied' as const,
+      finalResult: null,
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    }];
+    fake.system.getDashboardSummary.mockResolvedValue({
+      totalPositions: 2,
+      companyCount: 2,
+      stageDistribution: [{ stage: 'interview', count: 1 }],
+      positionsWithInterviews: 1,
+      completedReviews: 0,
+      pendingProposals: 0,
+      processEvents: [],
+      capabilityFrequency: [],
+      recentPositions: [],
+    });
+    fake.positions.list.mockResolvedValue(positions);
+    fake.system.previewCapabilityAnalysis.mockResolvedValue({
+      token: '33333333-3333-4333-8333-333333333333',
+      provider: 'https://api.example.com',
+      model: 'analysis-model',
+      prompt: '分析能力',
+      positions: positions.map((position) => ({
+        id: position.id,
+        label: `${position.company} · ${position.title}`,
+        rawJd: `${position.company} JD`,
+      })),
+    });
+    fake.system.confirmCapabilityAnalysis.mockResolvedValue({
+      capabilities: [{
+        name: '用户研究',
+        jdFrequency: 2,
+        evidence: ['JD-A 提及用户研究'],
+        gaps: ['补充量化案例'],
+      }, {
+        name: '跨团队协作',
+        jdFrequency: 1,
+        evidence: ['JD-B 提及协作'],
+        gaps: [],
+      }],
+    });
+    fake.assets.capabilities.save.mockResolvedValue({
+      ...capability,
+      name: '用户研究',
+      jdFrequency: 2,
+      evidence: 'JD-A 提及用户研究',
+      gaps: '补充量化案例',
+    });
+
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <ToastProvider defaultDuration={0}>
+          <DashboardPage />
+        </ToastProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '分析共性能力' }));
+    await user.click((await screen.findAllByRole('checkbox'))[0]!);
+    await user.click((await screen.findAllByRole('checkbox'))[1]!);
+    await user.click(screen.getByRole('button', { name: '查看发送内容' }));
+    await user.click(screen.getByRole('button', { name: '确认发送并分析' }));
+
+    const analysis = await screen.findByRole('dialog', { name: '分析共性能力' });
+    expect(within(analysis).getByText('用户研究')).toBeInTheDocument();
+    expect(within(analysis).getByText('跨团队协作')).toBeInTheDocument();
+    expect(within(analysis).getByText('JD-A 提及用户研究')).toBeInTheDocument();
+    expect(within(analysis).getByText('补充量化案例')).toBeInTheDocument();
+    expect(within(analysis).queryByText(/待确认能力建议|重复分析/)).not.toBeInTheDocument();
+    expect(fake.assets.capabilities.save).not.toHaveBeenCalled();
+
+    await user.click(within(analysis).getAllByRole('button', { name: '纳入能力' })[0]!);
+    const editor = await screen.findByRole('dialog', { name: '纳入能力' });
+    expect(within(editor).getByLabelText(/能力名称/)).toHaveValue('用户研究');
+    await user.click(within(editor).getByRole('button', { name: '确认纳入能力' }));
+
+    await waitFor(() => expect(fake.assets.capabilities.save).toHaveBeenCalledWith({
+      name: '用户研究',
+      jdFrequency: 2,
+      evidence: 'JD-A 提及用户研究',
+      gaps: '补充量化案例',
+      mergedIntoId: null,
+    }));
+    expect(await within(analysis).findByRole('button', { name: '已纳入' })).toBeInTheDocument();
+    expect(within(analysis).getByRole('button', { name: '纳入能力' })).toBeInTheDocument();
+    expect(fake.assets.capabilities.save).toHaveBeenCalledTimes(1);
   });
 
   it('shows a recoverable load error', async () => {
@@ -156,7 +237,7 @@ describe('dashboard page', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('总览加载失败')).toBeInTheDocument();
+    expect(await screen.findByText('首页加载失败')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: '重试' }));
     await waitFor(() => expect(fake.system.getDashboardSummary).toHaveBeenCalledTimes(2));
   });
@@ -176,23 +257,8 @@ describe('dashboard page', () => {
     expect(screen.queryByText('2026-08-11')).not.toBeInTheDocument();
   });
 
-  it('opens review pending/history in one drawer without per-card context IPC', async () => {
+  it('does not render or load the review entry from a legacy drawer query', async () => {
     const fake = resetJobSearchFake();
-    fake.reviews.proposals.list.mockResolvedValue({
-      items: [
-        pendingProposal,
-        {
-          ...pendingProposal,
-          id: '55555555-5555-4555-8555-555555555555',
-          rationale: '已处理建议',
-          status: 'ignored',
-          resolvedAt: '2026-07-28T10:00:00.000Z',
-        },
-      ],
-      corruptItems: [],
-      corruptCount: 0,
-    });
-    const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/?drawer=reviews']}>
         <ToastProvider defaultDuration={0}>
@@ -203,19 +269,10 @@ describe('dashboard page', () => {
       </MemoryRouter>,
     );
 
-    const drawer = await screen.findByRole('dialog', { name: '待确认清单' });
-    expect(await within(drawer).findByRole('button', { name: '待处理 1' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(within(drawer).getByText('远山科技 · AI 产品经理')).toBeInTheDocument();
-    expect(within(drawer).getByText('业务一面 · 2026-07-27')).toBeInTheDocument();
-    expect(fake.positions.get).not.toHaveBeenCalled();
-    expect(fake.reviews.interviews.get).not.toHaveBeenCalled();
-
-    await user.click(within(drawer).getByRole('button', { name: '历史 1' }));
-    expect(within(drawer).getByText('已处理建议')).toBeInTheDocument();
-    expect(within(drawer).queryByText('值得沉淀')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('求职进度摘要')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '待确认清单' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /待确认清单/ })).not.toBeInTheDocument();
+    expect(fake.reviews.proposals.list).not.toHaveBeenCalled();
   });
 
   it('opens the capability drawer and creates, edits, and transactionally merges', async () => {

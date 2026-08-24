@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type {
+  CapabilityAnalysisOutput,
   CapabilityAnalysisPreview,
   DashboardSummary,
   PositionListItem,
@@ -12,7 +13,7 @@ import { useToast } from '../../hooks/useToast';
 import { CapabilityFrequency } from './CapabilityFrequency';
 import { CapabilityDrawer } from './CapabilityDrawer';
 import { ProcessTimeline } from './ProcessTimeline';
-import { ReviewDrawer } from './ReviewDrawer';
+import { ReviewToCapabilityEditor } from './ReviewToCapabilityEditor';
 import { StageDistribution } from './StageDistribution';
 
 function readableError(error: unknown): string {
@@ -38,9 +39,11 @@ function AnalysisModal({
   onClose,
   onCreated,
 }: AnalysisModalProps) {
-  const toast = useToast();
   const [selected, setSelected] = useState<string[]>([]);
   const [preview, setPreview] = useState<CapabilityAnalysisPreview | null>(null);
+  const [result, setResult] = useState<CapabilityAnalysisOutput | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [includedIndexes, setIncludedIndexes] = useState<Set<number>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -48,6 +51,9 @@ function AnalysisModal({
     if (submitting) return;
     setSelected([]);
     setPreview(null);
+    setResult(null);
+    setEditingIndex(null);
+    setIncludedIndexes(new Set());
     setError('');
     onClose();
   };
@@ -57,6 +63,7 @@ function AnalysisModal({
       ? current.filter((item) => item !== id)
       : [...current, id]);
     setPreview(null);
+    setResult(null);
     setError('');
   };
 
@@ -77,20 +84,28 @@ function AnalysisModal({
     setSubmitting(true);
     setError('');
     try {
-      const proposals = await window.jobSearch.system.confirmCapabilityAnalysis(preview.token);
-      toast.success(`已生成 ${proposals.length} 条待确认能力建议。`);
+      const analysis = await window.jobSearch.system.confirmCapabilityAnalysis(preview.token);
+      setResult(analysis);
       onCreated();
       setSubmitting(false);
-      resetAndClose();
     } catch (reason) {
       setError(readableError(reason));
       setSubmitting(false);
-      setPreview(null);
     }
   };
 
+  const editingCapability = editingIndex === null ? null : result?.capabilities[editingIndex] ?? null;
+  const editingItem = editingCapability === null
+    ? { targetType: 'capability' as const, title: '', content: '' }
+    : {
+      targetType: 'capability' as const,
+      title: editingCapability.name,
+      content: editingCapability.evidence.join('\n'),
+    };
+
   return (
-    <Modal
+    <>
+      <Modal
       closeDisabled={submitting}
       footer={(
         <>
@@ -102,7 +117,7 @@ function AnalysisModal({
           >
             取消分析
           </button>
-          {preview ? (
+          {preview && !result ? (
             <button
               className="button button--primary"
               disabled={submitting}
@@ -111,7 +126,7 @@ function AnalysisModal({
             >
               {submitting ? '正在分析…' : '确认发送并分析'}
             </button>
-          ) : (
+          ) : result ? null : (
             <button
               className="button button--primary"
               disabled={submitting || selected.length < 2}
@@ -130,7 +145,6 @@ function AnalysisModal({
       <div className="capability-analysis">
         <p className="capability-analysis__notice">
           默认不选择岗位。请至少选择 2 个 JD；系统不会自动分析。
-          重复分析会产生一组新的待确认建议。
         </p>
         {positions.length === 0 ? (
           <p>请先记录至少两个岗位，再开始共性能力分析。</p>
@@ -175,10 +189,59 @@ function AnalysisModal({
                 <pre>{position.rawJd}</pre>
               </details>
             ))}
+            {result ? (
+              <section aria-label="共性能力分析结果" className="capability-analysis__results">
+                <h3>分析结果</h3>
+                {result.capabilities.map((capability, index) => {
+                  const included = includedIndexes.has(index);
+                  return (
+                    <article key={`${capability.name}-${index}`}>
+                      <h4>{capability.name}</h4>
+                      <dl>
+                        <div><dt>JD 频次</dt><dd>{capability.jdFrequency}</dd></div>
+                        <div><dt>证据</dt><dd>{capability.evidence.join('\n')}</dd></div>
+                        <div><dt>差距</dt><dd>{capability.gaps.join('\n') || '—'}</dd></div>
+                      </dl>
+                      <button
+                        className="button button--quiet"
+                        disabled={included}
+                        onClick={() => setEditingIndex(index)}
+                        type="button"
+                      >
+                        {included ? '已纳入' : '纳入能力'}
+                      </button>
+                    </article>
+                  );
+                })}
+              </section>
+            ) : null}
           </section>
         ) : null}
       </div>
-    </Modal>
+      </Modal>
+      {editingCapability ? (
+        <ReviewToCapabilityEditor
+          initialValue={{
+            name: editingCapability.name,
+            jdFrequency: editingCapability.jdFrequency,
+            evidence: editingCapability.evidence.join('\n'),
+            gaps: editingCapability.gaps.join('\n'),
+            mergedIntoId: null,
+          }}
+          item={editingItem}
+          onClose={() => setEditingIndex(null)}
+          onSaved={() => {
+            if (editingIndex === null) return;
+            setIncludedIndexes((current) => {
+              const next = new Set(current);
+              next.add(editingIndex);
+              return next;
+            });
+          }}
+          open
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -188,7 +251,6 @@ function SummaryCards({ summary }: { summary: DashboardSummary }) {
     ['累计岗位', summary.totalPositions],
     ['进入面试', summary.positionsWithInterviews],
     ['完成复盘', summary.completedReviews],
-    ['待确认建议', summary.pendingProposals],
   ] as const;
   return (
     <section className="dashboard-stats" aria-label="求职进度摘要">
@@ -224,7 +286,7 @@ export function DashboardPage() {
     recentPositions: [],
   };
   const drawer = searchParams.get('drawer');
-  const openDrawer = useCallback((value: 'reviews' | 'capabilities') => {
+  const openDrawer = useCallback((value: 'capabilities') => {
     const next = new URLSearchParams(searchParams);
     next.set('drawer', value);
     setSearchParams(next);
@@ -248,22 +310,24 @@ export function DashboardPage() {
           )}
           body="本地进度统计暂时无法读取，岗位与复盘记录没有被修改。"
           icon="!"
-          title="总览加载失败"
+          title="首页加载失败"
         />
       ) : (
         <>
       <SummaryCards summary={data} />
 
-      <section aria-label="总览快捷入口" className="dashboard-shortcuts">
-        <button
-          className="dashboard-shortcut"
-          onClick={() => openDrawer('reviews')}
-          type="button"
-        >
-          <span>待确认清单</span>
-          <strong>{data.pendingProposals}</strong>
-          <small>确认后才写入长期资产</small>
-        </button>
+      <section className="dashboard-panel dashboard-panel--wide">
+        <header>
+          <div>
+            <p className="section-label">UPCOMING SCHEDULE</p>
+            <h3>待完成安排</h3>
+          </div>
+          <p>只显示今天及未来的测评与面试进行时间</p>
+        </header>
+        <ProcessTimeline events={data.processEvents} />
+      </section>
+
+      <section aria-label="首页快捷入口" className="dashboard-shortcuts">
         <button
           className="dashboard-shortcut"
           onClick={() => openDrawer('capabilities')}
@@ -323,16 +387,6 @@ export function DashboardPage() {
             </article>
           </section>
 
-          <section className="dashboard-panel dashboard-panel--wide">
-            <header>
-              <div>
-                <p className="section-label">UPCOMING SCHEDULE</p>
-                <h3>待完成安排</h3>
-              </div>
-              <p>只显示今天及未来的测评与面试进行时间</p>
-            </header>
-            <ProcessTimeline events={data.processEvents} />
-          </section>
         </>
       )}
         </>
@@ -345,11 +399,6 @@ export function DashboardPage() {
         }}
         open={analysisOpen}
         positions={positionOptions}
-      />
-      <ReviewDrawer
-        onChanged={() => void summary.reload()}
-        onClose={closeDrawer}
-        open={drawer === 'reviews'}
       />
       <CapabilityDrawer
         onChanged={() => void summary.reload()}

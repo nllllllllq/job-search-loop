@@ -3,7 +3,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { registerImportHandlers } from '../../src/main/ipc/imports';
 import { createPromptsRepository } from '../../src/main/repositories/prompts';
-import type { ProjectImportAiDependencies } from '../../src/main/services/project-import-ai';
+import {
+  analyzeProjectImport,
+  type ProjectImportAiDependencies,
+} from '../../src/main/services/project-import-ai';
 import { CHANNELS } from '../../src/shared/ipc';
 import { createTestDatabase } from '../helpers/database';
 
@@ -92,6 +95,7 @@ function createHarness(options?: {
     database,
     completeJson,
     getSettings,
+    dependencies: { ai: { completeJson }, getSettings, prompts },
     preview: handlers.get(CHANNELS.imports.previewProjectsFromDocument)!,
   };
 }
@@ -188,9 +192,8 @@ describe('AI-assisted project document import', () => {
       }),
     });
     try {
-      const result = await harness.preview({}, { file: file(), mode: 'ai' }) as { analysisMode: string };
-
-      expect(result.analysisMode).toBe('local-fallback');
+      await expect(harness.preview({}, { file: file(), mode: 'ai' }))
+        .rejects.toThrow(/AI_INVALID_OUTPUT/);
     } finally {
       harness.database.close();
     }
@@ -202,8 +205,8 @@ describe('AI-assisted project document import', () => {
         classification: 'valid-project',
         projects: [{
           startLine: 2,
-          name: { value: 'Suggested only', provenance: 'source', evidence: 'L6: # Suggested only' },
-          background: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          name: { value: 'Suggested only', provenance: 'source', evidence: 'L2: # Suggested only' },
+          background: { value: '没有对应原文的背景', provenance: 'source', evidence: 'L9: 不存在的背景' },
           goal: { value: '', provenance: 'ai-suggestion', evidence: '' },
           role: { value: '', provenance: 'ai-suggestion', evidence: '' },
           keyDecisions: { value: '', provenance: 'ai-suggestion', evidence: '' },
@@ -218,12 +221,10 @@ describe('AI-assisted project document import', () => {
       }),
     });
     try {
-      const result = await harness.preview({}, {
-        file: file('Header\nL6: # Suggested only'),
+      await expect(harness.preview({}, {
+        file: file('Header\n# Suggested only'),
         mode: 'ai',
-      }) as { analysisMode: string };
-
-      expect(result.analysisMode).toBe('local-fallback');
+      })).rejects.toThrow(/AI_INVALID_OUTPUT/);
     } finally {
       harness.database.close();
     }
@@ -269,14 +270,12 @@ describe('AI-assisted project document import', () => {
     }
   });
 
-  it('never reads AI settings or calls AI in local mode', async () => {
+  it('rejects local mode without falling back or reading AI settings', async () => {
     const harness = createHarness();
     try {
-      const result = await harness.preview({}, { file: file(), mode: 'local' }) as {
-        analysisMode: string;
-      };
+      await expect(harness.preview({}, { file: file(), mode: 'local' }))
+        .rejects.toThrow(/AI_INPUT_UNSUPPORTED/);
 
-      expect(result.analysisMode).toBe('local');
       expect(harness.getSettings).not.toHaveBeenCalled();
       expect(harness.completeJson).not.toHaveBeenCalled();
     } finally {
@@ -284,43 +283,158 @@ describe('AI-assisted project document import', () => {
     }
   });
 
-  it('falls back to local parsing with a safe warning when AI fails', async () => {
+  it('rejects with a safe AI provider error when AI fails', async () => {
     const harness = createHarness({
       completeJsonImplementation: async () => {
         throw new Error('provider secret detail');
       },
     });
     try {
-      const result = await harness.preview({}, { file: file(), mode: 'ai' }) as {
-        analysisMode: string;
-        warnings: string[];
-        segments: unknown[];
-      };
+      await expect(harness.preview({}, { file: file(), mode: 'ai' }))
+        .rejects.toThrow(/AI_PROVIDER_ERROR/);
 
-      expect(result.analysisMode).toBe('local-fallback');
-      expect(result.segments.length).toBeGreaterThan(0);
-      expect(result.warnings).toContain('AI 解析失败，已使用本地规则');
-      expect(result.warnings.join(' ')).not.toContain('provider secret detail');
+      expect(harness.completeJson).toHaveBeenCalledTimes(1);
     } finally {
       harness.database.close();
     }
   });
 
-  it('skips AI for extracted text over 120,000 characters', async () => {
+  it('preserves safe AI error diagnostics when the provider fails', async () => {
+    const harness = createHarness({
+      completeJsonImplementation: async () => {
+        throw {
+          code: 'AI_PROVIDER_ERROR',
+          message: 'provider body must stay hidden',
+          providerMessage: 'secret provider payload',
+          httpStatus: 502,
+          requestId: 'req_project_import',
+        };
+      },
+    });
+    try {
+      await expect(harness.preview({}, { file: file(), mode: 'ai' }))
+        .rejects.toThrow(/AI_PROVIDER_ERROR/);
+
+      await expect(harness.preview({}, { file: file(), mode: 'ai' }))
+        .rejects.toThrow(/502/);
+      await expect(harness.preview({}, { file: file(), mode: 'ai' }))
+        .rejects.toThrow(/req_project_import/);
+      await expect(harness.preview({}, { file: file(), mode: 'ai' }))
+        .rejects.not.toThrow(/provider body must stay hidden|secret provider payload/);
+    } finally {
+      harness.database.close();
+    }
+  });
+
+  it('rejects extracted text over 120,000 characters before AI', async () => {
     const harness = createHarness();
     try {
-      const result = await harness.preview({}, {
+      await expect(harness.preview({}, {
         file: file(`# 项目\n${'a'.repeat(120_001)}`),
         mode: 'ai',
-      }) as {
-        analysisMode: string;
-        warnings: string[];
-      };
-
-      expect(result.analysisMode).toBe('local-fallback');
-      expect(result.warnings).toContain('内容较长，已使用本地规则');
+      })).rejects.toThrow(/VALIDATION_ERROR/);
       expect(harness.getSettings).not.toHaveBeenCalled();
       expect(harness.completeJson).not.toHaveBeenCalled();
+    } finally {
+      harness.database.close();
+    }
+  });
+
+  it('returns AI_NOT_CONFIGURED when AI dependencies are unavailable', async () => {
+    await expect(analyzeProjectImport(documentText, 'ai'))
+      .rejects.toMatchObject({ code: 'AI_NOT_CONFIGURED' });
+  });
+
+  it('normalizes simple model strings to confirmation-only suggestions', async () => {
+    const harness = createHarness({
+      completeJsonImplementation: async () => ({
+        classification: 'valid-project',
+        explanation: 'project',
+        projects: [{
+          startLine: 2,
+          name: '智能客服',
+          background: '客服响应较慢',
+          goal: '',
+          role: '',
+          keyDecisions: '',
+          outcome: { value: '响应时间下降 40%', provenance: 'source', evidence: 'L5: 结果：响应时间下降 40%' },
+          evidence: '',
+          reflections: '',
+          storytellingVersions: '',
+          projectTime: '2024',
+          unclassifiedNotes: '',
+          unusedContent: [],
+        }],
+      }),
+    });
+    try {
+      const result = await harness.preview({}, { file: file(), mode: 'ai' }) as {
+        segments: Array<{
+          fields: Record<string, { provenance: string }>;
+          suggested: Record<string, string>;
+        }>;
+      };
+      expect(result.segments[0]?.fields.name.provenance).toBe('ai-suggestion');
+      expect(result.segments[0]?.fields.projectTime.provenance).toBe('ai-suggestion');
+      expect(result.segments[0]?.suggested.projectTime).toBe('2024');
+      const handedSchema = harness.completeJson.mock.calls[0]?.[1] as {
+        safeParse(value: unknown): { success: boolean };
+      };
+      expect(handedSchema.safeParse({
+        classification: 'valid-project',
+        explanation: 'project',
+        projects: [{
+          startLine: 2,
+          name: '智能客服',
+          projectTime: '2024',
+          background: '客服响应较慢',
+          goal: '',
+          role: '',
+          keyDecisions: '',
+          outcome: '响应时间下降 40%',
+          evidence: '',
+          reflections: '',
+          storytellingVersions: '',
+          unclassifiedNotes: '',
+          unusedContent: [],
+        }],
+      }).success).toBe(true);
+    } finally {
+      harness.database.close();
+    }
+  });
+
+  it('downgrades source fields with invalid evidence instead of accepting them as facts', async () => {
+    const harness = createHarness({
+      completeJsonImplementation: async () => ({
+        classification: 'valid-project',
+        explanation: 'project',
+        projects: [{
+          startLine: 2,
+          name: { value: '智能客服', provenance: 'source', evidence: 'L2: # 智能客服' },
+          background: { value: '客服响应较慢', provenance: 'source', evidence: 'L99: 不存在' },
+          goal: { value: '缩短响应时间', provenance: 'source', evidence: 'L4: 目标：缩短响应时间' },
+          role: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          keyDecisions: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          outcome: { value: '响应时间下降 40%', provenance: 'source', evidence: 'L5: 结果：响应时间下降 40%' },
+          evidence: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          reflections: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          storytellingVersions: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          projectTime: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          unclassifiedNotes: { value: '', provenance: 'ai-suggestion', evidence: '' },
+          unusedContent: [],
+        }],
+      }),
+    });
+    try {
+      const result = await harness.preview({}, { file: file(), mode: 'ai' }) as {
+        segments: Array<{
+          fields: { background: { value: string; provenance: string; evidence: string } };
+        }>;
+      };
+      expect(result.segments[0]?.fields.background).toEqual({
+        value: '客服响应较慢', provenance: 'ai-suggestion', evidence: '',
+      });
     } finally {
       harness.database.close();
     }

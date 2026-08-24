@@ -40,7 +40,7 @@ export function App() {
               element={<PositionsPage />}
             />
             <Route path="/positions/:id" element={<PositionDetailPage />} />
-            <Route path="/reviews" element={<Navigate replace to="/?drawer=reviews" />} />
+            <Route path="/reviews" element={<Navigate replace to="/" />} />
             <Route
               path="/projects"
               element={<ProjectsPage />}

@@ -6,3 +6,13 @@ dist/
 dist-electron/
 release/
 output/playwright/
+tmp/
+.env
+.env.*
+*.env
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+*.log
+backups/

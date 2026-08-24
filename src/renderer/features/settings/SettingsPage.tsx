@@ -4,12 +4,18 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { AiPublicSettings, PromptTemplate } from '../../../shared/domain';
+import type {
+  AiPublicSettings,
+  EmailSettingsPublic,
+  EmailSyncEvent,
+  PromptTemplate,
+} from '../../../shared/domain';
 import { defaultAiModelCapabilities } from '../../../shared/domain';
 import type { AppError } from '../../../shared/ipc';
 import {
   aiBaseUrlSchema,
   aiSettingsSaveSchema,
+  emailSettingsSaveSchema,
 } from '../../../shared/schemas';
 import { EmptyState } from '../../components/EmptyState';
 import { Field } from '../../components/Field';
@@ -39,6 +45,18 @@ function normalizedProviderOrigin(value: string): string | null {
 }
 
 function connectionErrorMessage(error: unknown): string {
+  const detail = (
+    error !== null
+    && typeof error === 'object'
+    && 'message' in error
+    && typeof error.message === 'string'
+  ) ? error.message : '';
+  if (detail.includes('Responses Web Search')) {
+    return 'Responses Web Search 连接测试失败，请检查岗位准备所需的 Web Search 能力。';
+  }
+  if (detail.includes('Chat JSON')) {
+    return 'Chat JSON 连接测试失败，请检查普通 JSON 对话能力。';
+  }
   switch (errorCode(error)) {
     case 'AI_NOT_CONFIGURED':
       return '请先保存完整的 API 地址、模型和密钥。';
@@ -57,6 +75,250 @@ function connectionErrorMessage(error: unknown): string {
     default:
       return '连接失败，请检查地址、网络与服务状态。';
   }
+}
+
+function emailErrorMessage(error: unknown): string {
+  switch (errorCode(error)) {
+    case 'EMAIL_NOT_CONFIGURED':
+      return '请先保存完整的邮箱同步配置。';
+    case 'EMAIL_CONNECTION_FAILED':
+      return '邮箱连接失败，请检查 IMAP 主机、端口与授权码。';
+    case 'EMAIL_SETTINGS_CORRUPT':
+      return '本地邮箱配置已损坏，请重新保存配置。';
+    case 'EMAIL_SETTINGS_UNAVAILABLE':
+      return '本地邮箱安全存储暂时不可用。';
+    default:
+      return '邮箱同步操作失败，请检查配置后重试。';
+  }
+}
+
+interface EmailResourceData {
+  settings: EmailSettingsPublic;
+  events: EmailSyncEvent[];
+}
+
+function EmailSyncSection() {
+  const emailApi = window.jobSearch.email;
+  const resource = useAsyncResource<EmailResourceData | null>(
+    async () => {
+      if (!emailApi) return null;
+      const [settings, events] = await Promise.all([
+        emailApi.settings.get(),
+        emailApi.listRecent(5),
+      ]);
+      return { settings, events };
+    },
+    [emailApi],
+  );
+  const toast = useToast();
+  const [savedSettings, setSavedSettings] = useState<EmailSettingsPublic | null>(null);
+  const [email, setEmail] = useState('');
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState(993);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [secure, setSecure] = useState(true);
+  const [enabled, setEnabled] = useState(false);
+  const [intervalMinutes, setIntervalMinutes] = useState(15);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    const loaded = resource.data?.settings;
+    if (!loaded) return;
+    setSavedSettings(loaded);
+    setEmail(loaded.email);
+    setHost(loaded.host);
+    setPort(loaded.port);
+    setUsername(loaded.username);
+    setSecure(loaded.secure);
+    setEnabled(loaded.enabled);
+    setIntervalMinutes(loaded.intervalMinutes);
+    setPassword('');
+    setFormError(null);
+  }, [resource.data?.settings]);
+
+  if (!emailApi) {
+    return <p className="settings-email__unavailable" role="status">邮箱同步暂不可用</p>;
+  }
+
+  const data = resource.data;
+  const isDirty = savedSettings !== null && (
+    email !== savedSettings.email
+    || host !== savedSettings.host
+    || port !== savedSettings.port
+    || username !== savedSettings.username
+    || secure !== savedSettings.secure
+    || enabled !== savedSettings.enabled
+    || intervalMinutes !== savedSettings.intervalMinutes
+    || password.length > 0
+  );
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (saving || testing || syncing) return;
+    if (!savedSettings?.hasPassword && password.trim().length === 0) {
+      setFormError('首次保存邮箱同步需要填写密码');
+      return;
+    }
+    const parsed = emailSettingsSaveSchema.safeParse({
+      host,
+      port,
+      secure,
+      email,
+      username,
+      password,
+      enabled,
+      intervalMinutes,
+    });
+    if (!parsed.success) {
+      setFormError('请填写有效的邮箱、IMAP 主机、端口和用户名');
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      const saved = await emailApi.settings.save(parsed.data);
+      setSavedSettings(saved);
+      setPassword('');
+      resource.setData((current) => current ? { ...current, settings: saved } : { settings: saved, events: [] });
+      toast.success('邮箱同步设置已保存');
+    } catch (error) {
+      const message = emailErrorMessage(error);
+      setFormError(message);
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testConnection = async () => {
+    if (saving || testing || syncing || isDirty || !savedSettings) return;
+    setTesting(true);
+    setActionMessage(null);
+    try {
+      await emailApi.testConnection();
+      setActionMessage({ tone: 'success', text: '邮箱连接测试成功' });
+      toast.success('邮箱连接测试成功');
+    } catch (error) {
+      const message = emailErrorMessage(error);
+      setActionMessage({ tone: 'error', text: message });
+      toast.error(message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const syncNow = async () => {
+    if (saving || testing || syncing || isDirty || !savedSettings) return;
+    setSyncing(true);
+    setActionMessage(null);
+    try {
+      const result = await emailApi.syncNow();
+      await resource.reload();
+      if (result.lastError !== null) {
+        const message = emailErrorMessage(null);
+        setActionMessage({ tone: 'error', text: message });
+        toast.error(message);
+        return;
+      }
+      setActionMessage({ tone: 'success', text: `邮箱同步完成，处理 ${result.processed} 封邮件` });
+      toast.success('邮箱同步完成');
+    } catch (error) {
+      const message = emailErrorMessage(error);
+      setActionMessage({ tone: 'error', text: message });
+      toast.error(message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="email-sync-title" className="settings-section settings-email">
+      <div className="settings-section__heading">
+        <div>
+          <p className="section-label">EMAIL / 邮箱同步</p>
+          <h3 id="email-sync-title">招聘邮件自动更新</h3>
+        </div>
+        <p>仅读取收件箱中的招聘通知，不保存邮件正文或附件。</p>
+      </div>
+      {resource.loading ? <p className="settings-email__state" role="status">正在读取邮箱同步状态…</p> : null}
+      {resource.error ? <p className="settings-email__state" role="alert">邮箱同步状态读取失败，请稍后重试。</p> : null}
+      {data ? (
+        <>
+          <form className="settings-email__form" noValidate onSubmit={save}>
+            <Field label="邮箱地址" required>
+              <input autoComplete="email" onChange={(event) => setEmail(event.target.value)} type="email" value={email} />
+            </Field>
+            <Field label="IMAP 主机" required>
+              <input autoComplete="url" onChange={(event) => setHost(event.target.value)} value={host} />
+            </Field>
+            <Field label="端口" required>
+              <input min={1} max={65_535} onChange={(event) => setPort(Number(event.target.value))} type="number" value={port} />
+            </Field>
+            <Field label="用户名" required>
+              <input autoComplete="username" onChange={(event) => setUsername(event.target.value)} value={username} />
+            </Field>
+            <Field hint={savedSettings?.hasPassword ? '留空表示保留已保存的授权码。' : '首次保存必须填写授权码或应用密码。'} label="密码 / 应用授权码" required={!savedSettings?.hasPassword}>
+              <input autoComplete="new-password" onChange={(event) => setPassword(event.target.value)} type="password" value={password} />
+            </Field>
+            <Field label="同步间隔">
+              <select onChange={(event) => setIntervalMinutes(Number(event.target.value))} value={intervalMinutes}>
+                {[5, 15, 30, 60].map((minutes) => <option key={minutes} value={minutes}>{minutes} 分钟</option>)}
+              </select>
+            </Field>
+            <div className="settings-email__checks">
+              <label className="field--checkbox">
+                <input checked={secure} onChange={(event) => setSecure(event.target.checked)} type="checkbox" />
+                <span>启用 TLS</span>
+              </label>
+              <label className="field--checkbox">
+                <input checked={enabled} onChange={(event) => setEnabled(event.target.checked)} type="checkbox" />
+                <span>启用自动同步</span>
+              </label>
+            </div>
+            <div className="settings-email__actions">
+              <button className="button button--primary" disabled={saving || testing || syncing} type="submit">
+                {saving ? '保存中…' : '保存邮箱设置'}
+              </button>
+              <button className="button button--quiet" disabled={saving || testing || syncing || isDirty || !savedSettings} onClick={() => void testConnection()} type="button">
+                {testing ? '测试中…' : '测试邮箱连接'}
+              </button>
+              <button className="button button--quiet" disabled={saving || testing || syncing || isDirty || !savedSettings} onClick={() => void syncNow()} type="button">
+                {syncing ? '同步中…' : '立即同步'}
+              </button>
+            </div>
+          </form>
+          <div className="settings-email__status" aria-label="邮箱同步状态">
+            <dl>
+              <div><dt>最近同步</dt><dd>{data.settings.lastSyncAt ?? '尚未同步'}</dd></div>
+              <div><dt>最近安全错误</dt><dd>{data.settings.lastError ?? '无'}</dd></div>
+            </dl>
+            {formError ? <p role="alert">{formError}</p> : null}
+            {actionMessage ? <p className={`connection-result--${actionMessage.tone}`} role="status">{actionMessage.text}</p> : null}
+            {isDirty ? <p>请先保存当前邮箱配置</p> : null}
+          </div>
+          <section aria-label="最近同步事件" className="settings-email__events">
+            <h4>最近同步事件</h4>
+            {data.events.length === 0 ? <p>暂无同步事件</p> : (
+              <ul>
+                {data.events.slice(0, 5).map((event) => (
+                  <li key={event.id}>
+                    <strong>{event.subject || '无主题'}</strong>
+                    <span>{event.status === 'applied' ? '已写入' : '待匹配'}</span>
+                    <p>{event.reason || '无补充原因'}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      ) : null}
+    </section>
+  );
 }
 
 export function SettingsPage() {
@@ -79,7 +341,7 @@ export function SettingsPage() {
     tone: 'success' | 'error';
     text: string;
   } | null>(null);
-  const [openSection, setOpenSection] = useState<'provider' | 'prompts' | 'backup' | null>(null);
+  const [openSection, setOpenSection] = useState<'provider' | 'prompts' | 'backup' | 'email' | null>(null);
   const settingsCorrupt = errorCode(settings.error) === 'AI_SETTINGS_CORRUPT';
 
   useEffect(() => {
@@ -223,12 +485,12 @@ export function SettingsPage() {
     ));
   };
 
-  const toggleSection = (section: 'provider' | 'prompts' | 'backup') => {
+  const toggleSection = (section: 'provider' | 'prompts' | 'backup' | 'email') => {
     setOpenSection((current) => (current === section ? null : section));
   };
 
   const sectionToggle = (
-    section: 'provider' | 'prompts' | 'backup',
+    section: 'provider' | 'prompts' | 'backup' | 'email',
     label: string,
     summary: string,
   ) => {
@@ -444,6 +706,10 @@ export function SettingsPage() {
       <section className="settings-accordion" aria-label="Backup settings">
         {sectionToggle('backup', 'ARCHIVE / 本地归档', '本地备份与恢复')}
         {openSection === 'backup' ? <div id="settings-panel-backup" className="settings-accordion__panel"><BackupSection /></div> : null}
+      </section>
+      <section className="settings-accordion" aria-label="Email sync settings">
+        {sectionToggle('email', 'EMAIL / 邮箱同步', '招聘邮件自动更新')}
+        {openSection === 'email' ? <div id="settings-panel-email" className="settings-accordion__panel"><EmailSyncSection /></div> : null}
       </section>
     </div>
   );

@@ -6,20 +6,18 @@ import type {
   ProjectSegmentPreview,
 } from '../../shared/domain';
 
-const FIELD_RULES: Array<[keyof ProjectInput, RegExp]> = [
-  ['background', /^(?:背景|项目背景)\s*[:：]\s*(.+)$/i],
-  ['goal', /^(?:目标|项目目标)\s*[:：]\s*(.+)$/i],
-  ['role', /^(?:角色|我的角色|职责)\s*[:：]\s*(.+)$/i],
-  ['keyDecisions', /^(?:关键决策|决策|方案)\s*[:：]\s*(.+)$/i],
-  ['outcome', /^(?:结果|成果|产出)\s*[:：]\s*(.+)$/i],
-  ['evidence', /^(?:证据|数据|指标)\s*[:：]\s*(.+)$/i],
-  ['reflections', /^(?:反思|复盘|经验)\s*[:：]\s*(.+)$/i],
-  ['storytellingVersions', /^(?:讲述版本|面试讲述)\s*[:：]\s*(.+)$/i],
+const projectFields: readonly ProjectImportField[] = [
+  'name', 'projectTime', 'background', 'goal', 'role', 'keyDecisions', 'outcome', 'evidence',
+  'reflections', 'storytellingVersions', 'unclassifiedNotes',
 ];
 
-function emptyProject(name: string): ProjectInput {
-  return {
-    name,
+function blankSegment(
+  sourceText: string,
+  boundaries: { startLine: number; endLine: number },
+): ProjectSegmentPreview {
+  const suggested: ProjectInput = {
+    name: '',
+    projectTime: '',
     background: '',
     goal: '',
     role: '',
@@ -30,80 +28,54 @@ function emptyProject(name: string): ProjectInput {
     storytellingVersions: '',
     unclassifiedNotes: '',
   };
-}
-
-const projectFields: ProjectImportField[] = [
-  'name', 'background', 'goal', 'role', 'keyDecisions', 'outcome', 'evidence',
-  'reflections', 'storytellingVersions', 'unclassifiedNotes',
-];
-
-function emptyFields(project: ProjectInput): Record<ProjectImportField, ProjectImportFieldValue> {
-  return Object.fromEntries(projectFields.map((field) => [field, {
-    value: project[field] ?? '',
-    provenance: field === 'name' ? 'source' : 'ai-suggestion',
-    evidence: field === 'name' ? project.name : '',
+  const fields = Object.fromEntries(projectFields.map((field) => [field, {
+    value: '',
+    provenance: 'ai-suggestion',
+    evidence: '',
   }])) as Record<ProjectImportField, ProjectImportFieldValue>;
-}
-
-function mapSegment(
-  name: string,
-  sourceText: string,
-  boundaries: { startLine: number; endLine: number } = { startLine: 1, endLine: sourceText.split('\n').length },
-): ProjectSegmentPreview {
-  const suggested = emptyProject(name);
-  const fields = emptyFields(suggested);
-  const unmatched: string[] = [];
-  for (const line of sourceText.split('\n').map((item) => item.trim()).filter(Boolean)) {
-    if (/^#{1,6}\s+/.test(line) || line === name) continue;
-    const rule = FIELD_RULES.find(([, pattern]) => pattern.test(line));
-    if (rule) {
-      const [, pattern] = rule;
-      const match = line.match(pattern);
-      const key = rule[0];
-      const value = `${suggested[key] ? `${suggested[key]}\n` : ''}${match?.[1]?.trim() ?? ''}`;
-      suggested[key] = value;
-      fields[key] = { value, provenance: 'source', evidence: line };
-    } else {
-      unmatched.push(line);
-    }
-  }
-  suggested.unclassifiedNotes = unmatched.join('\n');
-  fields.unclassifiedNotes = {
-    value: suggested.unclassifiedNotes,
-    provenance: suggested.unclassifiedNotes ? 'source' : 'ai-suggestion',
-    evidence: suggested.unclassifiedNotes,
-  };
   return {
     tempId: randomUUID(),
-    name,
+    name: '',
     sourceText,
     suggested,
     boundaries,
     fields,
-    missingFields: projectFields.filter((field) => field !== 'name' && !suggested[field]),
-    unusedContent: unmatched.map((content) => ({ content, reason: '未匹配到项目字段' })),
-    warnings: unmatched.length ? ['部分内容已放入“待整理内容”'] : [],
+    missingFields: [...projectFields],
+    unusedContent: [],
+    warnings: ['新分段的字段需要重新确认'],
   };
 }
 
-export function classifyProjectText(text: string): ProjectSegmentPreview[] {
-  const normalized = text.replace(/\r\n/g, '\n').trim();
-  if (!normalized) return [];
-  const heading = /^(?:#{1,6}\s+)(.+)$/gm;
-  const matches = [...normalized.matchAll(heading)];
-  if (matches.length === 0) return [mapSegment('导入项目', normalized)];
-  return matches.slice(0, 30).map((match, index) => {
-    const start = match.index ?? 0;
-    const end = matches[index + 1]?.index ?? normalized.length;
-    const sourceText = normalized.slice(start, end).trim();
-    const startLine = normalized.slice(0, start).split('\n').length;
-    return mapSegment(match[1]!.trim(), sourceText, {
-      startLine,
-      endLine: startLine + sourceText.split('\n').length - 1,
-    });
-  });
+function lineCount(value: string): number {
+  return Math.max(1, value.split(/\r?\n/).length);
 }
 
+function splitBoundaries(
+  target: ProjectSegmentPreview,
+  sourceBeforeMarker: string,
+  secondSource: string,
+): [{ startLine: number; endLine: number }, { startLine: number; endLine: number }] {
+  const markerLine = target.boundaries.startLine
+    + (sourceBeforeMarker.match(/\r?\n/g)?.length ?? 0);
+  const markerStartsNewLine = /(?:^|\r?\n)\s*$/.test(sourceBeforeMarker);
+  const firstEndLine = markerStartsNewLine ? markerLine - 1 : markerLine;
+  const secondStartLine = markerStartsNewLine ? markerLine : markerLine + 1;
+  return [
+    {
+      startLine: target.boundaries.startLine,
+      endLine: Math.max(target.boundaries.startLine, firstEndLine),
+    },
+    {
+      startLine: secondStartLine,
+      endLine: secondStartLine + lineCount(secondSource) - 1,
+    },
+  ];
+}
+
+/**
+ * Merging is a review operation over an AI preview, not a second parser pass.
+ * Keep the first segment's audited fields and append only raw source metadata.
+ */
 export function mergeProjectSegments(
   segments: ProjectSegmentPreview[],
   tempId: string,
@@ -112,14 +84,27 @@ export function mergeProjectSegments(
   if (index < 0 || index >= segments.length - 1) return segments;
   const current = segments[index]!;
   const next = segments[index + 1]!;
-  const merged = mapSegment(current.name, `${current.sourceText}\n\n${next.sourceText}`, {
-    startLine: current.boundaries.startLine,
-    endLine: next.boundaries.endLine,
-  });
-  merged.tempId = current.tempId;
+  const sourceText = [current.sourceText, next.sourceText]
+    .filter((value) => value.length > 0)
+    .join('\n\n');
+  const merged: ProjectSegmentPreview = {
+    ...current,
+    sourceText,
+    boundaries: {
+      startLine: current.boundaries.startLine,
+      endLine: next.boundaries.endLine,
+    },
+    unusedContent: [...current.unusedContent, ...next.unusedContent],
+    warnings: [...new Set([...current.warnings, ...next.warnings])],
+  };
   return [...segments.slice(0, index), merged, ...segments.slice(index + 2)];
 }
 
+/**
+ * Splitting only changes raw-source boundaries. The first piece keeps the AI
+ * audit unchanged; the new second piece is deliberately blank until AI or the
+ * user supplies fields, so no local keyword classifier can invent facts.
+ */
 export function splitProjectSegment(
   segments: ProjectSegmentPreview[],
   tempId: string,
@@ -130,9 +115,21 @@ export function splitProjectSegment(
   const target = segments[index]!;
   const splitAt = target.sourceText.indexOf(marker);
   if (splitAt <= 0) return segments;
-  const first = mapSegment(target.name, target.sourceText.slice(0, splitAt).trim());
-  first.tempId = target.tempId;
-  const second = mapSegment(`${target.name}（补充）`, target.sourceText.slice(splitAt).trim());
+  const sourceBeforeMarker = target.sourceText.slice(0, splitAt);
+  const firstSource = sourceBeforeMarker.trim();
+  const secondSource = target.sourceText.slice(splitAt).trim();
+  if (!firstSource || !secondSource) return segments;
+  const [firstBoundaries, secondBoundaries] = splitBoundaries(
+    target,
+    sourceBeforeMarker,
+    secondSource,
+  );
+  const first: ProjectSegmentPreview = {
+    ...target,
+    sourceText: firstSource,
+    boundaries: firstBoundaries,
+  };
+  const second = blankSegment(secondSource, secondBoundaries);
   return [...segments.slice(0, index), first, second, ...segments.slice(index + 1)];
 }
 

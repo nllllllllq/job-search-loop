@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { QuickInsightButton } from './QuickInsightButton';
 
 export const navigation = [
-  { code: 'OV', label: '总览', shortLabel: '总览', to: '/' },
+  { code: 'OV', label: '首页', shortLabel: '首页', to: '/' },
   { code: 'PO', label: '岗位', shortLabel: '岗位', to: '/positions' },
   { code: 'PR', label: '项目档案', shortLabel: '项目', to: '/projects' },
   { code: 'QU', label: '问题库', shortLabel: '题库', to: '/questions' },
@@ -24,7 +25,7 @@ export function AppShell({ children }: AppShellProps) {
   ));
   const title = currentPage?.label ?? '未找到页面';
   const documentTitle =
-    title === '总览' ? '求职闭环' : `${title} · 求职闭环`;
+    title === '首页' ? '求职闭环' : `${title} · 求职闭环`;
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -108,6 +109,7 @@ export function AppShell({ children }: AppShellProps) {
         >
           {children}
         </main>
+        <QuickInsightButton />
       </div>
     </div>
   );

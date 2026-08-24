@@ -46,6 +46,72 @@ export interface PositionInput {
   rawJd: string;
 }
 
+export type PositionInitialStage = Extract<CanonicalStage, 'interested' | 'applied' | 'assessment' | 'interview' | 'offer'>;
+
+export interface PositionCreateInput extends PositionInput {
+  initialStage?: PositionInitialStage;
+  initialDate?: string;
+}
+
+export type EmailSyncStatus = 'applied' | 'pending';
+
+export interface EmailSettingsPublic {
+  host: string;
+  port: number;
+  secure: boolean;
+  email: string;
+  username: string;
+  enabled: boolean;
+  intervalMinutes: number;
+  hasPassword: boolean;
+  lastUid: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
+export interface EmailSettingsPrivate extends EmailSettingsPublic {
+  password: string;
+}
+
+export interface EmailSettingsSaveInput {
+  host: string;
+  port: number;
+  secure: boolean;
+  email: string;
+  username: string;
+  password: string;
+  enabled: boolean;
+  intervalMinutes: number;
+}
+
+export interface EmailSyncEvent {
+  id: string;
+  messageKey: string;
+  subject: string;
+  sender: string;
+  receivedAt: string;
+  status: EmailSyncStatus;
+  positionId: string | null;
+  canonicalStage: CanonicalStage | null;
+  reason: string;
+  createdAt: string;
+}
+
+export interface EmailSyncResult {
+  processed: number;
+  applied: number;
+  pending: number;
+  skipped: number;
+  lastUid: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
+export interface EmailConnectionResult {
+  ok: true;
+  message: string;
+}
+
 export type ImportSessionId = string;
 
 export interface PositionImportPreview {
@@ -294,6 +360,8 @@ export interface PreparationAssetsSnapshot {
 export interface Interview {
   id: string;
   positionId: string;
+  /** Null for historical interviews that were not linked to a process stage. */
+  stageId?: string | null;
   roundName: string;
   interviewDate: string | null;
   transcript: string;
@@ -305,7 +373,40 @@ export interface Interview {
   updatedAt: string;
 }
 
+export interface InterviewReviewOverview {
+  round: string;
+  overall: string;
+  keyFacts: string[];
+}
+
+export interface InterviewReviewQuestionAnswer {
+  question: string;
+  answerSummary: string;
+  quality: string;
+  improvement: string;
+}
+
+export interface InterviewReviewStrengthsAndRisks {
+  strengths: string[];
+  risks: string[];
+}
+
+export interface InterviewReviewReusableItem {
+  targetType: ProposalTarget;
+  title: string;
+  content: string;
+}
+
 export interface InterviewReviewOutput {
+  overview: InterviewReviewOverview;
+  questionAnswers: InterviewReviewQuestionAnswer[];
+  strengthsAndRisks: InterviewReviewStrengthsAndRisks;
+  nextRoundPreparation: string[];
+  reusableItems: InterviewReviewReusableItem[];
+}
+
+/** Historical snapshots remain readable but are never produced by new reviews. */
+export interface LegacyInterviewReviewOutput {
   summary: string;
   strengths: string[];
   gaps: string[];
@@ -318,11 +419,13 @@ export interface InterviewReviewOutput {
   }>;
 }
 
+export type InterviewReviewHistoricalOutput = InterviewReviewOutput | LegacyInterviewReviewOutput;
+
 export interface InterviewReviewSnapshot {
   promptSnapshot: string;
   modelSnapshot: string;
   inputSnapshot: string;
-  output: InterviewReviewOutput;
+  output: InterviewReviewHistoricalOutput;
   reviewedAt: string;
 }
 
@@ -384,6 +487,7 @@ export interface InterviewReviewResult {
 
 export interface ProjectInput {
   name: string;
+  projectTime?: string;
   background: string;
   goal: string;
   role: string;
@@ -402,6 +506,7 @@ export type InterviewReviewAudit =
 
 export interface Project extends Omit<ProjectInput, 'unclassifiedNotes'> {
   id: string;
+  projectTime?: string;
   unclassifiedNotes: string;
   createdAt: string;
   updatedAt: string;

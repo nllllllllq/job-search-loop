@@ -14,6 +14,7 @@ const importEsm = new Function(
   'specifier',
   'return import(specifier)',
 ) as (specifier: string) => Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')>;
+const PDF_LINE_Y_TOLERANCE = 2;
 
 function extension(name: string): ExtractedDocument['kind'] {
   const ext = extname(name).toLowerCase();
@@ -63,13 +64,33 @@ async function extractPdf(bytes: Uint8Array): Promise<ExtractedDocument> {
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
-      pages.push(content.items
-        .map((item) => ('str' in item ? item.str : ''))
-        .join(' ')
-        .trim());
+      const lines: string[] = [];
+      let line: string[] = [];
+      let lineY: number | undefined;
+      const flushLine = () => {
+        if (line.length > 0) lines.push(line.join(' '));
+        line = [];
+        lineY = undefined;
+      };
+      for (const item of content.items) {
+        if (!('str' in item)) continue;
+        const text = item.str.trim();
+        const y = Number(item.transform?.[5]);
+        const yChanged = lineY !== undefined
+          && Number.isFinite(y)
+          && Math.abs(y - lineY) > PDF_LINE_Y_TOLERANCE;
+        if (yChanged) flushLine();
+        if (text) {
+          line.push(text);
+          if (lineY === undefined && Number.isFinite(y)) lineY = y;
+        }
+        if (item.hasEOL) flushLine();
+      }
+      flushLine();
+      pages.push(lines.join('\n').trim());
       page.cleanup();
     }
-    const text = pages.filter(Boolean).join('\n\n').trim();
+    const text = pages.join('\n\n').trim();
     return {
       kind: 'pdf',
       text,

@@ -6,15 +6,57 @@ import {
   ImportSessionError,
 } from '../../src/main/services/import-sessions';
 import {
-  classifyProjectText,
   mergeProjectSegments,
   reorderProjectSegments,
   splitProjectSegment,
 } from '../../src/main/services/import-classifier';
+import type { ProjectSegmentPreview } from '../../src/shared/domain';
 import { previewPositionFromText } from '../../src/main/services/position-import';
 import { extractDocumentText } from '../../src/main/services/document-import';
 import { createOcrService } from '../../src/main/services/ocr';
 import JSZip from 'jszip';
+
+function aiSegment(options: {
+  tempId: string;
+  name: string;
+  sourceText: string;
+  boundaries: { startLine: number; endLine: number };
+  suggested?: Partial<ProjectSegmentPreview['suggested']>;
+  fields?: Partial<ProjectSegmentPreview['fields']>;
+}): ProjectSegmentPreview {
+  const suggested: ProjectSegmentPreview['suggested'] = {
+    name: options.name,
+    projectTime: '',
+    background: '',
+    goal: '',
+    role: '',
+    keyDecisions: '',
+    outcome: '',
+    evidence: '',
+    reflections: '',
+    storytellingVersions: '',
+    unclassifiedNotes: '',
+    ...options.suggested,
+  };
+  const fieldKeys = Object.keys(suggested) as Array<keyof ProjectSegmentPreview['fields']>;
+  const fields = Object.fromEntries(fieldKeys.map((key) => [key, {
+    value: suggested[key],
+    provenance: 'ai-suggestion',
+    evidence: '',
+  }])) as ProjectSegmentPreview['fields'];
+  Object.assign(fields, options.fields);
+  return {
+    tempId: options.tempId,
+    name: options.name,
+    sourceText: options.sourceText,
+    suggested,
+    boundaries: options.boundaries,
+    fields,
+    missingFields: fieldKeys.filter((key) => key !== 'name' && !suggested[key]),
+    unusedContent: [],
+    warnings: [],
+  };
+}
 
 function textPdf(text: string): Uint8Array {
   const objects = [
@@ -23,6 +65,37 @@ function textPdf(text: string): Uint8Array {
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
     `<< /Length ${text.length + 34} >>\nstream\nBT /F1 12 Tf 72 720 Td (${text}) Tj ET\nendstream`,
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  body += offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('');
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new TextEncoder().encode(body);
+}
+
+function multiLineTextPdf(lines: string[]): Uint8Array {
+  const lineOperations = lines.flatMap((line, index) => {
+    const y = 720 - index * 24;
+    return [
+      `1 0 0 1 72 ${y} Tm`,
+      `(${line}) Tj`,
+      `1 0 0 1 260 ${y} Tm`,
+      `(Details ${index + 1}) Tj`,
+    ];
+  }).join('\n');
+  const stream = `BT /F1 12 Tf\n${lineOperations}\nET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
   ];
   let body = '%PDF-1.4\n';
   const offsets = [0];
@@ -99,34 +172,70 @@ describe('local import services', () => {
     expect(preview.confidence.title).toBeGreaterThan(0.5);
   });
 
-  it('segments project notes and supports the review operations', () => {
-    const segments = classifyProjectText([
-      '# 项目一：智能问答',
-      '背景：客服响应慢',
-      '目标：缩短响应时间',
-      '我的角色：产品负责人',
-      '结果：平均响应时间降低 40%',
-      '',
-      '# 项目二：数据看板',
-      '负责指标体系和上线推进',
-    ].join('\n'));
-
-    expect(segments).toHaveLength(2);
-    expect(segments[0]?.suggested).toMatchObject({
-      name: '项目一：智能问答',
-      background: '客服响应慢',
-      goal: '缩短响应时间',
-      role: '产品负责人',
-      outcome: '平均响应时间降低 40%',
+  it('merges AI segments without re-running local field heuristics', () => {
+    const current = aiSegment({
+      tempId: '11111111-1111-4111-8111-111111111111',
+      name: '智能问答',
+      sourceText: '# 智能问答\n原始背景',
+      boundaries: { startLine: 2, endLine: 3 },
+      suggested: { background: 'AI 背景', projectTime: '2024' },
+      fields: {
+        background: { value: 'AI 背景', provenance: 'ai-rewrite', evidence: 'L3: 原始背景' },
+      },
     });
-    expect(segments[1]?.suggested.unclassifiedNotes).toContain('负责指标体系');
+    const next = aiSegment({
+      tempId: '22222222-2222-4222-8222-222222222222',
+      name: '数据看板',
+      sourceText: '# 数据看板\n结果：下降 20%',
+      boundaries: { startLine: 4, endLine: 5 },
+      suggested: { outcome: '下降 20%' },
+      fields: {
+        outcome: { value: '下降 20%', provenance: 'source', evidence: 'L5: 结果：下降 20%' },
+      },
+    });
 
-    const merged = mergeProjectSegments(segments, segments[0]!.tempId);
+    const merged = mergeProjectSegments([current, next], current.tempId);
+
     expect(merged).toHaveLength(1);
-    const split = splitProjectSegment(merged, merged[0]!.tempId, '负责指标体系');
+    expect(merged[0]).toMatchObject({
+      name: '智能问答',
+      sourceText: '# 智能问答\n原始背景\n\n# 数据看板\n结果：下降 20%',
+      boundaries: { startLine: 2, endLine: 5 },
+      suggested: { background: 'AI 背景', projectTime: '2024' },
+    });
+    expect(merged[0]?.fields.background).toEqual(current.fields.background);
+    expect(merged[0]?.suggested.outcome).toBe('');
+  });
+
+  it('splits by source text while preserving the first AI result and leaving the new segment blank', () => {
+    const current = aiSegment({
+      tempId: '33333333-3333-4333-8333-333333333333',
+      name: '智能问答',
+      sourceText: '# 智能问答\n背景：原始背景\n结果：原始结果',
+      boundaries: { startLine: 10, endLine: 12 },
+      suggested: { background: 'AI 背景', projectTime: '2024' },
+      fields: {
+        background: { value: 'AI 背景', provenance: 'ai-rewrite', evidence: 'L11: 背景：原始背景' },
+      },
+    });
+
+    const split = splitProjectSegment([current], current.tempId, '结果：原始结果');
+
     expect(split).toHaveLength(2);
-    expect(reorderProjectSegments(split, split.map((item) => item.tempId).reverse())[0]?.tempId)
-      .toBe(split[1]?.tempId);
+    expect(split[0]).toMatchObject({
+      tempId: current.tempId,
+      sourceText: '# 智能问答\n背景：原始背景',
+      boundaries: { startLine: 10, endLine: 11 },
+      suggested: { background: 'AI 背景', projectTime: '2024' },
+    });
+    expect(split[0]?.fields.background).toEqual(current.fields.background);
+    expect(split[1]).toMatchObject({
+      sourceText: '结果：原始结果',
+      boundaries: { startLine: 12, endLine: 12 },
+      name: '',
+    });
+    expect(Object.values(split[1]?.suggested ?? {}).every((value) => value === '')).toBe(true);
+    expect(Object.values(split[1]?.fields ?? {}).every((field) => field.value === '')).toBe(true);
   });
 
   it('extracts only plain text from TXT, Markdown and DOCX documents', async () => {
@@ -178,6 +287,18 @@ describe('local import services', () => {
     })).resolves.toMatchObject({
       kind: 'pdf',
       text: expect.stringContaining('Project Alpha'),
+      pageCount: 1,
+    });
+  });
+
+  it('preserves visual line boundaries while extracting a multi-project PDF', async () => {
+    await expect(extractDocumentText({
+      name: 'projects.pdf',
+      type: 'application/pdf',
+      bytes: multiLineTextPdf(['1. Project Alpha', '2. Project Beta', '3. Project Gamma']),
+    })).resolves.toMatchObject({
+      kind: 'pdf',
+      text: '1. Project Alpha Details 1\n2. Project Beta Details 2\n3. Project Gamma Details 3',
       pageCount: 1,
     });
   });

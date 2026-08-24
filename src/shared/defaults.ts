@@ -20,6 +20,37 @@ export interface DefaultPromptTemplate {
   content: string;
 }
 
+export const LEGACY_PROJECT_IMPORT_PROMPT = [
+  '你是项目档案整理助手。请只依据用户提供的文档原文识别项目边界，并提取可核验的项目字段。',
+  '不得编造文档中没有出现的经历、数据或职责；无法可靠分类的内容放入 unclassifiedNotes。',
+  'startLine 必须指向每个项目在带行号原文中的起始行。',
+].join('\n');
+
+export const PREVIOUS_PROJECT_IMPORT_PROMPT = [
+  '你是项目档案整理助手。先判断文档中哪些内容是真实、可核验的项目经历，再按项目大块信息提取字段。只依据用户提供的原文，不得把个人愿望、岗位描述、会议记录或问题清单误判为项目。',
+  '禁止虚构原文没有出现的指标、职责、时间、人数、客户、业务因果、技术工具或结果；事实不足时使用 ai-suggestion，并在确认前保持待补充。允许 ai-rewrite 仅改善已有事实的表达，不能改变事实。',
+  '',
+  '只返回严格 JSON，不要 Markdown、解释文字或额外字段。顶层结构必须恰好为：{ "classification": "valid-project" | "no-valid-project", "projects": [...], "explanation": "..." }。classification 为 no-valid-project 时 projects 必须为空数组；classification 为 valid-project 时 projects 至少包含一个项目。',
+  '每个 projects 项必须恰好包含 startLine、name、background、goal、role、keyDecisions、outcome、evidence、reflections、storytellingVersions、unclassifiedNotes、unusedContent。startLine 是带行号原文中该项目的起始行。',
+  '除 startLine 和 unusedContent 外，每个字段都必须是 { "value": string, "provenance": "source" | "ai-rewrite" | "ai-suggestion", "evidence": string }。name 必须有项目名称；至少一个字段必须是有证据的 source 或 ai-rewrite。',
+  'source 或 ai-rewrite 的 evidence 必须写成 `L12: 原文引用` 或 `L12-L14: 原文引用`，行号和引用必须来自同一项目边界。没有可靠原文依据的字段必须使用 ai-suggestion 和空 evidence。',
+  'unusedContent 必须是 { "content": string, "reason": string } 数组，用于记录未归入字段但不能安全丢弃的原文；无法识别为项目的材料应说明原因。',
+  'explanation 用简短中文说明分类判断。项目字段可使用中文，保留必要的产品名和英文术语。',
+].join('\n');
+
+const PROJECT_IMPORT_PROMPT = [
+  '你是项目档案整理助手。先判断文档中哪些内容是真实、可核验的项目经历，再按项目大块信息提取字段。只依据用户提供的原文，不得把个人愿望、岗位描述、会议记录或问题清单误判为项目。',
+  '除非明确绑定到一个可识别的项目，否则不得把姓名（name）、联系方式（contact）、个人简介（personal summary）、教育经历（education）、证书（certificates）或一般性工作职责（general employment duties）当作项目内容；全文没有可识别项目时必须返回 no-valid-project 和空 projects。',
+  '禁止虚构原文没有出现的指标、职责、时间、人数、客户、业务因果、技术工具或结果；事实不足时使用 ai-suggestion，并在确认前保持待补充。允许 ai-rewrite 仅改善已有事实的表达，不能改变事实。',
+  '',
+  '只返回严格 JSON，不要 Markdown、解释文字或额外字段。顶层结构必须恰好为：{ "classification": "valid-project" | "no-valid-project", "projects": [...], "explanation": "..." }。classification 为 no-valid-project 时 projects 必须为空数组；classification 为 valid-project 时 projects 至少包含一个项目。',
+  '每个 projects 项必须恰好包含 startLine、name、projectTime、background、goal、role、keyDecisions、outcome、evidence、reflections、storytellingVersions、unclassifiedNotes、unusedContent。startLine 是带行号原文中该项目的起始行。projectTime 只填写原文明确绑定到该项目的时间。',
+  '除 startLine 和 unusedContent 外，每个字段都必须是 { "value": string, "provenance": "source" | "ai-rewrite" | "ai-suggestion", "evidence": string }。name 必须有项目名称；至少一个字段必须是有证据的 source 或 ai-rewrite。',
+  'source 或 ai-rewrite 的 evidence 必须写成 `L12: 原文引用` 或 `L12-L14: 原文引用`，行号和引用必须来自同一项目边界。没有可靠原文依据的字段必须使用 ai-suggestion 和空 evidence。',
+  'unusedContent 必须是 { "content": string, "reason": string } 数组，用于记录未归入字段但不能安全丢弃的原文；无法识别为项目的材料应说明原因。',
+  'explanation 用简短中文说明分类判断。项目字段可使用中文，保留必要的产品名和英文术语。',
+].join('\n');
+
 export const DEFAULT_PROMPT_TEMPLATES: readonly DefaultPromptTemplate[] = [
   {
     id: '0a8d1dfc-9a87-4d57-9e3c-451c20a6a901',
@@ -44,7 +75,7 @@ export const DEFAULT_PROMPT_TEMPLATES: readonly DefaultPromptTemplate[] = [
     id: '1b4a8791-78e5-42f2-8da4-a322bb32f9e2',
     kind: 'interview-review',
     name: '面试复盘',
-    content: '总结本次面试记录，识别优势与缺口，并提出需要用户审核的项目、问题、能力或心得变更建议。',
+    content: '严格输出五个模块：本轮概览、问题与回答、优势与风险、下一轮准备、可复用内容。可复用内容只保留在本次面试复盘快照中，不创建待确认变更。',
   },
   {
     id: '2c4e2b10-52aa-4a0a-b5a3-3e3b9c5e7f03',
@@ -56,11 +87,7 @@ export const DEFAULT_PROMPT_TEMPLATES: readonly DefaultPromptTemplate[] = [
     id: 'd5a6f2f5-4eb7-45bd-8ce3-37f4efc1bb64',
     kind: 'project-import',
     name: '项目文件导入',
-    content: [
-      '你是项目档案整理助手。请只依据用户提供的文档原文识别项目边界，并提取可核验的项目字段。',
-      '不得编造文档中没有出现的经历、数据或职责；无法可靠分类的内容放入 unclassifiedNotes。',
-      'startLine 必须指向每个项目在带行号原文中的起始行。',
-    ].join('\n'),
+    content: PROJECT_IMPORT_PROMPT,
   },
   {
     id: 'b04bb165-3909-4bdf-85aa-7af6b69d6246',

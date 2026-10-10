@@ -1,4 +1,0 @@
-interface:
-  display_name: "interview_preparation"
-  short_description: "根据岗位 JD 与可靠调研，制作半小时可读完的面试准备网页"
-  default_prompt: "使用 $interview_preparation，结合已有岗位 JD 和附件直接制作面试准备网页：快速总览、完整 JD 分析、五道业务题、产品与市场调研。保留原始 JD 侧栏与关键词高亮，财报给原始出处，全文控制在半小时内可读完。"
